@@ -5,9 +5,6 @@ Real-time TUI for monitoring Claude Code agents.
 [![CI](https://github.com/m-mohamed/rehoboam/workflows/CI/badge.svg)](https://github.com/m-mohamed/rehoboam/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-<!-- TODO: Add demo GIF here -->
-<!-- ![rehoboam demo](demo.gif) -->
-
 ## Features
 
 - Kanban-style dashboard with status columns (Attention, Working, Compacting, Idle)
