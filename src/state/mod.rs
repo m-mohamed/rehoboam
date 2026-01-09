@@ -7,6 +7,12 @@ use crate::event::HookEvent;
 use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Timeout for Working → Idle transition (seconds)
+const IDLE_TIMEOUT_SECS: i64 = 30;
+
+/// Timeout for removing stale sessions (seconds)
+const STALE_TIMEOUT_SECS: i64 = 300; // 5 minutes
+
 /// Number of status columns in Kanban view
 pub const NUM_COLUMNS: usize = 4;
 
@@ -229,6 +235,66 @@ impl AppState {
                 self.status_counts[col] = self.status_counts[col].saturating_sub(1);
                 self.agents.remove(&pane_id);
             }
+        }
+    }
+
+    /// Periodic tick for timeout-based state transitions
+    ///
+    /// Handles:
+    /// - Working → Idle after IDLE_TIMEOUT_SECS (30s) of no events
+    /// - Remove stale sessions after STALE_TIMEOUT_SECS (5 min) of no events
+    pub fn tick(&mut self) {
+        let now = current_timestamp();
+        let mut to_remove: Vec<String> = Vec::new();
+        let mut idle_transitions: Vec<String> = Vec::new();
+
+        for (pane_id, agent) in self.agents.iter() {
+            let elapsed = now - agent.last_update;
+
+            // Remove stale sessions (5 minutes of no events)
+            if elapsed > STALE_TIMEOUT_SECS {
+                to_remove.push(pane_id.clone());
+                continue;
+            }
+
+            // Working → Idle after 30s of no events
+            if matches!(agent.status, Status::Working) && elapsed > IDLE_TIMEOUT_SECS {
+                idle_transitions.push(pane_id.clone());
+            }
+        }
+
+        // Apply idle transitions
+        for pane_id in idle_transitions {
+            if let Some(agent) = self.agents.get_mut(&pane_id) {
+                let old_col = status_to_column(&agent.status);
+                agent.status = Status::Idle;
+                let new_col = status_to_column(&agent.status);
+
+                // Update status counts
+                self.status_counts[old_col] = self.status_counts[old_col].saturating_sub(1);
+                self.status_counts[new_col] += 1;
+
+                tracing::info!(
+                    pane_id = %pane_id,
+                    project = %agent.project,
+                    elapsed_secs = %(now - agent.last_update),
+                    "Timeout: Working → Idle"
+                );
+            }
+        }
+
+        // Remove stale sessions
+        for pane_id in to_remove {
+            if let Some(agent) = self.agents.get(&pane_id) {
+                let col = status_to_column(&agent.status);
+                self.status_counts[col] = self.status_counts[col].saturating_sub(1);
+                tracing::info!(
+                    pane_id = %pane_id,
+                    project = %agent.project,
+                    "Removed stale session (5 min timeout)"
+                );
+            }
+            self.agents.remove(&pane_id);
         }
     }
 

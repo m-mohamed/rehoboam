@@ -100,6 +100,8 @@ impl App {
     /// This ensures sparkline consistency - activity values only come
     /// from real hook events, not synthesized tick data.
     pub fn tick(&mut self) {
+        // Process timeout-based state transitions
+        self.state.tick();
         // Tick triggers re-render for elapsed time updates
         self.needs_render = true;
     }

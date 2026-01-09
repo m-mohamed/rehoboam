@@ -5,6 +5,17 @@ Real-time TUI for monitoring Claude Code agents.
 [![CI](https://github.com/m-mohamed/rehoboam/workflows/CI/badge.svg)](https://github.com/m-mohamed/rehoboam/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![Rehoboam Kanban Dashboard](docs/screenshot.png)
+
+## Why Rehoboam?
+
+When running multiple Claude Code agents across projects, it's hard to know:
+- Which agents need your attention (permission prompts)
+- Which are actively working vs. idle
+- When context compaction is happening
+
+Rehoboam gives you a single dashboard to monitor all agents in real-time, with desktop notifications when attention is needed.
+
 ## Features
 
 - Kanban-style dashboard with status columns (Attention, Working, Compacting, Idle)
@@ -86,6 +97,32 @@ Claude Code → hooks → rehoboam hook → Unix socket → rehoboam TUI
 Claude Code triggers hook events (PreToolUse, PermissionRequest, etc.). The hook command sends JSON to `/tmp/rehoboam.sock`. The TUI receives events via tokio async and updates the display.
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for implementation details.
+
+## Configuration
+
+Hooks are configured in each project's `.claude/settings.json`. Run `rehoboam init` to install or update hooks automatically.
+
+Default socket path: `/tmp/rehoboam.sock` (or `$XDG_RUNTIME_DIR/rehoboam.sock` on Linux)
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for hook event details.
+
+## Troubleshooting
+
+### Hooks not firing
+- Verify hooks are installed: check `.claude/settings.json` exists in your project
+- Restart Claude Code to pick up new hooks (hooks load at session start)
+
+### Socket connection failed
+- Check if another rehoboam instance is running: `lsof /tmp/rehoboam.sock`
+- Remove stale socket: `rm /tmp/rehoboam.sock`
+
+### Pane jumping doesn't work
+- Only works in WezTerm (requires `wezterm cli`)
+- Ensure `WEZTERM_PANE` environment variable is available
+
+### Agent stuck in Working
+- Agents auto-transition to Idle after 30s of inactivity
+- Stale sessions are removed after 5 minutes
 
 ## Limitations
 

@@ -105,13 +105,18 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     };
 
     // Get pane ID from terminal-specific env vars, fall back to session_id
-    let pane_id = std::env::var("WEZTERM_PANE")
-        .or_else(|_| std::env::var("KITTY_WINDOW_ID"))
-        .or_else(|_| std::env::var("ITERM_SESSION_ID"))
-        .ok()
+    let wezterm_pane = std::env::var("WEZTERM_PANE").ok();
+    let pane_id = wezterm_pane
+        .clone()
+        .or_else(|| std::env::var("KITTY_WINDOW_ID").ok())
+        .or_else(|| std::env::var("ITERM_SESSION_ID").ok())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
             // Fallback: first 8 chars of session_id (always available)
+            eprintln!(
+                "rehoboam: WEZTERM_PANE not found (was {:?}), using session_id fallback",
+                wezterm_pane
+            );
             hook_input.session_id.chars().take(8).collect()
         });
 

@@ -1,177 +1,44 @@
 {
   "hooks": {
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S attention -A notification -H Notification -N",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "PermissionRequest": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S attention -A permission -H PermissionRequest -N",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S working -H PostToolUse",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": "Read|Write|Edit|Bash|Glob|Grep|WebFetch|WebSearch|NotebookEdit|TodoWrite|AskUserQuestion|Skill|EnterPlanMode|ExitPlanMode|KillShell|TaskOutput"
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S compacting -H PreCompact:manual",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": "manual"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S compacting -H PreCompact:auto",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": "auto"
-      }
-    ],
-    "PreToolUse": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S working -H PreToolUse",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": "Read|Write|Edit|Bash|Glob|Grep|WebFetch|WebSearch|NotebookEdit|TodoWrite|AskUserQuestion|Skill|EnterPlanMode|ExitPlanMode|KillShell|TaskOutput"
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S idle -H SessionEnd",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      }
-    ],
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S idle -H SessionStart:startup",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "startup"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S idle -H SessionStart:resume",
-            "once": true,
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "resume"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S idle -H SessionStart:clear",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "clear"
-      },
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S idle -H SessionStart:compact",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "compact"
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S idle -H Stop -N",
-            "timeout": 10,
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S working -H SubagentStart",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      }
-    ],
-    "SubagentStop": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S working -H SubagentStop",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": "*"
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "command": "~/.local/bin/rehoboam send -S working -H UserPromptSubmit",
-            "timeout": 5,
-            "type": "command"
-          }
-        ],
-        "matcher": ""
-      }
-    ]
+    "SessionStart": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook", "timeout": 5 }]
+    }],
+    "UserPromptSubmit": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook", "timeout": 5 }]
+    }],
+    "PermissionRequest": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook -N", "timeout": 10 }]
+    }],
+    "Stop": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook -N", "timeout": 10 }]
+    }],
+    "Notification": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook -N", "timeout": 5 }]
+    }],
+    "PreToolUse": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook", "timeout": 10 }]
+    }],
+    "PostToolUse": [{
+      "matcher": "",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook", "timeout": 10 }]
+    }],
+    "SessionEnd": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook", "timeout": 5 }]
+    }],
+    "PreCompact": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook", "timeout": 10 }]
+    }],
+    "SubagentStop": [{
+      "matcher": "*",
+      "hooks": [{ "type": "command", "command": "WEZTERM_PANE=$WEZTERM_PANE ~/.local/bin/rehoboam hook", "timeout": 5 }]
+    }]
   }
 }

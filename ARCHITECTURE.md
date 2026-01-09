@@ -44,6 +44,52 @@ src/
 
 **End-to-end latency**: 5-20ms typical (well under 100ms human perception threshold)
 
+## Hook Event Schema
+
+Claude Code sends JSON via stdin to `rehoboam hook`. The `ClaudeHookInput` struct parses these fields:
+
+### Required Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `session_id` | string | Unique session identifier |
+| `hook_event_name` | string | Event type (see Status Derivation) |
+| `transcript_path` | string | Path to .jsonl conversation file |
+| `cwd` | string | Current working directory |
+
+### Optional Fields
+
+| Field | Type | Present In | Description |
+|-------|------|------------|-------------|
+| `tool_name` | string | PreToolUse, PostToolUse | Tool being executed |
+| `tool_input` | object | PreToolUse, PostToolUse | Tool parameters |
+| `tool_use_id` | string | PreToolUse, PostToolUse | Correlates Pre→Post for latency |
+| `tool_response` | object | PostToolUse | Tool result |
+| `permission_mode` | string | All | Current permission mode |
+| `user_prompt` | string | UserPromptSubmit | The user's prompt text |
+| `reason` | string | Stop, SessionEnd | Why stopping |
+| `trigger` | string | PreCompact | "manual" or "auto" |
+| `source` | string | SessionStart | "startup", "resume", "clear", "compact" |
+| `message` | string | Notification | Notification message |
+
+### Status Derivation
+
+The `derive_status()` function maps hook events to TUI status:
+
+| Hook Event | → Status | Attention Type |
+|------------|----------|----------------|
+| SessionStart | idle | - |
+| UserPromptSubmit | working | - |
+| PreToolUse | working | - |
+| PostToolUse | working | - |
+| PermissionRequest | attention | permission |
+| Notification | attention | notification |
+| Stop | idle | - |
+| SessionEnd | idle (removes agent) | - |
+| PreCompact | compacting | - |
+| SubagentStop | working | - |
+| (unknown) | idle | - |
+
 ## Invariants
 
 - **UI is read-only**: Never writes to socket or modifies external state
@@ -118,7 +164,7 @@ Users care about one question: "Does any agent need my attention?" Four columns 
 | Socket full | New connections dropped, recovers automatically |
 | Invalid JSON | Logged and skipped |
 | Missing terminal env var | Falls back to session_id | Agent still tracked |
-| SessionEnd never sent | Agent persists until TUI restart |
+| SessionEnd never sent | Agent cleaned up after 5 min inactivity |
 
 ## Testing
 
