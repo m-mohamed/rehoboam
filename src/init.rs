@@ -69,10 +69,6 @@ fn hook_template() -> String {
       "matcher": "*",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
     }}],
-    "PostCompact": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
-    }}],
     "SubagentStart": [{{
       "matcher": "*",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
@@ -455,10 +451,10 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
 
     init_project(&project, force)?;
 
-    println!("\nHooks enabled (12):");
+    println!("\nHooks enabled (11):");
     println!("  SessionStart, UserPromptSubmit, PermissionRequest, Stop, Notification,");
-    println!("  PreToolUse, PostToolUse, SessionEnd, PreCompact, PostCompact,");
-    println!("  SubagentStop, SubagentStart");
+    println!("  PreToolUse, PostToolUse, SessionEnd, PreCompact,");
+    println!("  SubagentStart, SubagentStop");
     println!("\nTest with: claude /hooks");
 
     Ok(())

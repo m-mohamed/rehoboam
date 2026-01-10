@@ -1,6 +1,7 @@
 //! Agent state management for Claude Code sessions
 //!
-//! Tracks the status and activity of each Claude Code agent running in WezTerm panes.
+//! Tracks the status and activity of each Claude Code agent running in terminal panes.
+//! Supports multiple terminal emulators: Tmux, WezTerm, Kitty, iTerm2.
 
 use std::collections::VecDeque;
 
@@ -127,6 +128,9 @@ pub struct Agent {
     pub avg_latency_ms: Option<u64>,
     /// Total tool calls this session
     pub total_tool_calls: u32,
+    /// True when Claude is actively responding (between UserPromptSubmit and Stop)
+    /// Prevents timeout to IDLE while Claude is generating text (no tool hooks)
+    pub in_response: bool,
 }
 
 impl Agent {
@@ -147,6 +151,7 @@ impl Agent {
             last_latency_ms: None,
             avg_latency_ms: None,
             total_tool_calls: 0,
+            in_response: false,
         }
     }
 

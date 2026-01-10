@@ -155,22 +155,39 @@ impl ClaudeHookInput {
     /// Derive rehoboam status from Claude Code hook_event_name
     ///
     /// Maps Claude's hook types to our 4-state system:
-    /// - idle: Session inactive
-    /// - working: Claude processing
-    /// - attention: Needs user input/permission
+    /// - idle: Claude waiting for user input
+    /// - working: Claude actively processing (tools, thinking)
+    /// - attention: Claude needs explicit approval (permission prompts ONLY)
     /// - compacting: Context compaction in progress
+    ///
+    /// Key insight: ATTENTION is ONLY for PermissionRequest where Claude
+    /// is blocked waiting for y/n approval. Notifications are informational
+    /// (Claude saying "hi" or "task complete") and mean Claude is IDLE.
     ///
     /// # Returns
     /// Tuple of (status, optional attention_type)
     pub fn derive_status(&self) -> (&str, Option<&str>) {
         match self.hook_event_name.as_str() {
-            "SessionStart" => ("idle", None),
-            "UserPromptSubmit" | "PreToolUse" | "PostToolUse" => ("working", None),
+            // WORKING: Claude is actively doing something
+            "UserPromptSubmit" => ("working", None), // User sent message, Claude processing
+            "PreToolUse" => ("working", None),       // About to run a tool
+            "PostToolUse" => ("working", None),      // Just finished a tool, may continue
+            "SubagentStart" => ("working", None),    // Spawned a subagent
+            "SubagentStop" => ("working", None),     // Subagent finished, may continue
+
+            // ATTENTION: Claude is BLOCKED waiting for explicit user approval
             "PermissionRequest" => ("attention", Some("permission")),
-            "Notification" => ("attention", Some("notification")),
-            "Stop" | "SessionEnd" => ("idle", None),
+
+            // IDLE: Claude is waiting for user input (not blocked, just done)
+            "SessionStart" => ("idle", None),  // Session started, waiting for prompt
+            "Stop" => ("idle", None),          // Claude finished responding
+            "SessionEnd" => ("idle", None),    // Session ended
+            "Notification" => ("idle", None),  // Informational message, Claude is done
+
+            // COMPACTING: Context maintenance
             "PreCompact" => ("compacting", None),
-            "PostCompact" | "SubagentStart" | "SubagentStop" => ("working", None),
+
+            // Unknown hooks default to idle (conservative - don't show false WORKING)
             _ => ("idle", None),
         }
     }

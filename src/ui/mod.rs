@@ -9,7 +9,7 @@
 mod card;
 mod column;
 
-use crate::app::App;
+use crate::app::{App, InputMode, SpawnState, ViewMode};
 use crate::config::colors;
 use crate::state::{Status, NUM_COLUMNS};
 use column::render_status_column;
@@ -38,7 +38,13 @@ pub fn render(f: &mut Frame, app: &App) {
         .split(f.area());
 
     render_header(f, chunks[0], app);
-    render_agent_columns(f, chunks[1], app);
+
+    // Render based on view mode
+    match app.view_mode {
+        ViewMode::Kanban => render_agent_columns(f, chunks[1], app),
+        ViewMode::Project => render_project_view(f, chunks[1], app),
+    }
+
     render_activity(f, chunks[2], app);
     render_footer(f, chunks[3], app);
 
@@ -50,6 +56,16 @@ pub fn render(f: &mut Frame, app: &App) {
     // Render help popup if active
     if app.show_help {
         render_help(f);
+    }
+
+    // Render input dialog if in input mode
+    if app.input_mode == InputMode::Input {
+        render_input_dialog(f, app);
+    }
+
+    // Render spawn dialog if in spawn mode
+    if app.input_mode == InputMode::Spawn {
+        render_spawn_dialog(f, &app.spawn_state);
     }
 }
 
@@ -71,14 +87,19 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     .collect();
 
     let frozen_indicator = if app.frozen { " [FROZEN]" } else { "" };
+    let view_indicator = match app.view_mode {
+        ViewMode::Kanban => "",
+        ViewMode::Project => " [PROJECT VIEW]",
+    };
     let title = if total == 0 {
-        format!("Rehoboam{}", frozen_indicator)
+        format!("Rehoboam{}{}", frozen_indicator, view_indicator)
     } else {
         format!(
-            "Rehoboam ({} agents: {}){}",
+            "Rehoboam ({} agents: {}){}{}",
             total,
             status_parts.join(", "),
-            frozen_indicator
+            frozen_indicator,
+            view_indicator
         )
     };
 
@@ -116,8 +137,88 @@ fn render_agent_columns(f: &mut Frame, area: Rect, app: &App) {
             None
         };
         let column_active = app.state.selected_column == i;
-        render_status_column(f, chunks[i], i, agents, selected_card, column_active);
+        render_status_column(
+            f,
+            chunks[i],
+            i,
+            agents,
+            selected_card,
+            column_active,
+            &app.state.selected_agents,
+        );
     }
+}
+
+/// Render agents grouped by project
+fn render_project_view(f: &mut Frame, area: Rect, app: &App) {
+    let projects = app.state.agents_by_project();
+
+    if projects.is_empty() {
+        let placeholder = Block::default()
+            .title(" Projects ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors::BORDER))
+            .border_type(ratatui::widgets::BorderType::Rounded);
+        f.render_widget(placeholder, area);
+        return;
+    }
+
+    // Create scrollable list of projects with their agents
+    let mut items: Vec<ListItem> = Vec::new();
+
+    for (project_name, agents) in &projects {
+        // Project header
+        let header = format!("📁 {} ({} agent{})", project_name, agents.len(), if agents.len() == 1 { "" } else { "s" });
+        items.push(ListItem::new(Line::from(vec![
+            Span::styled(header, Style::default().fg(colors::HIGHLIGHT).add_modifier(Modifier::BOLD)),
+        ])));
+
+        // Agent entries under this project
+        for agent in agents {
+            let (icon, color) = match &agent.status {
+                Status::Attention(_) => ("🔔", colors::ATTENTION),
+                Status::Working => ("🤖", colors::WORKING),
+                Status::Compacting => ("🔄", colors::COMPACTING),
+                Status::Idle => ("⏸️ ", colors::IDLE),
+            };
+
+            let status_str = match &agent.status {
+                Status::Attention(_) => "Attention",
+                Status::Working => "Working",
+                Status::Compacting => "Compacting",
+                Status::Idle => "Idle",
+            };
+
+            let tool_info = agent.tool_display();
+            let elapsed = agent.elapsed_display();
+
+            let line = format!(
+                "  {} {} ({}) {} {}",
+                icon,
+                agent.pane_id,
+                status_str,
+                tool_info,
+                elapsed
+            );
+
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled(line, Style::default().fg(color)),
+            ])));
+        }
+
+        // Add spacing between projects
+        items.push(ListItem::new(""));
+    }
+
+    let list = List::new(items).block(
+        Block::default()
+            .title(" Projects [P to toggle Kanban] ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors::BORDER))
+            .border_type(ratatui::widgets::BorderType::Rounded),
+    );
+
+    f.render_widget(list, area);
 }
 
 fn render_activity(f: &mut Frame, area: Rect, app: &App) {
@@ -204,9 +305,16 @@ fn render_activity(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
-    let mode_indicators: Vec<&str> = [
-        app.debug_mode.then_some("[debug]"),
-        app.frozen.then_some("[frozen]"),
+    let selection_count = app.state.selected_agents.len();
+    let mode_indicators: Vec<String> = [
+        app.debug_mode.then_some("[debug]".to_string()),
+        app.frozen.then_some("[frozen]".to_string()),
+        app.auto_accept.then_some("[AUTO]".to_string()),
+        if selection_count > 0 {
+            Some(format!("[{} selected]", selection_count))
+        } else {
+            None
+        },
     ]
     .into_iter()
     .flatten()
@@ -219,7 +327,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let help = format!(
-        "{}q:quit  h/l:column  j/k:card  Enter:jump  f:freeze  d:debug  ?:help",
+        "{}Space:select  Y/N:bulk  K:kill  y/n:approve  c:input  s:spawn  ?:help",
         mode
     );
 
@@ -264,20 +372,32 @@ fn render_event_log(f: &mut Frame, app: &App) {
 }
 
 fn render_help(f: &mut Frame) {
-    let area = centered_rect(45, 50, f.area());
+    let area = centered_rect(50, 60, f.area());
 
     let help_text = r#"
-  Keybindings
-
-  q, Esc      Quit
-  h, Left     Previous column
-  l, Right    Next column
-  j, Down     Next card in column
-  k, Up       Previous card in column
+  Navigation
+  h/l         Column left/right
+  j/k         Card up/down
   Enter       Jump to agent pane
+
+  Single Agent
+  y/n         Approve/reject permission
+  c           Custom input (type & send)
+  s           Spawn new agent
+
+  Bulk Operations
+  Space       Toggle selection
+  Y/N         Bulk approve/reject
+  K           Kill selected agents
+  x           Clear selection
+
+  Display
+  P           Toggle Kanban/Project view
+  A           Toggle auto-accept mode
   f           Freeze display
-  d           Toggle debug mode
-  ?, H        Toggle this help
+  d           Debug mode
+  ?, H        This help
+  q, Esc      Quit
 "#;
 
     let help = Paragraph::new(help_text)
@@ -293,6 +413,135 @@ fn render_help(f: &mut Frame) {
 
     f.render_widget(ratatui::widgets::Clear, area);
     f.render_widget(help, area);
+}
+
+fn render_input_dialog(f: &mut Frame, app: &App) {
+    let area = centered_rect(60, 20, f.area());
+
+    // Get selected agent info for the title
+    let title = if let Some(agent) = app.state.selected_agent() {
+        format!(" Send to: {} ({}) ", agent.project, agent.pane_id)
+    } else {
+        " Send Input ".to_string()
+    };
+
+    // Build input display with cursor
+    let input_display = format!("{}▏", app.input_buffer);
+
+    let input_widget = Paragraph::new(input_display)
+        .style(Style::default().fg(colors::FG))
+        .block(
+            Block::default()
+                .title(title)
+                .title_bottom(" [Enter] Send  [Esc] Cancel ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::HIGHLIGHT))
+                .border_type(ratatui::widgets::BorderType::Double)
+                .style(Style::default().bg(colors::BG)),
+        );
+
+    f.render_widget(ratatui::widgets::Clear, area);
+    f.render_widget(input_widget, area);
+}
+
+fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
+    let area = centered_rect(70, 50, f.area());
+
+    // Split into fields: project, prompt, branch, worktree toggle, instructions
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Project path
+            Constraint::Length(3), // Prompt
+            Constraint::Length(3), // Branch name
+            Constraint::Length(3), // Worktree toggle
+            Constraint::Length(2), // Instructions
+        ])
+        .margin(1)
+        .split(area);
+
+    // Helper for field styling
+    let field_style = |active: bool| {
+        if active {
+            Style::default().fg(colors::HIGHLIGHT)
+        } else {
+            Style::default().fg(colors::FG)
+        }
+    };
+    let border_style = |active: bool| {
+        if active {
+            Style::default().fg(colors::HIGHLIGHT)
+        } else {
+            Style::default().fg(colors::BORDER)
+        }
+    };
+
+    // Project path field (0)
+    let project_cursor = if spawn_state.active_field == 0 { "▏" } else { "" };
+    let project_widget = Paragraph::new(format!("{}{}", spawn_state.project_path, project_cursor))
+        .style(field_style(spawn_state.active_field == 0))
+        .block(
+            Block::default()
+                .title(" Project Path ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 0)),
+        );
+
+    // Prompt field (1)
+    let prompt_cursor = if spawn_state.active_field == 1 { "▏" } else { "" };
+    let prompt_widget = Paragraph::new(format!("{}{}", spawn_state.prompt, prompt_cursor))
+        .style(field_style(spawn_state.active_field == 1))
+        .block(
+            Block::default()
+                .title(" Prompt (optional) ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 1)),
+        );
+
+    // Branch name field (2)
+    let branch_cursor = if spawn_state.active_field == 2 { "▏" } else { "" };
+    let branch_widget = Paragraph::new(format!("{}{}", spawn_state.branch_name, branch_cursor))
+        .style(field_style(spawn_state.active_field == 2))
+        .block(
+            Block::default()
+                .title(" Branch Name (for worktree) ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 2)),
+        );
+
+    // Worktree toggle (3)
+    let checkbox = if spawn_state.use_worktree { "[x]" } else { "[ ]" };
+    let worktree_text = format!("{} Create isolated git worktree", checkbox);
+    let worktree_widget = Paragraph::new(worktree_text)
+        .style(field_style(spawn_state.active_field == 3))
+        .block(
+            Block::default()
+                .title(" Git Isolation ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 3)),
+        );
+
+    // Instructions
+    let instructions =
+        Paragraph::new("[Tab/↑↓] Navigate  [Space] Toggle  [Enter] Spawn  [Esc] Cancel")
+            .style(Style::default().fg(colors::IDLE))
+            .alignment(Alignment::Center);
+
+    // Main dialog block
+    let dialog = Block::default()
+        .title(" Spawn New Agent ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(colors::HIGHLIGHT))
+        .border_type(ratatui::widgets::BorderType::Double)
+        .style(Style::default().bg(colors::BG));
+
+    f.render_widget(ratatui::widgets::Clear, area);
+    f.render_widget(dialog, area);
+    f.render_widget(project_widget, chunks[0]);
+    f.render_widget(prompt_widget, chunks[1]);
+    f.render_widget(branch_widget, chunks[2]);
+    f.render_widget(worktree_widget, chunks[3]);
+    f.render_widget(instructions, chunks[4]);
 }
 
 // Helper functions

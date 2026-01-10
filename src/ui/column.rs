@@ -30,6 +30,7 @@ pub const COLUMNS: [(&str, &str); 4] = [
 /// * `agents` - Agents in this column
 /// * `selected_card` - Index of selected card if this column is active, None otherwise
 /// * `column_active` - Whether this column is the currently selected column
+/// * `selected_agents` - Set of pane_ids that are multi-selected for bulk operations
 pub fn render_status_column(
     f: &mut Frame,
     area: Rect,
@@ -37,6 +38,7 @@ pub fn render_status_column(
     agents: &[&Agent],
     selected_card: Option<usize>,
     column_active: bool,
+    selected_agents: &std::collections::HashSet<String>,
 ) {
     let (title, icon) = COLUMNS[column_index];
 
@@ -77,7 +79,8 @@ pub fn render_status_column(
 
         let card_area = Rect::new(inner.x, y, inner.width, CARD_HEIGHT);
         let is_selected = column_active && selected_card == Some(i);
-        render_agent_card(f, card_area, agent, is_selected);
+        let is_multi_selected = selected_agents.contains(&agent.pane_id);
+        render_agent_card(f, card_area, agent, is_selected, is_multi_selected);
     }
 
     // Show overflow indicator if there are more cards

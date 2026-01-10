@@ -15,9 +15,11 @@ mod cli;
 mod config;
 mod errors;
 mod event;
+mod git;
 mod init;
 mod notify;
 mod state;
+mod tmux;
 mod tui;
 mod ui;
 
@@ -29,6 +31,9 @@ use std::path::PathBuf;
 use std::process::Command;
 use tokio::sync::mpsc;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+/// Length of session_id prefix used as fallback pane identifier
+const SESSION_ID_PREFIX_LEN: usize = 8;
 
 /// Get the log directory path
 fn get_log_dir() -> PathBuf {
@@ -99,25 +104,29 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     let hook_input: event::ClaudeHookInput = match serde_json::from_str(&input) {
         Ok(parsed) => parsed,
         Err(e) => {
-            eprintln!("rehoboam: failed to parse hook JSON: {}", e);
+            tracing::debug!("Failed to parse hook JSON: {}", e);
             return Ok(()); // Silent exit - invalid JSON
         }
     };
 
     // Get pane ID from terminal-specific env vars, fall back to session_id
+    // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
     let wezterm_pane = std::env::var("WEZTERM_PANE").ok();
+    let tmux_pane = std::env::var("TMUX_PANE").ok();
     let pane_id = wezterm_pane
         .clone()
+        .or_else(|| tmux_pane.clone()) // Tmux: %0, %1, etc.
         .or_else(|| std::env::var("KITTY_WINDOW_ID").ok())
         .or_else(|| std::env::var("ITERM_SESSION_ID").ok())
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
             // Fallback: first 8 chars of session_id (always available)
-            eprintln!(
-                "rehoboam: WEZTERM_PANE not found (was {:?}), using session_id fallback",
-                wezterm_pane
+            tracing::debug!(
+                "No terminal pane ID found (WEZTERM_PANE={:?}, TMUX_PANE={:?}), using session_id fallback",
+                wezterm_pane,
+                tmux_pane
             );
-            hook_input.session_id.chars().take(8).collect()
+            hook_input.session_id.chars().take(SESSION_ID_PREFIX_LEN).collect()
         });
 
     // Derive status from hook event name

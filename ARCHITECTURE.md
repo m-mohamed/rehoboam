@@ -163,8 +163,28 @@ Users care about one question: "Does any agent need my attention?" Four columns 
 | TUI not running | Hooks exit silently, Claude continues |
 | Socket full | New connections dropped, recovers automatically |
 | Invalid JSON | Logged and skipped |
-| Missing terminal env var | Falls back to session_id | Agent still tracked |
+| Missing terminal env var | Falls back to session_id (agent still tracked) |
 | SessionEnd never sent | Agent cleaned up after 5 min inactivity |
+
+## Terminal Support
+
+### Pane Identification Priority
+
+The hook command checks environment variables in this order:
+1. `WEZTERM_PANE` - WezTerm pane ID (numeric)
+2. `TMUX_PANE` - Tmux pane ID (`%0`, `%1`, etc.)
+3. `KITTY_WINDOW_ID` - Kitty terminal
+4. `ITERM_SESSION_ID` - iTerm2 session
+5. `session_id[0:8]` - Fallback (first 8 chars of Claude session ID)
+
+### Jump-to-Pane Support
+
+| Terminal | Pane ID Format | CLI Command |
+|----------|----------------|-------------|
+| Tmux | `%0`, `%1` | `tmux select-pane -t %N` |
+| WezTerm | numeric | `wezterm cli activate-pane --pane-id N` |
+| Kitty | numeric | Not yet implemented |
+| iTerm2 | string | Not yet implemented |
 
 ## Testing
 

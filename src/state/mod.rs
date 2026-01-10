@@ -8,7 +8,8 @@ use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Timeout for Working → Idle transition (seconds)
-const IDLE_TIMEOUT_SECS: i64 = 30;
+/// Reduced from 30s to 10s for faster responsiveness
+const IDLE_TIMEOUT_SECS: i64 = 10;
 
 /// Timeout for removing stale sessions (seconds)
 const STALE_TIMEOUT_SECS: i64 = 300; // 5 minutes
@@ -29,6 +30,8 @@ pub struct AppState {
     pub selected_card: usize,
     /// Cached status counts: [attention, working, compacting, idle]
     pub status_counts: [usize; NUM_COLUMNS],
+    /// Set of selected pane_ids for bulk operations
+    pub selected_agents: std::collections::HashSet<String>,
 }
 
 impl Default for AppState {
@@ -39,6 +42,7 @@ impl Default for AppState {
             selected_column: 0,
             selected_card: 0,
             status_counts: [0; NUM_COLUMNS],
+            selected_agents: std::collections::HashSet::new(),
         }
     }
 }
@@ -176,6 +180,20 @@ impl AppState {
             _ => {}
         }
 
+        // Track response state (between UserPromptSubmit and Stop)
+        // This prevents timeout to IDLE while Claude is generating text
+        match event.event.as_str() {
+            "UserPromptSubmit" => {
+                agent.in_response = true;
+                tracing::debug!(pane_id = %pane_id, "Response started");
+            }
+            "Stop" | "SessionEnd" => {
+                agent.in_response = false;
+                tracing::debug!(pane_id = %pane_id, "Response ended");
+            }
+            _ => {}
+        }
+
         // Set start_time on first event or session start
         if agent.start_time == 0 || event.event == "SessionStart" {
             agent.start_time = event.timestamp;
@@ -257,8 +275,14 @@ impl AppState {
                 continue;
             }
 
-            // Working → Idle after 30s of no events
-            if matches!(agent.status, Status::Working) && elapsed > IDLE_TIMEOUT_SECS {
+            // Working → Idle after timeout, BUT NOT if:
+            // 1. A tool is currently running (between PreToolUse and PostToolUse)
+            // 2. Claude is actively responding (between UserPromptSubmit and Stop)
+            if matches!(agent.status, Status::Working)
+                && elapsed > IDLE_TIMEOUT_SECS
+                && agent.current_tool.is_none()
+                && !agent.in_response
+            {
                 idle_transitions.push(pane_id.clone());
             }
         }
@@ -320,13 +344,29 @@ impl AppState {
         columns
     }
 
-    /// Get sorted list of agents (attention first, then working, then idle)
-    /// Kept for backwards compatibility (replaced by agents_by_column + flatten)
-    #[allow(dead_code)]
-    pub fn sorted_agents(&self) -> Vec<&Agent> {
-        let mut agents: Vec<&Agent> = self.agents.values().collect();
-        agents.sort_by(|a, b| a.status.priority().cmp(&b.status.priority()));
-        agents
+    /// Get agents grouped by project name
+    ///
+    /// Returns a vector of (project_name, agents) tuples, sorted by project name.
+    /// Within each project, agents are sorted by status priority (attention first).
+    pub fn agents_by_project(&self) -> Vec<(String, Vec<&Agent>)> {
+        let mut projects: HashMap<String, Vec<&Agent>> = HashMap::new();
+
+        for agent in self.agents.values() {
+            projects
+                .entry(agent.project.clone())
+                .or_default()
+                .push(agent);
+        }
+
+        // Sort agents within each project by status priority
+        for agents in projects.values_mut() {
+            agents.sort_by(|a, b| a.status.priority().cmp(&b.status.priority()));
+        }
+
+        // Convert to sorted vector of tuples
+        let mut result: Vec<(String, Vec<&Agent>)> = projects.into_iter().collect();
+        result.sort_by(|a, b| a.0.cmp(&b.0));
+        result
     }
 
     /// Move to next card in current column
@@ -372,61 +412,44 @@ impl AppState {
         }
     }
 
-    /// Navigate to next agent (legacy - uses flattened view)
-    #[allow(dead_code)]
-    pub fn next(&mut self) {
-        let len = self.agents.len();
-        if len > 0 {
-            // Find next non-empty column with agents
-            let columns = self.agents_by_column();
-            let col_len = columns[self.selected_column].len();
-            if self.selected_card + 1 < col_len {
-                self.selected_card += 1;
-            } else {
-                // Move to next column with agents
-                for i in 1..=NUM_COLUMNS {
-                    let next_col = (self.selected_column + i) % NUM_COLUMNS;
-                    if !columns[next_col].is_empty() {
-                        self.selected_column = next_col;
-                        self.selected_card = 0;
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    /// Navigate to previous agent (legacy - uses flattened view)
-    #[allow(dead_code)]
-    pub fn previous(&mut self) {
-        let len = self.agents.len();
-        if len > 0 {
-            if self.selected_card > 0 {
-                self.selected_card -= 1;
-            } else {
-                // Move to previous column with agents
-                // Compute column sizes first to avoid borrow issues
-                let column_sizes: Vec<usize> =
-                    self.agents_by_column().iter().map(|c| c.len()).collect();
-
-                for i in 1..=NUM_COLUMNS {
-                    let prev_col = (self.selected_column + NUM_COLUMNS - i) % NUM_COLUMNS;
-                    if column_sizes[prev_col] > 0 {
-                        self.selected_column = prev_col;
-                        self.selected_card = column_sizes[prev_col].saturating_sub(1);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
     /// Get currently selected agent
     pub fn selected_agent(&self) -> Option<&Agent> {
         let columns = self.agents_by_column();
         columns[self.selected_column]
             .get(self.selected_card)
             .copied()
+    }
+
+    /// Toggle selection of the currently focused agent
+    pub fn toggle_selection(&mut self) {
+        if let Some(agent) = self.selected_agent() {
+            let pane_id = agent.pane_id.clone();
+            if self.selected_agents.contains(&pane_id) {
+                self.selected_agents.remove(&pane_id);
+            } else {
+                self.selected_agents.insert(pane_id);
+            }
+        }
+    }
+
+    /// Check if an agent is selected
+    #[allow(dead_code)]
+    pub fn is_selected(&self, pane_id: &str) -> bool {
+        self.selected_agents.contains(pane_id)
+    }
+
+    /// Clear all selections
+    pub fn clear_selection(&mut self) {
+        self.selected_agents.clear();
+    }
+
+    /// Get list of selected agent pane_ids (tmux only)
+    pub fn selected_tmux_panes(&self) -> Vec<String> {
+        self.selected_agents
+            .iter()
+            .filter(|id| id.starts_with('%'))
+            .cloned()
+            .collect()
     }
 }
 

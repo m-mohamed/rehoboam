@@ -41,8 +41,18 @@ cp target/release/rehoboam ~/.local/bin/
 ## Requirements
 
 - **Claude Code** - With hooks configured (see Quick Start)
-- **Recommended**: WezTerm, Kitty, or iTerm2 for pane identification
+- **Recommended**: Tmux, WezTerm, Kitty, or iTerm2 for pane identification
 - Works with any terminal (uses session_id fallback)
+
+## Terminal Support
+
+| Terminal | Pane ID | Jump to Pane |
+|----------|---------|--------------|
+| **Tmux** | `TMUX_PANE` (%0, %1) | `tmux select-pane` |
+| **WezTerm** | `WEZTERM_PANE` | `wezterm cli activate-pane` |
+| **Kitty** | `KITTY_WINDOW_ID` | Not yet |
+| **iTerm2** | `ITERM_SESSION_ID` | Not yet |
+| **Other** | session_id fallback | Not supported |
 
 ## Quick Start
 
@@ -117,8 +127,9 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for hook event details.
 - Remove stale socket: `rm /tmp/rehoboam.sock`
 
 ### Pane jumping doesn't work
-- Only works in WezTerm (requires `wezterm cli`)
-- Ensure `WEZTERM_PANE` environment variable is available
+- **Tmux**: Ensure you're inside a tmux session (`echo $TMUX_PANE` should show `%0`, `%1`, etc.)
+- **WezTerm**: Ensure `WEZTERM_PANE` environment variable is set
+- Other terminals: Jump-to-pane not yet supported (card navigation still works)
 
 ### Agent stuck in Working
 - Agents auto-transition to Idle after 30s of inactivity
@@ -126,7 +137,7 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for hook event details.
 
 ## Limitations
 
-- **Jump to pane** (`Enter` key): WezTerm only
+- **Jump to pane** (`Enter` key): Tmux and WezTerm only (Kitty, iTerm2 planned)
 - **Local only** - Unix socket at `/tmp/rehoboam.sock`. No remote monitoring.
 - **macOS/Linux** - No Windows support (Unix sockets).
 

@@ -24,16 +24,27 @@ pub const CARD_HEIGHT: u16 = 5;
 /// * `f` - Frame to render into
 /// * `area` - Area for the card
 /// * `agent` - Agent data to display
-/// * `selected` - Whether this card is currently selected
-pub fn render_agent_card(f: &mut Frame, area: Rect, agent: &Agent, selected: bool) {
+/// * `selected` - Whether this card is currently focused (cursor)
+/// * `multi_selected` - Whether this card is part of bulk selection
+pub fn render_agent_card(
+    f: &mut Frame,
+    area: Rect,
+    agent: &Agent,
+    selected: bool,
+    multi_selected: bool,
+) {
     let border_color = if selected {
         colors::HIGHLIGHT
+    } else if multi_selected {
+        colors::WORKING // Use working color for multi-selected
     } else {
         colors::BORDER
     };
 
     let border_type = if selected {
         BorderType::Double
+    } else if multi_selected {
+        BorderType::Thick
     } else {
         BorderType::Rounded
     };
@@ -43,11 +54,15 @@ pub fn render_agent_card(f: &mut Frame, area: Rect, agent: &Agent, selected: boo
         .border_style(Style::default().fg(border_color))
         .border_type(border_type);
 
+    // Selection indicator prefix
+    let selection_indicator = if multi_selected { "● " } else { "" };
+
     // Card content: project, tool, elapsed
     let content = vec![
-        Line::from(truncate(
-            &agent.project,
-            area.width.saturating_sub(2) as usize,
+        Line::from(format!(
+            "{}{}",
+            selection_indicator,
+            truncate(&agent.project, area.width.saturating_sub(4) as usize)
         ))
         .style(Style::default().fg(colors::FG).add_modifier(Modifier::BOLD)),
         Line::from(agent.tool_display()).style(Style::default().fg(colors::IDLE)),

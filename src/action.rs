@@ -36,6 +36,43 @@ pub enum Action {
     /// Process an incoming hook event from Claude Code (boxed to reduce enum size)
     HookEvent(Box<HookEvent>),
 
+    // === Phase 1.1: Permission shortcuts ===
+    /// Approve permission request (sends "y" + Enter to selected agent's pane)
+    Approve,
+
+    /// Reject permission request (sends "n" + Enter to selected agent's pane)
+    Reject,
+
+    // === Phase 2: View navigation ===
+    /// Move to next column (h/l vim keys)
+    NextColumn,
+
+    /// Move to previous column
+    PreviousColumn,
+
+    /// Toggle between Kanban and Project view
+    ToggleProjectView,
+
+    // === Phase 3: Agent spawning ===
+    /// Open spawn dialog
+    OpenSpawnDialog,
+
+    /// Toggle auto-accept mode
+    ToggleAutoAccept,
+
+    // === Phase 3.2: Bulk operations ===
+    /// Toggle selection of current agent
+    ToggleSelection,
+
+    /// Approve all selected agents
+    ApproveSelected,
+
+    /// Reject all selected agents
+    RejectSelected,
+
+    /// Kill all selected agents
+    KillSelected,
+
     /// No action (used for unhandled inputs)
     None,
 }
