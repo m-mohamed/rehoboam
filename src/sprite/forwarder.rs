@@ -141,7 +141,7 @@ impl HookEventForwarder {
 
     /// Start listening for WebSocket connections
     pub async fn listen(self, port: u16) -> Result<()> {
-        let addr = format!("0.0.0.0:{}", port);
+        let addr = format!("0.0.0.0:{port}");
         let listener = TcpListener::bind(&addr)
             .await
             .map_err(|e| eyre!("Failed to bind WebSocket server: {}", e))?;
@@ -237,7 +237,7 @@ impl HookEventForwarder {
                             // Forward to main event loop
                             if let Err(e) = event_tx.send(event).await {
                                 error!("Failed to forward event: {}", e);
-                                disconnect_reason = format!("Channel error: {}", e);
+                                disconnect_reason = format!("Channel error: {e}");
                                 break;
                             }
                         }
@@ -261,7 +261,7 @@ impl HookEventForwarder {
 
                             if let Err(e) = event_tx.send(event).await {
                                 error!("Failed to forward event: {}", e);
-                                disconnect_reason = format!("Channel error: {}", e);
+                                disconnect_reason = format!("Channel error: {e}");
                                 break;
                             }
                         }
@@ -284,7 +284,7 @@ impl HookEventForwarder {
                 }
                 Err(e) => {
                     error!("WebSocket error from {}: {}", addr, e);
-                    disconnect_reason = format!("WebSocket error: {}", e);
+                    disconnect_reason = format!("WebSocket error: {e}");
                     break;
                 }
                 _ => {}

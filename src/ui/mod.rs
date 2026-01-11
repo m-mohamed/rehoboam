@@ -94,7 +94,7 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     ]
     .iter()
     .filter(|(count, _)| *count > 0)
-    .map(|(count, label)| format!("{} {}", count, label))
+    .map(|(count, label)| format!("{count} {label}"))
     .collect();
 
     let frozen_indicator = if app.frozen { " [FROZEN]" } else { "" };
@@ -125,7 +125,7 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         String::new()
     };
     let title = if total == 0 {
-        format!("Rehoboam{}{}", frozen_indicator, view_indicator)
+        format!("Rehoboam{frozen_indicator}{view_indicator}")
     } else {
         format!(
             "Rehoboam ({} agents: {}){}{}{}",
@@ -353,7 +353,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         app.frozen.then_some("[frozen]".to_string()),
         app.auto_accept.then_some("[AUTO]".to_string()),
         if selection_count > 0 {
-            Some(format!("[{} selected]", selection_count))
+            Some(format!("[{selection_count} selected]"))
         } else {
             None
         },
@@ -369,8 +369,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let help = format!(
-        "{}Space:select  Y/N:bulk  K:kill  y/n:approve  c:input  s:spawn  ?:help",
-        mode
+        "{mode}Space:select  Y/N:bulk  K:kill  y/n:approve  c:input  s:spawn  ?:help"
     );
 
     let footer = Paragraph::new(help)
@@ -416,7 +415,7 @@ fn render_event_log(f: &mut Frame, app: &App) {
 fn render_help(f: &mut Frame) {
     let area = centered_rect(50, 60, f.area());
 
-    let help_text = r#"
+    let help_text = r"
   Navigation
   h/l         Column left/right
   j/k         Card up/down
@@ -448,7 +447,7 @@ fn render_help(f: &mut Frame) {
   d           Debug mode
   ?, H        This help
   q, Esc      Quit
-"#;
+";
 
     let help = Paragraph::new(help_text)
         .style(Style::default().fg(colors::FG))
@@ -612,7 +611,7 @@ fn render_checkpoint_timeline(f: &mut Frame, app: &App) {
 fn format_checkpoint_elapsed(elapsed: std::time::Duration) -> String {
     let secs = elapsed.as_secs();
     if secs < 60 {
-        format!("{}s", secs)
+        format!("{secs}s")
     } else if secs < 3600 {
         format!("{}m", secs / 60)
     } else {
@@ -736,7 +735,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         "[ ]"
     };
-    let worktree_text = format!("{} Create isolated git worktree", checkbox);
+    let worktree_text = format!("{checkbox} Create isolated git worktree");
     let worktree_widget = Paragraph::new(worktree_text)
         .style(field_style(spawn_state.active_field == 3))
         .block(
@@ -752,7 +751,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         "[ ]"
     };
-    let loop_text = format!("{} Enable Loop Mode (Ralph-style autonomy)", loop_checkbox);
+    let loop_text = format!("{loop_checkbox} Enable Loop Mode (Ralph-style autonomy)");
     let loop_widget = Paragraph::new(loop_text)
         .style(field_style(spawn_state.active_field == 4))
         .block(
@@ -808,7 +807,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         "[ ]"
     };
-    let sprite_text = format!("{} Run on remote Sprite (cloud VM)", sprite_checkbox);
+    let sprite_text = format!("{sprite_checkbox} Run on remote Sprite (cloud VM)");
     let sprite_widget = Paragraph::new(sprite_text)
         .style(field_style(spawn_state.active_field == 7))
         .block(
@@ -824,7 +823,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         "(enable Sprite mode to configure)"
     };
-    let network_widget = Paragraph::new(format!("<  {}  >", network_display))
+    let network_widget = Paragraph::new(format!("<  {network_display}  >"))
         .style(if spawn_state.use_sprite {
             field_style(spawn_state.active_field == 8)
         } else {
@@ -902,7 +901,7 @@ fn format_timestamp(ts: i64) -> String {
         let hours = (secs / 3600) % 24;
         let mins = (secs / 60) % 60;
         let secs = secs % 60;
-        format!("{:02}:{:02}:{:02}", hours, mins, secs)
+        format!("{hours:02}:{mins:02}:{secs:02}")
     } else {
         "??:??:??".to_string()
     }

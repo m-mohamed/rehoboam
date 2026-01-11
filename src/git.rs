@@ -74,7 +74,7 @@ impl GitController {
             .and_then(|n| n.to_str())
             .unwrap_or("repo");
 
-        let worktree_name = format!("{}-{}", repo_name, safe_branch);
+        let worktree_name = format!("{repo_name}-{safe_branch}");
         let worktree_path = self
             .repo_path
             .parent()

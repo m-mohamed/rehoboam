@@ -112,7 +112,7 @@ pub fn render_agent_card(
                         if running == 1 { "" } else { "s" }
                     )
                 } else {
-                    format!("{} done", total)
+                    format!("{total} done")
                 };
                 content.push(Line::from(display).style(Style::default().fg(colors::WORKING)));
             } else {

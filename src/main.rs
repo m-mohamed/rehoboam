@@ -1,3 +1,29 @@
+// Clippy configuration: enable pedantic but allow overly strict lints
+#![allow(clippy::missing_errors_doc)] // Internal functions don't need # Errors docs
+#![allow(clippy::missing_panics_doc)] // Internal functions don't need # Panics docs
+#![allow(clippy::must_use_candidate)] // Not all getters need #[must_use]
+#![allow(clippy::module_name_repetitions)] // e.g., SpriteConfig in sprite module is fine
+#![allow(clippy::doc_markdown)] // Don't require backticks around WezTerm, JSON, etc.
+#![allow(clippy::too_many_lines)] // Some functions are naturally long
+#![allow(clippy::struct_excessive_bools)] // Config structs can have multiple bool fields
+#![allow(clippy::similar_names)] // Allow similar variable names like tmux/tmux_pane
+#![allow(clippy::cast_possible_truncation)] // We're careful with our casts
+#![allow(clippy::cast_sign_loss)] // Timestamp conversions are safe
+#![allow(clippy::cast_precision_loss)] // Duration to f64 precision loss is acceptable
+#![allow(clippy::significant_drop_tightening)] // Lock guard drops are intentional
+#![allow(clippy::redundant_closure_for_method_calls)] // Sometimes closures are clearer
+#![allow(clippy::if_not_else)] // Negative conditions can be clearer for early returns
+#![allow(clippy::match_same_arms)] // Explicit arms are clearer than combined patterns
+#![allow(clippy::single_match_else)] // match with else is fine for Result handling
+#![allow(clippy::manual_let_else)] // if-let is clearer for multi-line error handling
+#![allow(clippy::items_after_statements)] // Helper closures can be defined inline
+#![allow(clippy::option_if_let_else)] // if-let is more readable for Option handling
+#![allow(clippy::unnecessary_wraps)] // Some functions return Result for consistency
+#![allow(clippy::needless_pass_by_value)] // PathBuf by value is fine for config loading
+#![allow(clippy::trivially_copy_pass_by_ref)] // &self on Copy types follows Rust conventions
+#![allow(clippy::cast_possible_wrap)] // Timestamp u64->i64 won't overflow until year 292 billion
+#![allow(clippy::assigning_clones)] // .clone() is clearer than .clone_from() in most cases
+
 //! Rehoboam - Real-time observability TUI for Claude Code agents
 //!
 //! Named after Westworld's AI that tracks and predicts every human's path.
@@ -38,9 +64,7 @@ const SESSION_ID_PREFIX_LEN: usize = 8;
 
 /// Get the log directory path
 fn get_log_dir() -> PathBuf {
-    directories::BaseDirs::new()
-        .map(|dirs| dirs.cache_dir().join("rehoboam").join("logs"))
-        .unwrap_or_else(|| PathBuf::from("/tmp/rehoboam/logs"))
+    directories::BaseDirs::new().map_or_else(|| PathBuf::from("/tmp/rehoboam/logs"), |dirs| dirs.cache_dir().join("rehoboam").join("logs"))
 }
 
 /// Install the binary to ~/.local/bin/
@@ -114,8 +138,13 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
     let wezterm_pane = std::env::var("WEZTERM_PANE").ok();
     let tmux_pane = std::env::var("TMUX_PANE").ok();
+
+    // Clone for debug logging if fallback is needed
+    let wezterm_debug = wezterm_pane.clone();
+    let tmux_debug = tmux_pane.clone();
+
     let pane_id = wezterm_pane
-        .or_else(|| tmux_pane.clone()) // Tmux: %0, %1, etc.
+        .or(tmux_pane) // Tmux: %0, %1, etc.
         .or_else(|| std::env::var("KITTY_WINDOW_ID").ok())
         .or_else(|| std::env::var("ITERM_SESSION_ID").ok())
         .filter(|s| !s.is_empty())
@@ -123,8 +152,8 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
             // Fallback: first 8 chars of session_id (always available)
             tracing::debug!(
                 "No terminal pane ID found (WEZTERM_PANE={:?}, TMUX_PANE={:?}), using session_id fallback",
-                wezterm_pane,
-                tmux_pane
+                wezterm_debug,
+                tmux_debug
             );
             hook_input.session_id.chars().take(SESSION_ID_PREFIX_LEN).collect()
         });
@@ -174,7 +203,7 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
 
         if let Ok(Ok(mut stream)) = connect_result {
             if let Ok(json) = serde_json::to_string(&socket_event) {
-                let data = format!("{}\n", json);
+                let data = format!("{json}\n");
                 let _ = timeout(
                     Duration::from_millis(500),
                     stream.write_all(data.as_bytes()),
@@ -193,7 +222,7 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
                     Some("notification") => hook_input
                         .message
                         .unwrap_or_else(|| "Notification".to_string()),
-                    _ => format!("Approve in {}", project),
+                    _ => format!("Approve in {project}"),
                 };
                 notify::send("Claude Needs Attention", &msg, Some("Basso"));
             }
@@ -201,7 +230,7 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
                 let reason = hook_input.reason.unwrap_or_else(|| "Complete".to_string());
                 notify::send(
                     "Claude Done",
-                    &format!("{}: {}", project, reason),
+                    &format!("{project}: {reason}"),
                     Some("default"),
                 );
             }
@@ -520,7 +549,7 @@ async fn run_tui(
             Some(event) = event_rx.recv() => {
                 app.handle_event(event);
             }
-            _ = tokio::time::sleep(tick_duration) => {
+            () = tokio::time::sleep(tick_duration) => {
                 app.tick();
             }
         }

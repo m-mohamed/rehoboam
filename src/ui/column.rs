@@ -87,7 +87,7 @@ pub fn render_status_column(
     let visible_cards = (inner.height / CARD_HEIGHT) as usize;
     if agents.len() > visible_cards {
         let overflow_count = agents.len() - visible_cards;
-        let overflow_text = format!("... +{} more", overflow_count);
+        let overflow_text = format!("... +{overflow_count} more");
         let overflow_y = inner.y + inner.height.saturating_sub(1);
 
         // Render overflow indicator at bottom

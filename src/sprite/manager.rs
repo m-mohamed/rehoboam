@@ -122,7 +122,7 @@ impl SpriteManager {
             .map_err(|e| eyre!("Failed to set network policy: {}", e))?;
 
         // Generate agent ID
-        let agent_id = format!("sprite-{}", sprite_name);
+        let agent_id = format!("sprite-{sprite_name}");
 
         // Store session
         let session = SpriteSession {
@@ -186,9 +186,7 @@ export REHOBOAM_WS_URL="{ws_url}"
 export SPRITE_ID="{agent_id}"
 
 echo "Hook configuration complete"
-"#,
-            ws_url = ws_url,
-            agent_id = agent_id
+"#
         );
 
         let output = sprite

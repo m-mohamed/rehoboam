@@ -9,12 +9,12 @@ pub async fn listen(tx: mpsc::Sender<Event>, cancel: CancellationToken) {
     loop {
         tokio::select! {
             // Check for cancellation signal
-            _ = cancel.cancelled() => {
+            () = cancel.cancelled() => {
                 tracing::debug!("Input listener cancelled");
                 break;
             }
             // Poll for input with timeout
-            _ = tokio::time::sleep(Duration::from_millis(100)) => {
+            () = tokio::time::sleep(Duration::from_millis(100)) => {
                 // Use non-blocking poll (Duration::ZERO) since we're already in a timeout
                 if event::poll(Duration::ZERO).unwrap_or(false) {
                     if let Ok(CrosstermEvent::Key(key)) = event::read() {

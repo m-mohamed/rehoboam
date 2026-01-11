@@ -1,3 +1,13 @@
+// Clippy configuration
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::must_use_candidate)]
+#![allow(clippy::cast_possible_wrap)] // Timestamp u64->i64 won't overflow until year 292 billion
+#![allow(clippy::option_if_let_else)] // if-let is more readable in error handling
+#![allow(clippy::single_match_else)] // match is fine for Result handling
+#![allow(clippy::doc_markdown)] // Don't require backticks in doc comments
+#![allow(clippy::manual_let_else)] // if-let is clearer for multi-line error handling
+
 //! Rehoboam Bridge - Hook event forwarder for remote sprites
 //!
 //! A lightweight binary that runs inside Sprite VMs and forwards
@@ -7,8 +17,8 @@
 //!   rehoboam-bridge
 //!
 //! Environment variables:
-//!   REHOBOAM_HOST   - Rehoboam server address (required, e.g., "192.168.1.100:9876")
-//!   SPRITE_ID       - Unique identifier for this sprite (required)
+//!   `REHOBOAM_HOST` - Rehoboam server address (required, e.g., "192.168.1.100:9876")
+//!   `SPRITE_ID`     - Unique identifier for this sprite (required)
 //!
 //! The bridge reads hook JSON from stdin (same format as local hooks),
 //! wraps it with sprite metadata, and sends via WebSocket.
@@ -38,7 +48,7 @@ struct HookEventData {
     #[serde(default)]
     session_id: Option<String>,
 
-    /// Hook event name (PreToolUse, PostToolUse, etc.)
+    /// Hook event name (`PreToolUse`, `PostToolUse`, etc.)
     #[serde(default)]
     hook_event_name: Option<String>,
 
@@ -66,24 +76,18 @@ struct HookEventData {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     // Read required environment variables
-    let rehoboam_host = match std::env::var("REHOBOAM_HOST") {
-        Ok(host) => host,
-        Err(_) => {
-            eprintln!("Error: REHOBOAM_HOST environment variable not set");
-            eprintln!(
-                "Set it to the Rehoboam server address, e.g., REHOBOAM_HOST=192.168.1.100:9876"
-            );
-            std::process::exit(1);
-        }
+    let rehoboam_host = if let Ok(host) = std::env::var("REHOBOAM_HOST") { host } else {
+        eprintln!("Error: REHOBOAM_HOST environment variable not set");
+        eprintln!(
+            "Set it to the Rehoboam server address, e.g., REHOBOAM_HOST=192.168.1.100:9876"
+        );
+        std::process::exit(1);
     };
 
-    let sprite_id = match std::env::var("SPRITE_ID") {
-        Ok(id) => id,
-        Err(_) => {
-            eprintln!("Error: SPRITE_ID environment variable not set");
-            eprintln!("Set it to a unique identifier for this sprite");
-            std::process::exit(1);
-        }
+    let sprite_id = if let Ok(id) = std::env::var("SPRITE_ID") { id } else {
+        eprintln!("Error: SPRITE_ID environment variable not set");
+        eprintln!("Set it to a unique identifier for this sprite");
+        std::process::exit(1);
     };
 
     // Read JSON from stdin (Claude Code pipes it)
@@ -102,7 +106,7 @@ async fn main() {
     let hook_data: HookEventData = match serde_json::from_str(&input) {
         Ok(parsed) => parsed,
         Err(e) => {
-            eprintln!("Failed to parse hook JSON: {}", e);
+            eprintln!("Failed to parse hook JSON: {e}");
             std::process::exit(1);
         }
     };
@@ -121,12 +125,12 @@ async fn main() {
     };
 
     // Connect to Rehoboam WebSocket server
-    let ws_url = format!("ws://{}", rehoboam_host);
+    let ws_url = format!("ws://{rehoboam_host}");
     let (mut ws_stream, _) = match connect_async(&ws_url).await {
         Ok(conn) => conn,
         Err(e) => {
             // Silent failure - Rehoboam may not be running
-            eprintln!("WebSocket connection failed: {}", e);
+            eprintln!("WebSocket connection failed: {e}");
             return;
         }
     };
@@ -135,13 +139,13 @@ async fn main() {
     let json = match serde_json::to_string(&remote_event) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("Failed to serialize event: {}", e);
+            eprintln!("Failed to serialize event: {e}");
             return;
         }
     };
 
     if let Err(e) = ws_stream.send(Message::Text(json.into())).await {
-        eprintln!("Failed to send event: {}", e);
+        eprintln!("Failed to send event: {e}");
     }
 
     // Close connection cleanly

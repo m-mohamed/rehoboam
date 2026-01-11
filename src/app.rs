@@ -233,7 +233,7 @@ impl App {
                 self.jump_to_selected();
             }
             // Toggle help (use '?' since 'h' is now column navigation)
-            KeyCode::Char('?') | KeyCode::Char('H') => {
+            KeyCode::Char('?' | 'H') => {
                 self.show_help = !self.show_help;
             }
             // Toggle debug mode
@@ -607,13 +607,12 @@ impl App {
                 });
 
                 return;
-            } else {
-                tracing::warn!(
-                    "Sprite mode requested but no sprites token configured. \
-                     Set SPRITES_TOKEN or use --sprites-token. Falling back to tmux."
-                );
-                // Fall through to tmux spawning
             }
+            tracing::warn!(
+                "Sprite mode requested but no sprites token configured. \
+                 Set SPRITES_TOKEN or use --sprites-token. Falling back to tmux."
+            );
+            // Fall through to tmux spawning
         }
 
         // Determine working directory (worktree or project)
@@ -1100,10 +1099,10 @@ impl App {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let message = format!("Checkpoint from Rehoboam ({})", unix_ts);
+        let message = format!("Checkpoint from Rehoboam ({unix_ts})");
 
         match git.checkpoint(&message) {
-            Ok(_) => {
+            Ok(()) => {
                 tracing::info!(
                     pane_id = %agent.pane_id,
                     project = %agent.project,
@@ -1141,7 +1140,7 @@ impl App {
         let git = GitController::new(working_dir.clone());
 
         match git.push() {
-            Ok(_) => {
+            Ok(()) => {
                 tracing::info!(
                     pane_id = %agent.pane_id,
                     project = %agent.project,

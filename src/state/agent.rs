@@ -73,8 +73,7 @@ impl Status {
             "working" => Status::Working,
             "attention" => {
                 let attn = attention_type
-                    .map(AttentionType::from_str)
-                    .unwrap_or(AttentionType::Input);
+                    .map_or(AttentionType::Input, AttentionType::from_str);
                 Status::Attention(attn)
             }
             "compacting" => Status::Compacting,
@@ -261,7 +260,7 @@ impl Agent {
             return "--".to_string();
         }
         if secs < 60 {
-            format!("{}s", secs)
+            format!("{secs}s")
         } else if secs < 3600 {
             format!("{}m {:02}s", secs / 60, secs % 60)
         } else {
@@ -305,7 +304,7 @@ impl Agent {
             self.total_tool_calls += 1;
             let avg = self.avg_latency_ms.unwrap_or(0);
             self.avg_latency_ms = Some(
-                (avg * (self.total_tool_calls - 1) as u64 + latency) / self.total_tool_calls as u64,
+                (avg * u64::from(self.total_tool_calls - 1) + latency) / u64::from(self.total_tool_calls),
             );
         }
 
@@ -341,7 +340,7 @@ fn truncate_tool_name(tool: &str) -> String {
 /// Format latency for display
 fn format_latency(ms: u64) -> String {
     if ms < 1000 {
-        format!("{}ms", ms)
+        format!("{ms}ms")
     } else {
         format!("{:.1}s", ms as f64 / 1000.0)
     }

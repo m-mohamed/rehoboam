@@ -455,7 +455,7 @@ impl AppState {
         let mut to_remove: Vec<String> = Vec::new();
         let mut idle_transitions: Vec<String> = Vec::new();
 
-        for (pane_id, agent) in self.agents.iter() {
+        for (pane_id, agent) in &self.agents {
             let elapsed = now - agent.last_update;
 
             // Remove stale sessions (5 minutes of no events)

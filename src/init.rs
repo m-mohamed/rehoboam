@@ -78,8 +78,7 @@ fn hook_template() -> String {
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
     }}]
   }}
-}}"#,
-        path = path
+}}"#
     )
 }
 
@@ -212,9 +211,7 @@ pub fn list_projects() {
     println!("Discovered git repositories:\n");
     for project in &projects {
         let name = project
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
+            .file_name().map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
 
         let status = if has_rehoboam_hooks(project) {
             "✓ initialized"
@@ -240,9 +237,7 @@ pub fn select_projects() -> Vec<PathBuf> {
 
     for (i, project) in projects.iter().enumerate() {
         let name = project
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "unknown".to_string());
+            .file_name().map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
 
         let status = if has_rehoboam_hooks(project) {
             " [already initialized]"
@@ -283,9 +278,7 @@ pub fn select_projects() -> Vec<PathBuf> {
 /// Initialize a single project with hooks
 pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
     let name = project
-        .file_name()
-        .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+        .file_name().map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
 
     // Verify it's a directory
     if !project.is_dir() {
@@ -300,7 +293,7 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
     if !claude_dir.exists() {
         fs::create_dir_all(&claude_dir).map_err(|e| RehoboamError::InitError {
             project: name.clone(),
-            reason: format!("Failed to create .claude directory: {}", e),
+            reason: format!("Failed to create .claude directory: {e}"),
         })?;
     }
 
@@ -311,7 +304,7 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
     let our_hooks: serde_json::Value =
         serde_json::from_str(&template).map_err(|e| RehoboamError::InitError {
             project: name.clone(),
-            reason: format!("Failed to parse hook template: {}", e),
+            reason: format!("Failed to parse hook template: {e}"),
         })?;
 
     // Handle existing settings
@@ -320,13 +313,13 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
         let existing_content =
             fs::read_to_string(&settings_path).map_err(|e| RehoboamError::InitError {
                 project: name.clone(),
-                reason: format!("Failed to read existing settings: {}", e),
+                reason: format!("Failed to read existing settings: {e}"),
             })?;
 
         let mut existing: serde_json::Value =
             serde_json::from_str(&existing_content).map_err(|e| RehoboamError::InitError {
                 project: name.clone(),
-                reason: format!("Failed to parse existing settings: {}", e),
+                reason: format!("Failed to parse existing settings: {e}"),
             })?;
 
         // Merge hooks
@@ -345,18 +338,16 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
                                 entry
                                     .get("hooks")
                                     .and_then(|h| h.as_array())
-                                    .map(|hooks| {
+                                    .is_some_and(|hooks| {
                                         hooks.iter().any(|h| {
                                             h.get("command")
                                                 .and_then(|c| c.as_str())
-                                                .map(|s| {
+                                                .is_some_and(|s| {
                                                     s.contains("rehoboam hook")
                                                         || s.contains("rehoboam send")
                                                 })
-                                                .unwrap_or(false)
                                         })
                                     })
-                                    .unwrap_or(false)
                             });
 
                             if !has_rehoboam {
@@ -396,15 +387,15 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
     let formatted =
         serde_json::to_string_pretty(&final_settings).map_err(|e| RehoboamError::InitError {
             project: name.clone(),
-            reason: format!("Failed to serialize settings: {}", e),
+            reason: format!("Failed to serialize settings: {e}"),
         })?;
 
     fs::write(&settings_path, formatted).map_err(|e| RehoboamError::InitError {
         project: name.clone(),
-        reason: format!("Failed to write settings: {}", e),
+        reason: format!("Failed to write settings: {e}"),
     })?;
 
-    println!("  ✓ {} - hooks installed", name);
+    println!("  ✓ {name} - hooks installed");
     Ok(())
 }
 
@@ -427,7 +418,7 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
         println!("\nInitializing {} project(s)...\n", projects.len());
         for project in &projects {
             if let Err(e) = init_project(project, force) {
-                eprintln!("  ✗ {}", e);
+                eprintln!("  ✗ {e}");
             }
         }
         println!("\nDone!");
