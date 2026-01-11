@@ -295,6 +295,67 @@ impl GitController {
         Ok(!output.stdout.is_empty())
     }
 
+    /// Get git diff output for uncommitted changes
+    ///
+    /// Returns the diff with file stats (insertions/deletions per file).
+    /// If there are no changes, returns an empty string.
+    pub fn diff(&self) -> Result<String> {
+        if !self.is_git_repo() {
+            bail!("Not a git repository: {}", self.repo_path.display());
+        }
+
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["diff", "--stat", "--color=never"])
+            .output()
+            .wrap_err("Failed to execute git diff")?;
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Get full git diff output (with actual changes)
+    ///
+    /// Returns the complete diff showing line-by-line changes.
+    pub fn diff_full(&self) -> Result<String> {
+        if !self.is_git_repo() {
+            bail!("Not a git repository: {}", self.repo_path.display());
+        }
+
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["diff", "--color=never"])
+            .output()
+            .wrap_err("Failed to execute git diff")?;
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Push current branch to remote
+    ///
+    /// Pushes the current branch to the default remote (usually origin).
+    /// Will fail if the branch has no upstream configured.
+    pub fn push(&self) -> Result<()> {
+        if !self.is_git_repo() {
+            bail!("Not a git repository: {}", self.repo_path.display());
+        }
+
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["push"])
+            .output()
+            .wrap_err("Failed to execute git push")?;
+
+        if !output.status.success() {
+            bail!(
+                "git push failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        tracing::info!(repo = %self.repo_path.display(), "Pushed to remote");
+        Ok(())
+    }
+
     /// Delete a local branch
     ///
     /// Use this after removing a worktree to clean up the associated branch.

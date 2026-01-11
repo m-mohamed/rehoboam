@@ -24,4 +24,4 @@ pub use controller::SpriteController;
 #[allow(unused_imports)]
 pub use forwarder::HookEventForwarder;
 #[allow(unused_imports)]
-pub use manager::{SpriteManager, SpriteSession};
+pub use manager::{CheckpointRecord, SpriteManager, SpriteSession};

@@ -121,15 +121,11 @@ fn default_checkpoint_interval() -> u32 {
 
 impl RehoboamConfig {
     /// Load configuration from default path (~/.config/rehoboam/config.toml)
-    ///
-    /// Note: Config file loading scaffolded but not yet wired into main.
-    #[allow(dead_code)]
     pub fn load() -> Self {
         Self::load_from_path(Self::default_path())
     }
 
     /// Get the default configuration path
-    #[allow(dead_code)]
     pub fn default_path() -> PathBuf {
         directories::BaseDirs::new()
             .map(|dirs| dirs.config_dir().join("rehoboam").join("config.toml"))
@@ -137,7 +133,6 @@ impl RehoboamConfig {
     }
 
     /// Load configuration from a specific path
-    #[allow(dead_code)]
     pub fn load_from_path(path: PathBuf) -> Self {
         if !path.exists() {
             tracing::debug!("Config file not found at {:?}, using defaults", path);

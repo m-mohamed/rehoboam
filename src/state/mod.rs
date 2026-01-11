@@ -47,6 +47,8 @@ pub struct AppState {
     pub pending_loop_configs: HashMap<String, LoopConfig>,
     /// Set of sprite agent IDs (for quick lookup)
     pub sprite_agent_ids: HashSet<String>,
+    /// Set of currently connected sprite IDs
+    pub connected_sprites: HashSet<String>,
 }
 
 impl Default for AppState {
@@ -60,6 +62,7 @@ impl Default for AppState {
             selected_agents: HashSet::new(),
             pending_loop_configs: HashMap::new(),
             sprite_agent_ids: HashSet::new(),
+            connected_sprites: HashSet::new(),
         }
     }
 }
@@ -747,6 +750,28 @@ impl AppState {
     #[allow(dead_code)]
     pub fn sprite_agents(&self) -> impl Iterator<Item = &Agent> {
         self.agents.values().filter(|a| a.is_sprite)
+    }
+
+    /// Mark a sprite as connected
+    pub fn sprite_connected(&mut self, sprite_id: &str) {
+        self.connected_sprites.insert(sprite_id.to_string());
+    }
+
+    /// Mark a sprite as disconnected
+    pub fn sprite_disconnected(&mut self, sprite_id: &str) {
+        self.connected_sprites.remove(sprite_id);
+    }
+
+    /// Get count of connected sprites
+    pub fn connected_sprite_count(&self) -> usize {
+        self.connected_sprites.len()
+    }
+
+    /// Set the working directory for an agent (for git operations)
+    pub fn set_agent_working_dir(&mut self, pane_id: &str, working_dir: std::path::PathBuf) {
+        if let Some(agent) = self.agents.get_mut(pane_id) {
+            agent.working_dir = Some(working_dir);
+        }
     }
 }
 

@@ -329,9 +329,42 @@ async fn main() -> Result<()> {
             cli.sprite_ws_port
         );
 
-        // Spawn the WebSocket forwarder
-        let (mut sprite_rx, forwarder_handle) =
-            sprite::forwarder::spawn_forwarder(cli.sprite_ws_port);
+        // Spawn the WebSocket forwarder with status channel
+        let (mut sprite_rx, mut status_rx, forwarder_handle) =
+            sprite::forwarder::spawn_forwarder_with_status(cli.sprite_ws_port);
+
+        // Spawn task to forward ConnectionStatus -> Event::SpriteStatus
+        let status_event_tx = event_tx.clone();
+        let status_handle = tokio::spawn(async move {
+            use sprite::forwarder::ConnectionStatus;
+            while let Some(status) = status_rx.recv().await {
+                let (sprite_id, status_type) = match status {
+                    ConnectionStatus::Connected { sprite_id, addr } => {
+                        tracing::info!(sprite_id = %sprite_id, addr = %addr, "Sprite connected");
+                        (sprite_id, event::SpriteStatusType::Connected)
+                    }
+                    ConnectionStatus::Disconnected { sprite_id, reason } => {
+                        tracing::info!(sprite_id = %sprite_id, reason = %reason, "Sprite disconnected");
+                        (sprite_id, event::SpriteStatusType::Disconnected)
+                    }
+                    ConnectionStatus::HeartbeatMissed { sprite_id } => {
+                        tracing::warn!(sprite_id = %sprite_id, "Sprite heartbeat missed");
+                        continue; // Don't send as event yet
+                    }
+                };
+
+                if let Err(e) = status_event_tx
+                    .send(event::Event::SpriteStatus {
+                        sprite_id,
+                        status: status_type,
+                    })
+                    .await
+                {
+                    tracing::error!("Failed to forward sprite status: {}", e);
+                    break;
+                }
+            }
+        });
 
         // Spawn task to convert RemoteHookEvent -> Event::RemoteHook
         let sprite_event_tx = event_tx.clone();
@@ -380,21 +413,44 @@ async fn main() -> Result<()> {
             }
         });
 
-        Some((forwarder_handle, converter_handle))
+        Some((forwarder_handle, converter_handle, status_handle))
     } else {
         None
     };
 
+    // Load configuration from file
+    let config = config::RehoboamConfig::load();
+    tracing::info!(
+        "Loaded config: sprites.enabled = {}",
+        config.sprites.enabled
+    );
+
+    // Create SpritesClient if token is provided
+    let sprites_client = cli.sprites_token.as_ref().map(|token| {
+        tracing::info!("Creating SpritesClient");
+        sprites::SpritesClient::new(token)
+    });
+
     // Run TUI
-    let result = run_tui(event_tx, event_rx, cli.debug, cli.tick_rate, cli.frame_rate).await;
+    let result = run_tui(
+        event_tx,
+        event_rx,
+        cli.debug,
+        cli.tick_rate,
+        cli.frame_rate,
+        config,
+        sprites_client,
+    )
+    .await;
 
     // Cleanup
     socket_handle.abort();
 
     // Cleanup sprite handles if enabled
-    if let Some((forwarder_handle, converter_handle)) = sprite_handle {
+    if let Some((forwarder_handle, converter_handle, status_handle)) = sprite_handle {
         forwarder_handle.abort();
         converter_handle.abort();
+        status_handle.abort();
         tracing::debug!("Sprite forwarder shut down");
     }
 
@@ -412,6 +468,8 @@ async fn run_tui(
     debug_mode: bool,
     tick_rate: f64,
     frame_rate: f64,
+    config: config::RehoboamConfig,
+    sprites_client: Option<sprites::SpritesClient>,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio_util::sync::CancellationToken;
@@ -432,8 +490,8 @@ async fn run_tui(
     // RAII guard ensures terminal is restored on panic or early return
     let _guard = tui::TerminalGuard;
 
-    // Create app state
-    let mut app = App::new(debug_mode);
+    // Create app state with config and sprites client
+    let mut app = App::new(debug_mode, config, sprites_client);
 
     // Create cancellation token for graceful shutdown
     let cancel = CancellationToken::new();

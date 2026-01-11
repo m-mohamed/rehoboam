@@ -195,6 +195,10 @@ pub struct Agent {
     pub is_sprite: bool,
     /// Sprite ID (same as pane_id for sprite agents)
     pub sprite_id: Option<String>,
+
+    // v1.0 Git operations
+    /// Working directory for git operations (worktree path)
+    pub working_dir: Option<std::path::PathBuf>,
 }
 
 impl Agent {
@@ -227,6 +231,8 @@ impl Agent {
             // v0.10.0 Sprite tracking
             is_sprite: false,
             sprite_id: None,
+            // v1.0 Git operations
+            working_dir: None,
         }
     }
 

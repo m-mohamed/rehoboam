@@ -58,6 +58,16 @@ pub fn render(f: &mut Frame, app: &App) {
         render_help(f);
     }
 
+    // Render diff modal if active
+    if app.show_diff {
+        render_diff_modal(f, app);
+    }
+
+    // Render checkpoint timeline if active
+    if app.show_checkpoint_timeline {
+        render_checkpoint_timeline(f, app);
+    }
+
     // Render input dialog if in input mode
     if app.input_mode == InputMode::Input {
         render_input_dialog(f, app);
@@ -92,13 +102,25 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         ViewMode::Kanban => "",
         ViewMode::Project => " [PROJECT VIEW]",
     };
-    // Show sprite count if any remote agents
+    // Show sprite count with connection status if any remote agents
+    let connected_count = app.state.connected_sprite_count();
     let sprite_indicator = if sprite_count > 0 {
-        format!(
-            " [☁ {} sprite{}]",
-            sprite_count,
-            if sprite_count == 1 { "" } else { "s" }
-        )
+        if connected_count > 0 {
+            // Show connected/total (e.g., "☁ 2/3 sprites")
+            format!(
+                " [☁ {}/{} sprite{}]",
+                connected_count,
+                sprite_count,
+                if sprite_count == 1 { "" } else { "s" }
+            )
+        } else {
+            // No sprites connected yet
+            format!(
+                " [☁ {} sprite{} (offline)]",
+                sprite_count,
+                if sprite_count == 1 { "" } else { "s" }
+            )
+        }
     } else {
         String::new()
     };
@@ -405,6 +427,14 @@ fn render_help(f: &mut Frame) {
   c           Custom input (type & send)
   s           Spawn new agent
 
+  Git Operations
+  D           Show git diff
+  g           Git commit (checkpoint)
+  p           Git push
+
+  Sprites
+  t           Checkpoint timeline
+
   Bulk Operations
   Space       Toggle selection
   Y/N         Bulk approve/reject
@@ -433,6 +463,161 @@ fn render_help(f: &mut Frame) {
 
     f.render_widget(ratatui::widgets::Clear, area);
     f.render_widget(help, area);
+}
+
+fn render_diff_modal(f: &mut Frame, app: &App) {
+    let area = centered_rect(80, 80, f.area());
+
+    // Get project name for title
+    let title = if let Some(agent) = app.state.selected_agent() {
+        format!(" Git Diff: {} ", agent.project)
+    } else {
+        " Git Diff ".to_string()
+    };
+
+    // Style diff output with colors
+    let lines: Vec<Line> = app
+        .diff_content
+        .lines()
+        .map(|line| {
+            let style = if line.starts_with('+') && !line.starts_with("+++") {
+                Style::default().fg(Color::Green)
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                Style::default().fg(Color::Red)
+            } else if line.starts_with("@@") {
+                Style::default().fg(Color::Cyan)
+            } else if line.starts_with("diff ") || line.starts_with("index ") {
+                Style::default().fg(Color::Yellow).add_modifier(Modifier::DIM)
+            } else {
+                Style::default().fg(colors::FG)
+            };
+            Line::styled(line, style)
+        })
+        .collect();
+
+    let content = if lines.is_empty() {
+        Paragraph::new("No uncommitted changes")
+            .style(Style::default().fg(colors::FG).add_modifier(Modifier::DIM))
+            .alignment(Alignment::Center)
+    } else {
+        Paragraph::new(lines)
+    };
+
+    let diff_widget = content.block(
+        Block::default()
+            .title(title)
+            .title_bottom(" [D] Close  [g] Commit  [p] Push ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors::HIGHLIGHT))
+            .border_type(ratatui::widgets::BorderType::Double)
+            .style(Style::default().bg(colors::BG)),
+    );
+
+    f.render_widget(ratatui::widgets::Clear, area);
+    f.render_widget(diff_widget, area);
+}
+
+fn render_checkpoint_timeline(f: &mut Frame, app: &App) {
+    let area = centered_rect(70, 60, f.area());
+
+    // Get project name for title
+    let title = if let Some(agent) = app.state.selected_agent() {
+        format!(" Checkpoint Timeline: {} ", agent.project)
+    } else {
+        " Checkpoint Timeline ".to_string()
+    };
+
+    let content = if app.checkpoint_timeline.is_empty() {
+        // Empty state
+        let empty_msg = vec![
+            Line::from(""),
+            Line::styled(
+                "No checkpoints yet",
+                Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
+            ),
+            Line::from(""),
+            Line::styled(
+                "Checkpoints are created automatically during sprite execution",
+                Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
+            ),
+            Line::styled(
+                "or manually via the Sprites API.",
+                Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
+            ),
+        ];
+        Paragraph::new(empty_msg).alignment(Alignment::Center)
+    } else {
+        // Build timeline list
+        let items: Vec<Line> = app
+            .checkpoint_timeline
+            .iter()
+            .enumerate()
+            .map(|(i, cp)| {
+                let prefix = if i == app.selected_checkpoint {
+                    "▶ "
+                } else {
+                    "  "
+                };
+                let style = if i == app.selected_checkpoint {
+                    Style::default()
+                        .fg(colors::HIGHLIGHT)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(colors::FG)
+                };
+
+                // Format elapsed time
+                let elapsed = cp.created_at.elapsed();
+                let elapsed_str = format_checkpoint_elapsed(elapsed);
+
+                // Show iteration if in loop mode
+                let iter_str = if cp.iteration > 0 {
+                    format!(" [iter {}]", cp.iteration)
+                } else {
+                    String::new()
+                };
+
+                Line::styled(
+                    format!(
+                        "{}{} │ {} ago{} │ {}",
+                        prefix,
+                        &cp.id[..cp.id.len().min(8)],
+                        elapsed_str,
+                        iter_str,
+                        cp.comment
+                    ),
+                    style,
+                )
+            })
+            .collect();
+
+        Paragraph::new(items)
+    };
+
+    let timeline_widget = content.block(
+        Block::default()
+            .title(title)
+            .title_bottom(" [↑/k] Up  [↓/j] Down  [Enter] Restore  [t/Esc] Close ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors::HIGHLIGHT))
+            .border_type(ratatui::widgets::BorderType::Double)
+            .style(Style::default().bg(colors::BG)),
+    );
+
+    f.render_widget(ratatui::widgets::Clear, area);
+    f.render_widget(timeline_widget, area);
+}
+
+/// Format elapsed time for checkpoint display
+fn format_checkpoint_elapsed(elapsed: std::time::Duration) -> String {
+    let secs = elapsed.as_secs();
+    if secs < 60 {
+        format!("{}s", secs)
+    } else if secs < 3600 {
+        format!("{}m", secs / 60)
+    } else {
+        format!("{}h", secs / 3600)
+    }
 }
 
 fn render_input_dialog(f: &mut Frame, app: &App) {
@@ -465,9 +650,9 @@ fn render_input_dialog(f: &mut Frame, app: &App) {
 }
 
 fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
-    let area = centered_rect(70, 70, f.area());
+    let area = centered_rect(70, 80, f.area());
 
-    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, instructions
+    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, sprite toggle, network policy, instructions
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -477,6 +662,8 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             Constraint::Length(3), // Worktree toggle (3)
             Constraint::Length(3), // Loop mode toggle (4)
             Constraint::Length(3), // Loop options (5, 6)
+            Constraint::Length(3), // Sprite toggle (7)
+            Constraint::Length(3), // Network policy (8)
             Constraint::Length(2), // Instructions
         ])
         .margin(1)
@@ -615,6 +802,48 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .border_style(border_style(spawn_state.active_field == 6)),
         );
 
+    // Sprite toggle (7)
+    let sprite_checkbox = if spawn_state.use_sprite {
+        "[x]"
+    } else {
+        "[ ]"
+    };
+    let sprite_text = format!("{} Run on remote Sprite (cloud VM)", sprite_checkbox);
+    let sprite_widget = Paragraph::new(sprite_text)
+        .style(field_style(spawn_state.active_field == 7))
+        .block(
+            Block::default()
+                .title(" Sprite Mode ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 7)),
+        );
+
+    // Network policy selector (8) - only visible when sprite mode is enabled
+    let network_display = if spawn_state.use_sprite {
+        spawn_state.network_preset.display()
+    } else {
+        "(enable Sprite mode to configure)"
+    };
+    let network_widget = Paragraph::new(format!("<  {}  >", network_display))
+        .style(if spawn_state.use_sprite {
+            field_style(spawn_state.active_field == 8)
+        } else {
+            Style::default()
+                .fg(colors::FG)
+                .add_modifier(Modifier::DIM)
+        })
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .title(" Network Policy (←/→ to change) ")
+                .borders(Borders::ALL)
+                .border_style(if spawn_state.use_sprite {
+                    border_style(spawn_state.active_field == 8)
+                } else {
+                    Style::default().fg(colors::BORDER).add_modifier(Modifier::DIM)
+                }),
+        );
+
     // Instructions
     let instructions =
         Paragraph::new("[Tab/↑↓] Navigate  [Space] Toggle  [Enter] Spawn  [Esc] Cancel")
@@ -638,7 +867,9 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     f.render_widget(loop_widget, chunks[4]);
     f.render_widget(iter_widget, loop_options_chunks[0]);
     f.render_widget(stop_widget, loop_options_chunks[1]);
-    f.render_widget(instructions, chunks[6]);
+    f.render_widget(sprite_widget, chunks[6]);
+    f.render_widget(network_widget, chunks[7]);
+    f.render_widget(instructions, chunks[8]);
 }
 
 // Helper functions

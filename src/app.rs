@@ -1,8 +1,12 @@
+use crate::config::RehoboamConfig;
 use crate::event::Event;
 use crate::git::GitController;
+use crate::sprite::controller::SpriteController;
+use crate::sprite::CheckpointRecord;
 use crate::state::AppState;
 use crate::tmux::TmuxController;
 use crossterm::event::{KeyCode, KeyModifiers};
+use sprites::SpritesClient;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -40,7 +44,8 @@ pub struct SpawnState {
     /// Whether to create a git worktree for isolation
     pub use_worktree: bool,
     /// Which field is being edited
-    /// 0 = project, 1 = prompt, 2 = branch, 3 = worktree toggle, 4 = loop toggle, 5 = max iter, 6 = stop word
+    /// 0 = project, 1 = prompt, 2 = branch, 3 = worktree toggle, 4 = loop toggle,
+    /// 5 = max iter, 6 = stop word, 7 = sprite toggle, 8 = network policy
     pub active_field: usize,
     // v0.9.0 Loop Mode fields
     /// Whether to enable loop mode for the new agent
@@ -49,6 +54,10 @@ pub struct SpawnState {
     pub loop_max_iterations: String,
     /// Stop word to detect completion (default: "DONE")
     pub loop_stop_word: String,
+    /// Whether to spawn on a remote sprite (cloud VM)
+    pub use_sprite: bool,
+    /// Network policy for sprite (only applies when use_sprite is true)
+    pub network_preset: crate::sprite::config::NetworkPreset,
 }
 
 impl Default for SpawnState {
@@ -62,12 +71,15 @@ impl Default for SpawnState {
             loop_enabled: false,
             loop_max_iterations: "50".to_string(),
             loop_stop_word: "DONE".to_string(),
+            use_sprite: false,
+            network_preset: crate::sprite::config::NetworkPreset::ClaudeOnly,
         }
     }
 }
 
 /// Number of fields in spawn dialog
-const SPAWN_FIELD_COUNT: usize = 7;
+/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=sprite, 8=network
+const SPAWN_FIELD_COUNT: usize = 9;
 
 /// Application state and logic
 pub struct App {
@@ -89,10 +101,24 @@ pub struct App {
     pub view_mode: ViewMode,
     /// Spawn dialog state
     pub spawn_state: SpawnState,
+    /// Application configuration
+    pub config: RehoboamConfig,
+    /// Sprites API client (None if sprites not enabled)
+    pub sprites_client: Option<SpritesClient>,
+    /// Show diff modal
+    pub show_diff: bool,
+    /// Diff content to display
+    pub diff_content: String,
+    /// Show checkpoint timeline modal
+    pub show_checkpoint_timeline: bool,
+    /// Checkpoint history for timeline display
+    pub checkpoint_timeline: Vec<CheckpointRecord>,
+    /// Selected checkpoint index in timeline
+    pub selected_checkpoint: usize,
 }
 
 impl App {
-    pub fn new(debug_mode: bool) -> Self {
+    pub fn new(debug_mode: bool, config: RehoboamConfig, sprites_client: Option<SpritesClient>) -> Self {
         Self {
             state: AppState::new(),
             should_quit: false,
@@ -105,6 +131,13 @@ impl App {
             input_buffer: String::new(),
             view_mode: ViewMode::Kanban,
             spawn_state: SpawnState::default(),
+            config,
+            sprites_client,
+            show_diff: false,
+            diff_content: String::new(),
+            show_checkpoint_timeline: false,
+            checkpoint_timeline: Vec::new(),
+            selected_checkpoint: 0,
         }
     }
 
@@ -136,7 +169,17 @@ impl App {
             }
             Event::SpriteStatus { sprite_id, status } => {
                 // Handle sprite status changes (connected/disconnected/destroyed)
-                tracing::debug!("Sprite {} status: {:?}", sprite_id, status);
+                use crate::event::SpriteStatusType;
+                match status {
+                    SpriteStatusType::Connected => {
+                        tracing::info!("Sprite connected: {}", sprite_id);
+                        self.state.sprite_connected(&sprite_id);
+                    }
+                    SpriteStatusType::Disconnected | SpriteStatusType::Destroyed => {
+                        tracing::info!("Sprite disconnected: {}", sprite_id);
+                        self.state.sprite_disconnected(&sprite_id);
+                    }
+                }
                 self.needs_render = true;
             }
         }
@@ -147,6 +190,12 @@ impl App {
         // Handle Ctrl+C always
         if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
             self.should_quit = true;
+            return;
+        }
+
+        // Handle modal overlays first
+        if self.show_checkpoint_timeline {
+            self.handle_key_checkpoint_timeline(key);
             return;
         }
 
@@ -293,6 +342,24 @@ impl App {
                 }
             }
 
+            // === v1.0 Git Operations ===
+            // Git commit (stage all + commit)
+            KeyCode::Char('g') => {
+                self.git_commit_selected();
+            }
+            // Git push
+            KeyCode::Char('p') => {
+                self.git_push_selected();
+            }
+            // Git diff viewer
+            KeyCode::Char('D') => {
+                self.toggle_diff_view();
+            }
+            // Checkpoint timeline (sprites only)
+            KeyCode::Char('t') => {
+                self.toggle_checkpoint_timeline();
+            }
+
             _ => {}
         }
     }
@@ -344,10 +411,11 @@ impl App {
             }
             // Spawn the agent (from any field)
             KeyCode::Enter => {
-                // Toggle fields (3 = worktree, 4 = loop mode)
+                // Toggle fields (3 = worktree, 4 = loop mode, 7 = sprite)
                 match self.spawn_state.active_field {
                     3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                     4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
+                    7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                     _ => {
                         // Spawn if we have a project path
                         if !self.spawn_state.project_path.is_empty() {
@@ -362,8 +430,20 @@ impl App {
             KeyCode::Char(' ') => match self.spawn_state.active_field {
                 3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                 4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
+                7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                 _ => {}
             },
+            // Cycle network policy with left/right arrows
+            KeyCode::Left => {
+                if self.spawn_state.active_field == 8 {
+                    self.spawn_state.network_preset = self.spawn_state.network_preset.prev();
+                }
+            }
+            KeyCode::Right => {
+                if self.spawn_state.active_field == 8 {
+                    self.spawn_state.network_preset = self.spawn_state.network_preset.next();
+                }
+            }
             // Delete last character from active text field
             KeyCode::Backspace => match self.spawn_state.active_field {
                 0 => {
@@ -404,6 +484,14 @@ impl App {
                         self.spawn_state.loop_enabled = false;
                     }
                 }
+                7 => {
+                    // Toggle sprite mode on 'y' or 'n'
+                    if c == 'y' || c == 'Y' {
+                        self.spawn_state.use_sprite = true;
+                    } else if c == 'n' || c == 'N' {
+                        self.spawn_state.use_sprite = false;
+                    }
+                }
                 5 => {
                     // Only allow digits for max iterations
                     if c.is_ascii_digit() {
@@ -433,6 +521,100 @@ impl App {
         let prompt = &self.spawn_state.prompt;
         let use_worktree = self.spawn_state.use_worktree;
         let branch_name = &self.spawn_state.branch_name;
+
+        // Branch: Sprite spawning vs tmux spawning
+        if self.spawn_state.use_sprite {
+            if let Some(client) = &self.sprites_client {
+                tracing::info!(
+                    project = %project_path,
+                    prompt_len = prompt.len(),
+                    loop_enabled = self.spawn_state.loop_enabled,
+                    region = %self.config.sprites.default_region,
+                    "Spawning agent on remote sprite"
+                );
+
+                // Create sprite asynchronously
+                let client = client.clone();
+                let project = project_path.clone();
+                let prompt_clone = prompt.clone();
+                let loop_enabled = self.spawn_state.loop_enabled;
+                let max_iter = self
+                    .spawn_state
+                    .loop_max_iterations
+                    .parse::<u32>()
+                    .unwrap_or(50);
+                let stop_word = self.spawn_state.loop_stop_word.clone();
+
+                tokio::spawn(async move {
+                    // Generate sprite name from project
+                    let sprite_name = format!(
+                        "rehoboam-{}",
+                        project.replace('/', "-").replace('.', "-")
+                    );
+
+                    tracing::info!(sprite_name = %sprite_name, "Creating sprite...");
+
+                    match client.create(&sprite_name).await {
+                        Ok(sprite) => {
+                            tracing::info!(sprite_name = %sprite_name, "Sprite created");
+
+                            // Start Claude Code in the sprite
+                            let claude_cmd = if prompt_clone.is_empty() {
+                                "claude".to_string()
+                            } else {
+                                format!("claude '{}'", prompt_clone.replace('\'', "'\\''"))
+                            };
+
+                            match sprite
+                                .command("bash")
+                                .arg("-c")
+                                .arg(&claude_cmd)
+                                .current_dir("/workspace")
+                                .spawn()
+                                .await
+                            {
+                                Ok(_) => {
+                                    tracing::info!(
+                                        sprite_name = %sprite_name,
+                                        loop_enabled = loop_enabled,
+                                        "Claude Code started in sprite"
+                                    );
+                                    if loop_enabled {
+                                        tracing::debug!(
+                                            max_iter = max_iter,
+                                            stop_word = %stop_word,
+                                            "Loop mode enabled for sprite"
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        error = %e,
+                                        sprite_name = %sprite_name,
+                                        "Failed to start Claude in sprite"
+                                    );
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                sprite_name = %sprite_name,
+                                "Failed to create sprite"
+                            );
+                        }
+                    }
+                });
+
+                return;
+            } else {
+                tracing::warn!(
+                    "Sprite mode requested but no sprites token configured. \
+                     Set SPRITES_TOKEN or use --sprites-token. Falling back to tmux."
+                );
+                // Fall through to tmux spawning
+            }
+        }
 
         // Determine working directory (worktree or project)
         let working_dir: PathBuf = if use_worktree && !branch_name.is_empty() {
@@ -495,6 +677,10 @@ impl App {
                         &self.spawn_state.loop_stop_word,
                     );
                 }
+
+                // Store working directory for git operations
+                self.state
+                    .set_agent_working_dir(&pane_id, working_dir.clone());
 
                 // Start Claude Code in the new pane
                 if let Err(e) = TmuxController::send_keys(&pane_id, "claude") {
@@ -637,7 +823,7 @@ impl App {
     /// Approve permission request for selected agent
     ///
     /// Mode-aware: Uses TmuxController for local tmux agents,
-    /// logs warning for sprite agents (async not yet wired).
+    /// SpriteController for sprite agents (async).
     fn approve_selected(&self) {
         if let Some(agent) = self.state.selected_agent() {
             let pane_id = &agent.pane_id;
@@ -650,13 +836,20 @@ impl App {
             );
 
             if agent.is_sprite {
-                // Sprite agents: approval would go through SpriteController (async)
-                // For now, log that this needs async implementation
-                tracing::info!(
-                    pane_id = %pane_id,
-                    "Sprite approval queued (async via SpriteController)"
-                );
-                // TODO: Wire async sprite approval through event system
+                // Sprite agents: approval goes through SpriteController (async)
+                if let Some(client) = &self.sprites_client {
+                    let sprite = client.sprite(pane_id);
+                    tokio::spawn(async move {
+                        if let Err(e) = SpriteController::approve(&sprite).await {
+                            tracing::error!(error = %e, "Sprite approval failed");
+                        }
+                    });
+                } else {
+                    tracing::warn!(
+                        pane_id = %pane_id,
+                        "Cannot approve sprite: sprites client not configured"
+                    );
+                }
             } else if pane_id.starts_with('%') {
                 // Tmux panes: send directly
                 if let Err(e) = TmuxController::send_keys(pane_id, "y") {
@@ -678,7 +871,7 @@ impl App {
     /// Reject permission request for selected agent
     ///
     /// Mode-aware: Uses TmuxController for local tmux agents,
-    /// logs warning for sprite agents (async not yet wired).
+    /// SpriteController for sprite agents (async).
     fn reject_selected(&self) {
         if let Some(agent) = self.state.selected_agent() {
             let pane_id = &agent.pane_id;
@@ -691,12 +884,20 @@ impl App {
             );
 
             if agent.is_sprite {
-                // Sprite agents: rejection would go through SpriteController (async)
-                tracing::info!(
-                    pane_id = %pane_id,
-                    "Sprite rejection queued (async via SpriteController)"
-                );
-                // TODO: Wire async sprite rejection through event system
+                // Sprite agents: rejection goes through SpriteController (async)
+                if let Some(client) = &self.sprites_client {
+                    let sprite = client.sprite(pane_id);
+                    tokio::spawn(async move {
+                        if let Err(e) = SpriteController::reject(&sprite).await {
+                            tracing::error!(error = %e, "Sprite rejection failed");
+                        }
+                    });
+                } else {
+                    tracing::warn!(
+                        pane_id = %pane_id,
+                        "Cannot reject sprite: sprites client not configured"
+                    );
+                }
             } else if pane_id.starts_with('%') {
                 // Tmux panes: send directly
                 if let Err(e) = TmuxController::send_keys(pane_id, "n") {
@@ -737,13 +938,24 @@ impl App {
             }
         }
 
-        // Handle sprite agents (async operation logged for now)
+        // Handle sprite agents (async)
         if !sprite_agents.is_empty() {
-            tracing::info!(
-                count = sprite_agents.len(),
-                "Sprite bulk approval queued (async via SpriteController)"
-            );
-            // TODO: Wire async sprite approval through event system
+            if let Some(client) = &self.sprites_client {
+                tracing::info!(count = sprite_agents.len(), "Bulk approving sprite agents");
+                for sprite_id in sprite_agents {
+                    let sprite = client.sprite(&sprite_id);
+                    tokio::spawn(async move {
+                        if let Err(e) = SpriteController::approve(&sprite).await {
+                            tracing::error!(sprite_id = %sprite_id, error = %e, "Sprite approval failed");
+                        }
+                    });
+                }
+            } else {
+                tracing::warn!(
+                    count = sprite_agents.len(),
+                    "Cannot approve sprites: sprites client not configured"
+                );
+            }
         }
 
         self.state.clear_selection();
@@ -771,13 +983,24 @@ impl App {
             }
         }
 
-        // Handle sprite agents (async operation logged for now)
+        // Handle sprite agents (async)
         if !sprite_agents.is_empty() {
-            tracing::info!(
-                count = sprite_agents.len(),
-                "Sprite bulk rejection queued (async via SpriteController)"
-            );
-            // TODO: Wire async sprite rejection through event system
+            if let Some(client) = &self.sprites_client {
+                tracing::info!(count = sprite_agents.len(), "Bulk rejecting sprite agents");
+                for sprite_id in sprite_agents {
+                    let sprite = client.sprite(&sprite_id);
+                    tokio::spawn(async move {
+                        if let Err(e) = SpriteController::reject(&sprite).await {
+                            tracing::error!(sprite_id = %sprite_id, error = %e, "Sprite rejection failed");
+                        }
+                    });
+                }
+            } else {
+                tracing::warn!(
+                    count = sprite_agents.len(),
+                    "Cannot reject sprites: sprites client not configured"
+                );
+            }
         }
 
         self.state.clear_selection();
@@ -806,15 +1029,278 @@ impl App {
             }
         }
 
-        // Handle sprite agents (async operation logged for now)
+        // Handle sprite agents (async)
         if !sprite_agents.is_empty() {
-            tracing::info!(
-                count = sprite_agents.len(),
-                "Sprite bulk kill queued (async via SpriteController)"
-            );
-            // TODO: Wire async sprite kill through event system
+            if let Some(client) = &self.sprites_client {
+                tracing::info!(count = sprite_agents.len(), "Bulk killing sprite agents");
+                for sprite_id in sprite_agents {
+                    let sprite = client.sprite(&sprite_id);
+                    tokio::spawn(async move {
+                        if let Err(e) = SpriteController::kill(&sprite).await {
+                            tracing::error!(sprite_id = %sprite_id, error = %e, "Sprite kill failed");
+                        }
+                    });
+                }
+            } else {
+                tracing::warn!(
+                    count = sprite_agents.len(),
+                    "Cannot kill sprites: sprites client not configured"
+                );
+            }
         }
 
         self.state.clear_selection();
+    }
+
+    // === v1.0 Git Operations ===
+
+    /// Git commit on selected agent's worktree
+    ///
+    /// Stages all changes and creates a checkpoint commit.
+    fn git_commit_selected(&mut self) {
+        let Some(agent) = self.state.selected_agent() else {
+            tracing::warn!("No agent selected for git commit");
+            return;
+        };
+
+        let Some(ref working_dir) = agent.working_dir else {
+            tracing::warn!(
+                pane_id = %agent.pane_id,
+                project = %agent.project,
+                "No working directory set for agent"
+            );
+            return;
+        };
+
+        let git = GitController::new(working_dir.clone());
+
+        // Check for changes first
+        match git.has_changes() {
+            Ok(false) => {
+                tracing::info!(
+                    pane_id = %agent.pane_id,
+                    project = %agent.project,
+                    "No changes to commit"
+                );
+                return;
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    pane_id = %agent.pane_id,
+                    "Failed to check for changes"
+                );
+                return;
+            }
+            Ok(true) => {}
+        }
+
+        // Create checkpoint commit
+        let unix_ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let message = format!("Checkpoint from Rehoboam ({})", unix_ts);
+
+        match git.checkpoint(&message) {
+            Ok(_) => {
+                tracing::info!(
+                    pane_id = %agent.pane_id,
+                    project = %agent.project,
+                    message = %message,
+                    "Git commit created"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    pane_id = %agent.pane_id,
+                    project = %agent.project,
+                    "Git commit failed"
+                );
+            }
+        }
+    }
+
+    /// Git push on selected agent's worktree
+    fn git_push_selected(&mut self) {
+        let Some(agent) = self.state.selected_agent() else {
+            tracing::warn!("No agent selected for git push");
+            return;
+        };
+
+        let Some(ref working_dir) = agent.working_dir else {
+            tracing::warn!(
+                pane_id = %agent.pane_id,
+                project = %agent.project,
+                "No working directory set for agent"
+            );
+            return;
+        };
+
+        let git = GitController::new(working_dir.clone());
+
+        match git.push() {
+            Ok(_) => {
+                tracing::info!(
+                    pane_id = %agent.pane_id,
+                    project = %agent.project,
+                    "Git push completed"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    pane_id = %agent.pane_id,
+                    project = %agent.project,
+                    "Git push failed"
+                );
+            }
+        }
+    }
+
+    /// Toggle diff view for selected agent
+    fn toggle_diff_view(&mut self) {
+        // If already showing, hide
+        if self.show_diff {
+            self.show_diff = false;
+            return;
+        }
+
+        let Some(agent) = self.state.selected_agent() else {
+            tracing::warn!("No agent selected for diff view");
+            return;
+        };
+
+        let Some(ref working_dir) = agent.working_dir else {
+            tracing::warn!(
+                pane_id = %agent.pane_id,
+                project = %agent.project,
+                "No working directory set for agent"
+            );
+            return;
+        };
+
+        let git = GitController::new(working_dir.clone());
+
+        // Get full diff (line-by-line changes)
+        match git.diff_full() {
+            Ok(diff) => {
+                if diff.is_empty() {
+                    tracing::info!(
+                        pane_id = %agent.pane_id,
+                        project = %agent.project,
+                        "No changes to display"
+                    );
+                    self.diff_content = "No uncommitted changes.".to_string();
+                } else {
+                    self.diff_content = diff;
+                }
+                self.show_diff = true;
+                tracing::debug!(
+                    pane_id = %agent.pane_id,
+                    project = %agent.project,
+                    "Showing diff view"
+                );
+            }
+            Err(e) => {
+                tracing::error!(
+                    error = %e,
+                    pane_id = %agent.pane_id,
+                    project = %agent.project,
+                    "Failed to get diff"
+                );
+            }
+        }
+    }
+
+    /// Toggle checkpoint timeline modal
+    fn toggle_checkpoint_timeline(&mut self) {
+        // If already showing, hide
+        if self.show_checkpoint_timeline {
+            self.show_checkpoint_timeline = false;
+            return;
+        }
+
+        let Some(agent) = self.state.selected_agent() else {
+            tracing::warn!("No agent selected for checkpoint timeline");
+            return;
+        };
+
+        // Only sprites have checkpoints
+        if !agent.is_sprite {
+            tracing::info!(
+                pane_id = %agent.pane_id,
+                project = %agent.project,
+                "Checkpoint timeline only available for sprite agents"
+            );
+            return;
+        }
+
+        // For now, show empty timeline (checkpoints would be populated from SpriteManager)
+        // In a full implementation, we'd query the SpriteManager for checkpoint history
+        self.checkpoint_timeline = Vec::new();
+        self.selected_checkpoint = 0;
+        self.show_checkpoint_timeline = true;
+
+        tracing::debug!(
+            pane_id = %agent.pane_id,
+            project = %agent.project,
+            "Showing checkpoint timeline"
+        );
+    }
+
+    /// Handle keyboard input in checkpoint timeline modal
+    pub fn handle_key_checkpoint_timeline(&mut self, key: crossterm::event::KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('t') => {
+                self.show_checkpoint_timeline = false;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.selected_checkpoint > 0 {
+                    self.selected_checkpoint -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.selected_checkpoint < self.checkpoint_timeline.len().saturating_sub(1) {
+                    self.selected_checkpoint += 1;
+                }
+            }
+            KeyCode::Enter => {
+                // Restore to selected checkpoint
+                self.restore_selected_checkpoint();
+            }
+            _ => {}
+        }
+    }
+
+    /// Restore sprite to selected checkpoint
+    fn restore_selected_checkpoint(&mut self) {
+        if self.checkpoint_timeline.is_empty() {
+            tracing::warn!("No checkpoints to restore");
+            return;
+        }
+
+        let Some(checkpoint) = self.checkpoint_timeline.get(self.selected_checkpoint) else {
+            return;
+        };
+
+        let checkpoint_id = checkpoint.id.clone();
+
+        let Some(agent) = self.state.selected_agent() else {
+            return;
+        };
+
+        tracing::info!(
+            pane_id = %agent.pane_id,
+            checkpoint_id = %checkpoint_id,
+            "Restoring to checkpoint"
+        );
+
+        // Close the timeline modal
+        self.show_checkpoint_timeline = false;
+
+        // Note: Actual restore would be async through SpriteManager
+        // This would be wired through an event system in a full implementation
     }
 }

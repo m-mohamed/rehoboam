@@ -28,6 +28,22 @@ pub struct SpriteManager {
     sprite_counter: u64,
 }
 
+/// A checkpoint in the timeline
+#[derive(Debug, Clone)]
+pub struct CheckpointRecord {
+    /// Checkpoint ID from Sprites API
+    pub id: String,
+
+    /// User-provided comment/description
+    pub comment: String,
+
+    /// When the checkpoint was created
+    pub created_at: Instant,
+
+    /// Loop iteration at time of checkpoint (0 if not in loop mode)
+    pub iteration: u32,
+}
+
 /// Active sprite session metadata
 #[derive(Debug)]
 pub struct SpriteSession {
@@ -45,6 +61,9 @@ pub struct SpriteSession {
 
     /// Last checkpoint ID
     pub last_checkpoint: Option<String>,
+
+    /// Checkpoint history for timeline UI
+    pub checkpoint_history: Vec<CheckpointRecord>,
 
     /// WebSocket connection for receiving events (set by forwarder)
     pub ws_connected: bool,
@@ -112,6 +131,7 @@ impl SpriteManager {
             project: project.to_string(),
             created_at: Instant::now(),
             last_checkpoint: None,
+            checkpoint_history: Vec::new(),
             ws_connected: false,
         };
 
@@ -229,6 +249,16 @@ echo "Hook configuration complete"
 
     /// Create a checkpoint for a sprite
     pub async fn checkpoint(&mut self, agent_id: &str, comment: &str) -> Result<String> {
+        self.checkpoint_with_iteration(agent_id, comment, 0).await
+    }
+
+    /// Create a checkpoint with iteration tracking (for loop mode)
+    pub async fn checkpoint_with_iteration(
+        &mut self,
+        agent_id: &str,
+        comment: &str,
+        iteration: u32,
+    ) -> Result<String> {
         let session = self
             .sessions
             .get_mut(agent_id)
@@ -245,8 +275,24 @@ echo "Hook configuration complete"
         let checkpoint_id = checkpoint.id.clone();
         session.last_checkpoint = Some(checkpoint_id.clone());
 
+        // Track in history for timeline UI
+        session.checkpoint_history.push(CheckpointRecord {
+            id: checkpoint_id.clone(),
+            comment: comment.to_string(),
+            created_at: Instant::now(),
+            iteration,
+        });
+
         info!("Checkpoint created: {}", checkpoint_id);
         Ok(checkpoint_id)
+    }
+
+    /// Get checkpoint history for an agent
+    pub fn get_checkpoint_history(&self, agent_id: &str) -> Vec<CheckpointRecord> {
+        self.sessions
+            .get(agent_id)
+            .map(|s| s.checkpoint_history.clone())
+            .unwrap_or_default()
     }
 
     /// Restore a sprite to a checkpoint
@@ -324,6 +370,7 @@ echo "Hook configuration complete"
                         .to_string(),
                     created_at: Instant::now(), // Approximate
                     last_checkpoint: None,
+                    checkpoint_history: Vec::new(),
                     ws_connected: false,
                 };
 
