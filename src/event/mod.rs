@@ -58,6 +58,22 @@ pub struct HookEvent {
     /// Correlates PreToolUse→PostToolUse for latency tracking
     #[serde(default)]
     pub tool_use_id: Option<String>,
+
+    // v0.9.0 loop mode fields
+    /// Stop reason (from Stop/SubagentStop hooks) - used for loop control
+    #[serde(default)]
+    pub reason: Option<String>,
+
+    // v0.9.0 subagent fields
+    /// Subagent session ID (SubagentStart/SubagentStop)
+    #[serde(default)]
+    pub subagent_id: Option<String>,
+    /// Subagent description (SubagentStart)
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Subagent duration in milliseconds (SubagentStop)
+    #[serde(default)]
+    pub subagent_duration_ms: Option<u64>,
 }
 
 impl HookEvent {
@@ -149,6 +165,17 @@ pub struct ClaudeHookInput {
     /// Notification message (Notification)
     #[serde(default)]
     pub message: Option<String>,
+
+    // v0.9.0 Subagent fields
+    /// Subagent session ID (SubagentStart/SubagentStop)
+    #[serde(default)]
+    pub subagent_id: Option<String>,
+    /// Subagent description (SubagentStart)
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Subagent duration in milliseconds (SubagentStop)
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
 }
 
 impl ClaudeHookInput {
@@ -246,6 +273,10 @@ mod tests {
             tool_name: None,
             tool_input: None,
             tool_use_id: None,
+            reason: None,
+            subagent_id: None,
+            description: None,
+            subagent_duration_ms: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -263,6 +294,10 @@ mod tests {
             tool_name: None,
             tool_input: None,
             tool_use_id: None,
+            reason: None,
+            subagent_id: None,
+            description: None,
+            subagent_duration_ms: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -280,6 +315,10 @@ mod tests {
             tool_name: None,
             tool_input: None,
             tool_use_id: None,
+            reason: None,
+            subagent_id: None,
+            description: None,
+            subagent_duration_ms: None,
         };
         assert_eq!(
             event.validate(),
@@ -301,6 +340,10 @@ mod tests {
                 tool_name: None,
                 tool_input: None,
                 tool_use_id: None,
+                reason: None,
+                subagent_id: None,
+                description: None,
+                subagent_duration_ms: None,
             };
             assert!(
                 event.validate().is_ok(),

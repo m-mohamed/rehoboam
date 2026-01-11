@@ -1,9 +1,11 @@
 mod agent;
 
-pub use agent::{Agent, Status};
+pub use agent::{Agent, LoopMode, Status, Subagent};
 
 use crate::config::{MAX_AGENTS, MAX_EVENTS, MAX_SPARKLINE_POINTS};
 use crate::event::HookEvent;
+use crate::notify;
+use crate::tmux::TmuxController;
 use std::collections::{HashMap, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,6 +18,15 @@ const STALE_TIMEOUT_SECS: i64 = 300; // 5 minutes
 
 /// Number of status columns in Kanban view
 pub const NUM_COLUMNS: usize = 4;
+
+/// Loop configuration for pending spawn
+#[derive(Debug, Clone)]
+pub struct LoopConfig {
+    /// Maximum iterations before stopping
+    pub max_iterations: u32,
+    /// Stop word to detect completion
+    pub stop_word: String,
+}
 
 /// Application state
 #[derive(Debug)]
@@ -32,6 +43,8 @@ pub struct AppState {
     pub status_counts: [usize; NUM_COLUMNS],
     /// Set of selected pane_ids for bulk operations
     pub selected_agents: std::collections::HashSet<String>,
+    /// Pending loop configs for newly spawned agents (pane_id -> config)
+    pub pending_loop_configs: HashMap<String, LoopConfig>,
 }
 
 impl Default for AppState {
@@ -43,6 +56,7 @@ impl Default for AppState {
             selected_card: 0,
             status_counts: [0; NUM_COLUMNS],
             selected_agents: std::collections::HashSet::new(),
+            pending_loop_configs: HashMap::new(),
         }
     }
 }
@@ -65,6 +79,21 @@ fn column_name(col: usize) -> &'static str {
         2 => "compacting",
         3 => "idle",
         _ => "unknown",
+    }
+}
+
+/// Check if loop is stalled (5+ consecutive identical stop reasons)
+///
+/// Stall detection prevents infinite loops on repeating errors.
+/// If the last 5 stop reasons are identical, the agent is stuck.
+fn is_stalled(reasons: &VecDeque<String>) -> bool {
+    if reasons.len() < 5 {
+        return false;
+    }
+    if let Some(last) = reasons.back() {
+        reasons.iter().rev().take(5).all(|r| r == last)
+    } else {
+        false
     }
 }
 
@@ -139,6 +168,20 @@ impl AppState {
         } else {
             // New agent
             self.status_counts[new_status_col] += 1;
+
+            // Check for pending loop config from spawn
+            if let Some(loop_config) = self.pending_loop_configs.remove(&pane_id) {
+                agent.loop_mode = LoopMode::Active;
+                agent.loop_max = loop_config.max_iterations;
+                agent.loop_stop_word = loop_config.stop_word.clone();
+                tracing::info!(
+                    pane_id = %pane_id,
+                    max = loop_config.max_iterations,
+                    stop_word = %loop_config.stop_word,
+                    "Loop mode applied from spawn config"
+                );
+            }
+
             tracing::info!(
                 pane_id = %pane_id,
                 project = %agent.project,
@@ -177,6 +220,44 @@ impl AppState {
                     );
                 }
             }
+            // v0.9.0: Subagent tracking
+            "SubagentStart" => {
+                if let Some(subagent_id) = &event.subagent_id {
+                    let description = event
+                        .description
+                        .clone()
+                        .unwrap_or_else(|| "subagent".to_string());
+                    agent.subagents.push(Subagent {
+                        id: subagent_id.clone(),
+                        description: description.clone(),
+                        status: "running".to_string(),
+                        start_time: event.timestamp,
+                        duration_ms: None,
+                    });
+                    tracing::info!(
+                        pane_id = %pane_id,
+                        subagent_id = %subagent_id,
+                        description = %description,
+                        "Subagent started"
+                    );
+                }
+            }
+            "SubagentStop" => {
+                if let Some(subagent_id) = &event.subagent_id {
+                    // Find and update the subagent
+                    if let Some(subagent) = agent.subagents.iter_mut().find(|s| &s.id == subagent_id)
+                    {
+                        subagent.status = "completed".to_string();
+                        subagent.duration_ms = event.subagent_duration_ms;
+                        tracing::info!(
+                            pane_id = %pane_id,
+                            subagent_id = %subagent_id,
+                            duration_ms = ?subagent.duration_ms,
+                            "Subagent completed"
+                        );
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -192,6 +273,79 @@ impl AppState {
                 tracing::debug!(pane_id = %pane_id, "Response ended");
             }
             _ => {}
+        }
+
+        // v0.9.0 Loop Mode: Handle Stop events for loop-enabled agents
+        if event.event == "Stop" && agent.loop_mode == LoopMode::Active {
+            agent.loop_iteration += 1;
+
+            // Track stop reason for stall detection (keep last 5)
+            if let Some(reason) = &event.reason {
+                agent.loop_last_reasons.push_back(reason.clone());
+                while agent.loop_last_reasons.len() > 5 {
+                    agent.loop_last_reasons.pop_front();
+                }
+            }
+
+            let reason_str = event.reason.as_deref().unwrap_or("");
+
+            // Check circuit breakers
+            if agent.loop_iteration >= agent.loop_max {
+                // Max iterations reached
+                agent.loop_mode = LoopMode::Complete;
+                tracing::info!(
+                    pane_id = %pane_id,
+                    iteration = agent.loop_iteration,
+                    max = agent.loop_max,
+                    "Loop complete: max iterations reached"
+                );
+            } else if !agent.loop_stop_word.is_empty()
+                && reason_str
+                    .to_uppercase()
+                    .contains(&agent.loop_stop_word.to_uppercase())
+            {
+                // Stop word detected
+                agent.loop_mode = LoopMode::Complete;
+                tracing::info!(
+                    pane_id = %pane_id,
+                    stop_word = %agent.loop_stop_word,
+                    reason = %reason_str,
+                    "Loop complete: stop word detected"
+                );
+            } else if is_stalled(&agent.loop_last_reasons) {
+                // Stall detected (5+ identical reasons)
+                agent.loop_mode = LoopMode::Stalled;
+                tracing::warn!(
+                    pane_id = %pane_id,
+                    iteration = agent.loop_iteration,
+                    last_reason = %reason_str,
+                    "Loop stalled: 5+ identical stop reasons"
+                );
+                notify::send(
+                    "Loop Stalled",
+                    &format!("{}: {}", agent.project, reason_str),
+                    Some("Basso"),
+                );
+            } else {
+                // Continue loop: send Enter to re-prompt
+                // Only works for tmux panes (pane_id starts with %)
+                if pane_id.starts_with('%') {
+                    if let Err(e) = TmuxController::send_enter(&pane_id) {
+                        tracing::error!(
+                            pane_id = %pane_id,
+                            error = %e,
+                            "Failed to send Enter for loop continuation"
+                        );
+                    } else {
+                        tracing::info!(
+                            pane_id = %pane_id,
+                            iteration = agent.loop_iteration,
+                            max = agent.loop_max,
+                            "Loop continuing: sent Enter"
+                        );
+                    }
+                }
+            }
         }
 
         // Set start_time on first event or session start
@@ -451,6 +605,88 @@ impl AppState {
             .cloned()
             .collect()
     }
+
+    // v0.9.0 Loop Mode Methods
+
+    /// Enable loop mode on an agent
+    ///
+    /// Called when spawning an agent in loop mode or enabling loop on existing agent.
+    pub fn enable_loop_mode(&mut self, pane_id: &str, max_iterations: u32, stop_word: &str) {
+        if let Some(agent) = self.agents.get_mut(pane_id) {
+            agent.loop_mode = LoopMode::Active;
+            agent.loop_iteration = 0;
+            agent.loop_max = max_iterations;
+            agent.loop_stop_word = stop_word.to_string();
+            agent.loop_last_reasons.clear();
+            tracing::info!(
+                pane_id = %pane_id,
+                max = max_iterations,
+                stop_word = %stop_word,
+                "Loop mode enabled"
+            );
+        }
+    }
+
+    /// Register a pending loop config for a newly spawned agent
+    ///
+    /// When the agent sends its first hook event, the config will be applied.
+    pub fn register_loop_config(&mut self, pane_id: &str, max_iterations: u32, stop_word: &str) {
+        self.pending_loop_configs.insert(
+            pane_id.to_string(),
+            LoopConfig {
+                max_iterations,
+                stop_word: stop_word.to_string(),
+            },
+        );
+        tracing::info!(
+            pane_id = %pane_id,
+            max = max_iterations,
+            stop_word = %stop_word,
+            "Registered pending loop config"
+        );
+    }
+
+    /// Cancel loop mode (X key)
+    ///
+    /// Stops sending Enter on Stop events. Agent continues to run but won't auto-continue.
+    pub fn cancel_loop(&mut self, pane_id: &str) {
+        if let Some(agent) = self.agents.get_mut(pane_id) {
+            if agent.loop_mode == LoopMode::Active {
+                agent.loop_mode = LoopMode::None;
+                tracing::info!(
+                    pane_id = %pane_id,
+                    iteration = agent.loop_iteration,
+                    "Loop cancelled"
+                );
+            }
+        }
+    }
+
+    /// Restart loop mode (R key)
+    ///
+    /// Resets iteration counter and resumes sending Enter on Stop events.
+    pub fn restart_loop(&mut self, pane_id: &str) {
+        if let Some(agent) = self.agents.get_mut(pane_id) {
+            if matches!(
+                agent.loop_mode,
+                LoopMode::Stalled | LoopMode::Complete | LoopMode::None
+            ) {
+                agent.loop_mode = LoopMode::Active;
+                agent.loop_iteration = 0;
+                agent.loop_last_reasons.clear();
+                tracing::info!(
+                    pane_id = %pane_id,
+                    max = agent.loop_max,
+                    "Loop restarted"
+                );
+            }
+        }
+    }
+
+    /// Get the pane_id of the currently selected agent
+    pub fn selected_pane_id(&self) -> Option<String> {
+        self.selected_agent().map(|a| a.pane_id.clone())
+    }
 }
 
 fn current_timestamp() -> i64 {
@@ -458,4 +694,57 @@ fn current_timestamp() -> i64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_stalled_empty() {
+        let reasons: VecDeque<String> = VecDeque::new();
+        assert!(!is_stalled(&reasons));
+    }
+
+    #[test]
+    fn test_is_stalled_less_than_five() {
+        let mut reasons = VecDeque::new();
+        reasons.push_back("error".to_string());
+        reasons.push_back("error".to_string());
+        reasons.push_back("error".to_string());
+        reasons.push_back("error".to_string());
+        assert!(!is_stalled(&reasons)); // Only 4, need 5
+    }
+
+    #[test]
+    fn test_is_stalled_five_identical() {
+        let mut reasons = VecDeque::new();
+        for _ in 0..5 {
+            reasons.push_back("File not found".to_string());
+        }
+        assert!(is_stalled(&reasons));
+    }
+
+    #[test]
+    fn test_is_stalled_five_different() {
+        let mut reasons = VecDeque::new();
+        reasons.push_back("error1".to_string());
+        reasons.push_back("error2".to_string());
+        reasons.push_back("error3".to_string());
+        reasons.push_back("error4".to_string());
+        reasons.push_back("error5".to_string());
+        assert!(!is_stalled(&reasons));
+    }
+
+    #[test]
+    fn test_is_stalled_last_five_identical_with_different_earlier() {
+        let mut reasons = VecDeque::new();
+        reasons.push_back("different".to_string());
+        reasons.push_back("same".to_string());
+        reasons.push_back("same".to_string());
+        reasons.push_back("same".to_string());
+        reasons.push_back("same".to_string());
+        reasons.push_back("same".to_string());
+        assert!(is_stalled(&reasons)); // Last 5 are "same"
+    }
 }

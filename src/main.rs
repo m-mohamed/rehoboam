@@ -154,6 +154,12 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         tool_name: hook_input.tool_name.clone(),
         tool_input: hook_input.tool_input.clone(),
         tool_use_id: hook_input.tool_use_id.clone(),
+        // v0.9.0 loop mode fields
+        reason: hook_input.reason.clone(),
+        // v0.9.0 subagent fields
+        subagent_id: hook_input.subagent_id.clone(),
+        description: hook_input.description.clone(),
+        subagent_duration_ms: hook_input.duration_ms,
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)

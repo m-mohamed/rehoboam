@@ -445,16 +445,18 @@ fn render_input_dialog(f: &mut Frame, app: &App) {
 }
 
 fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
-    let area = centered_rect(70, 50, f.area());
+    let area = centered_rect(70, 70, f.area());
 
-    // Split into fields: project, prompt, branch, worktree toggle, instructions
+    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, instructions
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Project path
-            Constraint::Length(3), // Prompt
-            Constraint::Length(3), // Branch name
-            Constraint::Length(3), // Worktree toggle
+            Constraint::Length(3), // Project path (0)
+            Constraint::Length(3), // Prompt (1)
+            Constraint::Length(3), // Branch name (2)
+            Constraint::Length(3), // Worktree toggle (3)
+            Constraint::Length(3), // Loop mode toggle (4)
+            Constraint::Length(3), // Loop options (5, 6)
             Constraint::Length(2), // Instructions
         ])
         .margin(1)
@@ -521,6 +523,48 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .border_style(border_style(spawn_state.active_field == 3)),
         );
 
+    // Loop mode toggle (4)
+    let loop_checkbox = if spawn_state.loop_enabled { "[x]" } else { "[ ]" };
+    let loop_text = format!("{} Enable Loop Mode (Ralph-style autonomy)", loop_checkbox);
+    let loop_widget = Paragraph::new(loop_text)
+        .style(field_style(spawn_state.active_field == 4))
+        .block(
+            Block::default()
+                .title(" Loop Mode ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 4)),
+        );
+
+    // Loop options (5 = max iterations, 6 = stop word) - show side by side
+    let loop_options_area = chunks[5];
+    let loop_options_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .split(loop_options_area);
+
+    // Max iterations field (5)
+    let iter_cursor = if spawn_state.active_field == 5 { "▏" } else { "" };
+    let iter_widget =
+        Paragraph::new(format!("{}{}", spawn_state.loop_max_iterations, iter_cursor))
+            .style(field_style(spawn_state.active_field == 5))
+            .block(
+                Block::default()
+                    .title(" Max Iter ")
+                    .borders(Borders::ALL)
+                    .border_style(border_style(spawn_state.active_field == 5)),
+            );
+
+    // Stop word field (6)
+    let stop_cursor = if spawn_state.active_field == 6 { "▏" } else { "" };
+    let stop_widget = Paragraph::new(format!("{}{}", spawn_state.loop_stop_word, stop_cursor))
+        .style(field_style(spawn_state.active_field == 6))
+        .block(
+            Block::default()
+                .title(" Stop Word ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 6)),
+        );
+
     // Instructions
     let instructions =
         Paragraph::new("[Tab/↑↓] Navigate  [Space] Toggle  [Enter] Spawn  [Esc] Cancel")
@@ -541,7 +585,10 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     f.render_widget(prompt_widget, chunks[1]);
     f.render_widget(branch_widget, chunks[2]);
     f.render_widget(worktree_widget, chunks[3]);
-    f.render_widget(instructions, chunks[4]);
+    f.render_widget(loop_widget, chunks[4]);
+    f.render_widget(iter_widget, loop_options_chunks[0]);
+    f.render_widget(stop_widget, loop_options_chunks[1]);
+    f.render_widget(instructions, chunks[6]);
 }
 
 // Helper functions

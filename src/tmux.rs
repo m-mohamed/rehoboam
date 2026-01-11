@@ -63,6 +63,27 @@ impl TmuxController {
         Ok(())
     }
 
+    /// Send Enter key to a tmux pane (for loop continuation)
+    ///
+    /// Sends just Enter without any text. Used by loop mode to continue
+    /// Claude Code sessions after Stop events.
+    ///
+    /// # Arguments
+    /// * `pane_id` - Tmux pane identifier (e.g., "%1", "%2")
+    pub fn send_enter(pane_id: &str) -> Result<()> {
+        let status = Command::new("tmux")
+            .args(["send-keys", "-t", pane_id, "Enter"])
+            .status()
+            .wrap_err("Failed to execute tmux send-keys Enter")?;
+
+        if !status.success() {
+            bail!("tmux send-keys Enter failed with status: {}", status);
+        }
+
+        tracing::debug!(pane_id = %pane_id, "Sent Enter to pane");
+        Ok(())
+    }
+
     /// Send keys without Enter (for partial input)
     ///
     /// # Arguments

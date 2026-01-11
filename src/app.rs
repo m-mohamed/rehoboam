@@ -29,7 +29,7 @@ pub enum ViewMode {
 }
 
 /// State for the spawn dialog
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct SpawnState {
     /// Selected project path
     pub project_path: String,
@@ -39,12 +39,35 @@ pub struct SpawnState {
     pub branch_name: String,
     /// Whether to create a git worktree for isolation
     pub use_worktree: bool,
-    /// Which field is being edited (0 = project, 1 = prompt, 2 = branch, 3 = worktree toggle)
+    /// Which field is being edited
+    /// 0 = project, 1 = prompt, 2 = branch, 3 = worktree toggle, 4 = loop toggle, 5 = max iter, 6 = stop word
     pub active_field: usize,
+    // v0.9.0 Loop Mode fields
+    /// Whether to enable loop mode for the new agent
+    pub loop_enabled: bool,
+    /// Maximum iterations before stopping (default: 50)
+    pub loop_max_iterations: String,
+    /// Stop word to detect completion (default: "DONE")
+    pub loop_stop_word: String,
+}
+
+impl Default for SpawnState {
+    fn default() -> Self {
+        Self {
+            project_path: String::new(),
+            prompt: String::new(),
+            branch_name: String::new(),
+            use_worktree: false,
+            active_field: 0,
+            loop_enabled: false,
+            loop_max_iterations: "50".to_string(),
+            loop_stop_word: "DONE".to_string(),
+        }
+    }
 }
 
 /// Number of fields in spawn dialog
-const SPAWN_FIELD_COUNT: usize = 4;
+const SPAWN_FIELD_COUNT: usize = 7;
 
 /// Application state and logic
 pub struct App {
@@ -235,6 +258,20 @@ impl App {
                 tracing::debug!("Cleared all selections");
             }
 
+            // === v0.9.0 Loop Mode Controls ===
+            // Cancel loop on selected agent (X key)
+            KeyCode::Char('X') => {
+                if let Some(pane_id) = self.state.selected_pane_id() {
+                    self.state.cancel_loop(&pane_id);
+                }
+            }
+            // Restart loop on selected agent (R key)
+            KeyCode::Char('R') => {
+                if let Some(pane_id) = self.state.selected_pane_id() {
+                    self.state.restart_loop(&pane_id);
+                }
+            }
+
             _ => {}
         }
     }
@@ -286,22 +323,26 @@ impl App {
             }
             // Spawn the agent (from any field)
             KeyCode::Enter => {
-                // Field 3 is the worktree toggle - toggle it on Enter
-                if self.spawn_state.active_field == 3 {
-                    self.spawn_state.use_worktree = !self.spawn_state.use_worktree;
-                } else {
-                    // Spawn if we have a project path
-                    if !self.spawn_state.project_path.is_empty() {
-                        self.spawn_agent();
-                        self.input_mode = InputMode::Normal;
-                        self.spawn_state = SpawnState::default();
+                // Toggle fields (3 = worktree, 4 = loop mode)
+                match self.spawn_state.active_field {
+                    3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
+                    4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
+                    _ => {
+                        // Spawn if we have a project path
+                        if !self.spawn_state.project_path.is_empty() {
+                            self.spawn_agent();
+                            self.input_mode = InputMode::Normal;
+                            self.spawn_state = SpawnState::default();
+                        }
                     }
                 }
             }
-            // Toggle worktree with Space (when on that field)
-            KeyCode::Char(' ') if self.spawn_state.active_field == 3 => {
-                self.spawn_state.use_worktree = !self.spawn_state.use_worktree;
-            }
+            // Toggle with Space (when on toggle fields)
+            KeyCode::Char(' ') => match self.spawn_state.active_field {
+                3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
+                4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
+                _ => {}
+            },
             // Delete last character from active text field
             KeyCode::Backspace => match self.spawn_state.active_field {
                 0 => {
@@ -312,6 +353,12 @@ impl App {
                 }
                 2 => {
                     self.spawn_state.branch_name.pop();
+                }
+                5 => {
+                    self.spawn_state.loop_max_iterations.pop();
+                }
+                6 => {
+                    self.spawn_state.loop_stop_word.pop();
                 }
                 _ => {}
             },
@@ -328,6 +375,21 @@ impl App {
                         self.spawn_state.use_worktree = false;
                     }
                 }
+                4 => {
+                    // Toggle loop mode on 'y' or 'n'
+                    if c == 'y' || c == 'Y' {
+                        self.spawn_state.loop_enabled = true;
+                    } else if c == 'n' || c == 'N' {
+                        self.spawn_state.loop_enabled = false;
+                    }
+                }
+                5 => {
+                    // Only allow digits for max iterations
+                    if c.is_ascii_digit() {
+                        self.spawn_state.loop_max_iterations.push(c);
+                    }
+                }
+                6 => self.spawn_state.loop_stop_word.push(c),
                 _ => {}
             },
             _ => {}
@@ -338,7 +400,9 @@ impl App {
     ///
     /// If `use_worktree` is enabled and `branch_name` is set, creates an
     /// isolated git worktree for the agent to work in.
-    fn spawn_agent(&self) {
+    /// If `loop_enabled` is set, registers a loop config to be applied when
+    /// the agent sends its first hook event.
+    fn spawn_agent(&mut self) {
         if self.spawn_state.project_path.is_empty() {
             tracing::warn!("Cannot spawn: no project path specified");
             return;
@@ -396,6 +460,20 @@ impl App {
         match TmuxController::split_pane(true, &working_dir_str) {
             Ok(pane_id) => {
                 tracing::info!(pane_id = %pane_id, "Created new tmux pane");
+
+                // Register loop config if loop mode is enabled
+                if self.spawn_state.loop_enabled {
+                    let max_iter = self
+                        .spawn_state
+                        .loop_max_iterations
+                        .parse::<u32>()
+                        .unwrap_or(50);
+                    self.state.register_loop_config(
+                        &pane_id,
+                        max_iter,
+                        &self.spawn_state.loop_stop_word,
+                    );
+                }
 
                 // Start Claude Code in the new pane
                 if let Err(e) = TmuxController::send_keys(&pane_id, "claude") {

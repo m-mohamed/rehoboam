@@ -2,8 +2,49 @@
 //!
 //! Tracks the status and activity of each Claude Code agent running in terminal panes.
 //! Supports multiple terminal emulators: Tmux, WezTerm, Kitty, iTerm2.
+//!
+//! # Loop Mode (v0.9.0)
+//! Agents can run in "Loop Mode" for Ralph-style autonomous iteration.
+//! Rehoboam sends Enter keystrokes via tmux to continue loops until:
+//! - Max iterations reached
+//! - Stop word detected in reason
+//! - Stall detected (5+ identical stop reasons)
 
 use std::collections::VecDeque;
+
+/// Loop mode state for Ralph-style autonomous iteration
+///
+/// When an agent is spawned in Loop Mode, Rehoboam monitors Stop events
+/// and sends Enter keystrokes to continue the loop until a circuit breaker triggers.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub enum LoopMode {
+    /// Not in loop mode (normal agent)
+    #[default]
+    None,
+    /// Loop is active - will send Enter on Stop
+    Active,
+    /// Loop stalled (5+ identical stop reasons)
+    Stalled,
+    /// Loop completed (stop word found or max iterations reached)
+    Complete,
+}
+
+/// A subagent spawned by the main agent (via Task tool)
+///
+/// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
+#[derive(Debug, Clone)]
+pub struct Subagent {
+    /// Subagent session ID (for correlation)
+    pub id: String,
+    /// Short description of what the subagent is doing
+    pub description: String,
+    /// Current status: "running", "completed", "failed"
+    pub status: String,
+    /// Start timestamp (Unix seconds)
+    pub start_time: i64,
+    /// Duration in milliseconds (set on SubagentStop)
+    pub duration_ms: Option<u64>,
+}
 
 /// Current status of a Claude Code agent
 ///
@@ -131,6 +172,22 @@ pub struct Agent {
     /// True when Claude is actively responding (between UserPromptSubmit and Stop)
     /// Prevents timeout to IDLE while Claude is generating text (no tool hooks)
     pub in_response: bool,
+
+    // v0.9.0 Loop Mode fields
+    /// Current loop mode state
+    pub loop_mode: LoopMode,
+    /// Current iteration count (incremented on each Stop event)
+    pub loop_iteration: u32,
+    /// Maximum iterations before stopping (circuit breaker)
+    pub loop_max: u32,
+    /// Stop word to detect completion (e.g., "DONE")
+    pub loop_stop_word: String,
+    /// Last 5 stop reasons for stall detection
+    pub loop_last_reasons: VecDeque<String>,
+
+    // v0.9.0 Subagent tracking
+    /// Subagents spawned by this agent
+    pub subagents: Vec<Subagent>,
 }
 
 impl Agent {
@@ -152,6 +209,14 @@ impl Agent {
             avg_latency_ms: None,
             total_tool_calls: 0,
             in_response: false,
+            // v0.9.0 Loop Mode fields
+            loop_mode: LoopMode::None,
+            loop_iteration: 0,
+            loop_max: 50, // Default max iterations
+            loop_stop_word: "DONE".to_string(),
+            loop_last_reasons: VecDeque::with_capacity(5),
+            // v0.9.0 Subagent tracking
+            subagents: Vec::new(),
         }
     }
 
