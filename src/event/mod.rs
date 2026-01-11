@@ -10,6 +10,44 @@ pub enum Event {
     Hook(Box<HookEvent>),
     /// Keyboard input
     Key(crossterm::event::KeyEvent),
+    /// Remote hook event from a sprite
+    RemoteHook {
+        /// Sprite identifier
+        sprite_id: String,
+        /// The hook event
+        event: Box<HookEvent>,
+    },
+    /// Sprite status change
+    SpriteStatus {
+        /// Sprite identifier
+        sprite_id: String,
+        /// New status
+        status: SpriteStatusType,
+    },
+}
+
+/// Sprite status types
+#[derive(Debug, Clone)]
+pub enum SpriteStatusType {
+    /// Sprite connected to WebSocket
+    Connected,
+    /// Sprite disconnected from WebSocket
+    Disconnected,
+    /// Sprite was destroyed
+    Destroyed,
+}
+
+/// Source of a hook event
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub enum EventSource {
+    /// Event from local Unix socket (Claude Code on this machine)
+    #[default]
+    Local,
+    /// Event from a remote sprite
+    Sprite {
+        /// Sprite identifier
+        sprite_id: String,
+    },
 }
 
 /// Event sent over Unix socket from hook handler to TUI
@@ -74,6 +112,11 @@ pub struct HookEvent {
     /// Subagent duration in milliseconds (SubagentStop)
     #[serde(default)]
     pub subagent_duration_ms: Option<u64>,
+
+    // v0.10.0 sprite fields
+    /// Event source: local or remote sprite
+    #[serde(default)]
+    pub source: EventSource,
 }
 
 impl HookEvent {
@@ -277,6 +320,7 @@ mod tests {
             subagent_id: None,
             description: None,
             subagent_duration_ms: None,
+            source: EventSource::Local,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -298,6 +342,7 @@ mod tests {
             subagent_id: None,
             description: None,
             subagent_duration_ms: None,
+            source: EventSource::Local,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -319,6 +364,7 @@ mod tests {
             subagent_id: None,
             description: None,
             subagent_duration_ms: None,
+            source: EventSource::Local,
         };
         assert_eq!(
             event.validate(),
@@ -344,6 +390,7 @@ mod tests {
                 subagent_id: None,
                 description: None,
                 subagent_duration_ms: None,
+                source: EventSource::Local,
             };
             assert!(
                 event.validate().is_ok(),

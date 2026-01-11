@@ -188,6 +188,12 @@ pub struct Agent {
     // v0.9.0 Subagent tracking
     /// Subagents spawned by this agent
     pub subagents: Vec<Subagent>,
+
+    // v0.10.0 Sprite tracking
+    /// True if this agent is running in a remote Sprite VM
+    pub is_sprite: bool,
+    /// Sprite ID (same as pane_id for sprite agents)
+    pub sprite_id: Option<String>,
 }
 
 impl Agent {
@@ -217,7 +223,18 @@ impl Agent {
             loop_last_reasons: VecDeque::with_capacity(5),
             // v0.9.0 Subagent tracking
             subagents: Vec::new(),
+            // v0.10.0 Sprite tracking
+            is_sprite: false,
+            sprite_id: None,
         }
+    }
+
+    /// Create a new sprite agent (running in remote VM)
+    pub fn new_sprite(sprite_id: String, project: String) -> Self {
+        let mut agent = Self::new(sprite_id.clone(), project);
+        agent.is_sprite = true;
+        agent.sprite_id = Some(sprite_id);
+        agent
     }
 
     /// Calculate elapsed time since start

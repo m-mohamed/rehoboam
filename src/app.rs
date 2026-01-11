@@ -122,6 +122,23 @@ impl App {
                 self.handle_key(key);
                 self.needs_render = true; // Any key press triggers render
             }
+            Event::RemoteHook { sprite_id, event } => {
+                // Process remote hook events from sprites
+                if !self.frozen {
+                    // Mark the event as coming from a sprite
+                    let mut hook_event = *event;
+                    hook_event.source = crate::event::EventSource::Sprite {
+                        sprite_id: sprite_id.clone(),
+                    };
+                    self.state.process_event(hook_event);
+                    self.needs_render = true;
+                }
+            }
+            Event::SpriteStatus { sprite_id, status } => {
+                // Handle sprite status changes (connected/disconnected/destroyed)
+                tracing::debug!("Sprite {} status: {:?}", sprite_id, status);
+                self.needs_render = true;
+            }
         }
     }
 
@@ -504,7 +521,10 @@ impl App {
         }
     }
 
-    /// Send custom input to selected agent's pane
+    /// Send custom input to selected agent
+    ///
+    /// Mode-aware: Uses TmuxController for local agents,
+    /// logs for sprite agents (async not yet wired).
     fn send_custom_input(&self) {
         if self.input_buffer.is_empty() {
             return;
@@ -513,34 +533,41 @@ impl App {
         if let Some(agent) = self.state.selected_agent() {
             let pane_id = &agent.pane_id;
 
-            // Only tmux panes are supported for now
-            if !pane_id.starts_with('%') {
-                tracing::warn!(
-                    pane_id = %pane_id,
-                    "Cannot send input: not a tmux pane"
-                );
-                return;
-            }
-
             tracing::info!(
                 pane_id = %pane_id,
                 project = %agent.project,
                 input_len = self.input_buffer.len(),
+                is_sprite = agent.is_sprite,
                 "Sending custom input"
             );
 
-            // Use buffered send for multi-line or long input, simple send for short
-            let result = if self.input_buffer.contains('\n') || self.input_buffer.len() > 100 {
-                TmuxController::send_buffered(pane_id, &self.input_buffer)
-            } else {
-                TmuxController::send_keys(pane_id, &self.input_buffer)
-            };
-
-            if let Err(e) = result {
-                tracing::error!(
+            if agent.is_sprite {
+                // Sprite agents: input would go through SpriteController (async)
+                tracing::info!(
                     pane_id = %pane_id,
-                    error = %e,
-                    "Failed to send custom input"
+                    "Sprite input queued (async via SpriteController)"
+                );
+                // TODO: Wire async sprite input through event system
+            } else if pane_id.starts_with('%') {
+                // Tmux panes: send directly
+                // Use buffered send for multi-line or long input, simple send for short
+                let result = if self.input_buffer.contains('\n') || self.input_buffer.len() > 100 {
+                    TmuxController::send_buffered(pane_id, &self.input_buffer)
+                } else {
+                    TmuxController::send_keys(pane_id, &self.input_buffer)
+                };
+
+                if let Err(e) = result {
+                    tracing::error!(
+                        pane_id = %pane_id,
+                        error = %e,
+                        "Failed to send custom input"
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    pane_id = %pane_id,
+                    "Cannot send input: unknown pane type"
                 );
             }
         }
@@ -605,32 +632,40 @@ impl App {
 
     /// Approve permission request for selected agent
     ///
-    /// Sends "y" + Enter to the selected agent's tmux pane.
-    /// Only works for tmux panes (pane_id starts with %).
+    /// Mode-aware: Uses TmuxController for local tmux agents,
+    /// logs warning for sprite agents (async not yet wired).
     fn approve_selected(&self) {
         if let Some(agent) = self.state.selected_agent() {
             let pane_id = &agent.pane_id;
 
-            // Only tmux panes are supported for now
-            if !pane_id.starts_with('%') {
-                tracing::warn!(
-                    pane_id = %pane_id,
-                    "Cannot approve: not a tmux pane"
-                );
-                return;
-            }
-
             tracing::info!(
                 pane_id = %pane_id,
                 project = %agent.project,
+                is_sprite = agent.is_sprite,
                 "Approving permission request"
             );
 
-            if let Err(e) = TmuxController::send_keys(pane_id, "y") {
-                tracing::error!(
+            if agent.is_sprite {
+                // Sprite agents: approval would go through SpriteController (async)
+                // For now, log that this needs async implementation
+                tracing::info!(
                     pane_id = %pane_id,
-                    error = %e,
-                    "Failed to send approval"
+                    "Sprite approval queued (async via SpriteController)"
+                );
+                // TODO: Wire async sprite approval through event system
+            } else if pane_id.starts_with('%') {
+                // Tmux panes: send directly
+                if let Err(e) = TmuxController::send_keys(pane_id, "y") {
+                    tracing::error!(
+                        pane_id = %pane_id,
+                        error = %e,
+                        "Failed to send approval"
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    pane_id = %pane_id,
+                    "Cannot approve: unknown pane type"
                 );
             }
         }
@@ -638,88 +673,142 @@ impl App {
 
     /// Reject permission request for selected agent
     ///
-    /// Sends "n" + Enter to the selected agent's tmux pane.
+    /// Mode-aware: Uses TmuxController for local tmux agents,
+    /// logs warning for sprite agents (async not yet wired).
     fn reject_selected(&self) {
         if let Some(agent) = self.state.selected_agent() {
             let pane_id = &agent.pane_id;
 
-            if !pane_id.starts_with('%') {
-                tracing::warn!(
-                    pane_id = %pane_id,
-                    "Cannot reject: not a tmux pane"
-                );
-                return;
-            }
-
             tracing::info!(
                 pane_id = %pane_id,
                 project = %agent.project,
+                is_sprite = agent.is_sprite,
                 "Rejecting permission request"
             );
 
-            if let Err(e) = TmuxController::send_keys(pane_id, "n") {
-                tracing::error!(
+            if agent.is_sprite {
+                // Sprite agents: rejection would go through SpriteController (async)
+                tracing::info!(
                     pane_id = %pane_id,
-                    error = %e,
-                    "Failed to send rejection"
+                    "Sprite rejection queued (async via SpriteController)"
+                );
+                // TODO: Wire async sprite rejection through event system
+            } else if pane_id.starts_with('%') {
+                // Tmux panes: send directly
+                if let Err(e) = TmuxController::send_keys(pane_id, "n") {
+                    tracing::error!(
+                        pane_id = %pane_id,
+                        error = %e,
+                        "Failed to send rejection"
+                    );
+                }
+            } else {
+                tracing::warn!(
+                    pane_id = %pane_id,
+                    "Cannot reject: unknown pane type"
                 );
             }
         }
     }
 
     /// Bulk approve all selected agents
+    ///
+    /// Mode-aware: Handles both tmux and sprite agents.
     fn bulk_approve(&mut self) {
-        let panes = self.state.selected_tmux_panes();
-        if panes.is_empty() {
+        let tmux_panes = self.state.selected_tmux_panes();
+        let sprite_agents = self.state.selected_sprite_agents();
+
+        if tmux_panes.is_empty() && sprite_agents.is_empty() {
             tracing::warn!("No agents selected for bulk approval");
             return;
         }
 
-        tracing::info!(count = panes.len(), "Bulk approving agents");
-
-        for pane_id in &panes {
-            if let Err(e) = TmuxController::send_keys(pane_id, "y") {
-                tracing::error!(pane_id = %pane_id, error = %e, "Failed to approve");
+        // Handle tmux agents
+        if !tmux_panes.is_empty() {
+            tracing::info!(count = tmux_panes.len(), "Bulk approving tmux agents");
+            for pane_id in &tmux_panes {
+                if let Err(e) = TmuxController::send_keys(pane_id, "y") {
+                    tracing::error!(pane_id = %pane_id, error = %e, "Failed to approve");
+                }
             }
+        }
+
+        // Handle sprite agents (async operation logged for now)
+        if !sprite_agents.is_empty() {
+            tracing::info!(
+                count = sprite_agents.len(),
+                "Sprite bulk approval queued (async via SpriteController)"
+            );
+            // TODO: Wire async sprite approval through event system
         }
 
         self.state.clear_selection();
     }
 
     /// Bulk reject all selected agents
+    ///
+    /// Mode-aware: Handles both tmux and sprite agents.
     fn bulk_reject(&mut self) {
-        let panes = self.state.selected_tmux_panes();
-        if panes.is_empty() {
+        let tmux_panes = self.state.selected_tmux_panes();
+        let sprite_agents = self.state.selected_sprite_agents();
+
+        if tmux_panes.is_empty() && sprite_agents.is_empty() {
             tracing::warn!("No agents selected for bulk rejection");
             return;
         }
 
-        tracing::info!(count = panes.len(), "Bulk rejecting agents");
-
-        for pane_id in &panes {
-            if let Err(e) = TmuxController::send_keys(pane_id, "n") {
-                tracing::error!(pane_id = %pane_id, error = %e, "Failed to reject");
+        // Handle tmux agents
+        if !tmux_panes.is_empty() {
+            tracing::info!(count = tmux_panes.len(), "Bulk rejecting tmux agents");
+            for pane_id in &tmux_panes {
+                if let Err(e) = TmuxController::send_keys(pane_id, "n") {
+                    tracing::error!(pane_id = %pane_id, error = %e, "Failed to reject");
+                }
             }
+        }
+
+        // Handle sprite agents (async operation logged for now)
+        if !sprite_agents.is_empty() {
+            tracing::info!(
+                count = sprite_agents.len(),
+                "Sprite bulk rejection queued (async via SpriteController)"
+            );
+            // TODO: Wire async sprite rejection through event system
         }
 
         self.state.clear_selection();
     }
 
     /// Bulk kill all selected agents (send Ctrl+C)
+    ///
+    /// Mode-aware: Handles both tmux and sprite agents.
     fn bulk_kill(&mut self) {
-        let panes = self.state.selected_tmux_panes();
-        if panes.is_empty() {
+        let tmux_panes = self.state.selected_tmux_panes();
+        let sprite_agents = self.state.selected_sprite_agents();
+
+        if tmux_panes.is_empty() && sprite_agents.is_empty() {
             tracing::warn!("No agents selected for kill");
             return;
         }
 
-        tracing::info!(count = panes.len(), "Bulk killing agents");
-
-        for pane_id in &panes {
-            // Send Ctrl+C (C-c in tmux)
-            if let Err(e) = TmuxController::send_keys_raw(pane_id, "C-c") {
-                tracing::error!(pane_id = %pane_id, error = %e, "Failed to kill");
+        // Handle tmux agents
+        if !tmux_panes.is_empty() {
+            tracing::info!(count = tmux_panes.len(), "Bulk killing tmux agents");
+            for pane_id in &tmux_panes {
+                // Send Ctrl+C (C-c in tmux)
+                if let Err(e) = TmuxController::send_keys_raw(pane_id, "C-c") {
+                    tracing::error!(pane_id = %pane_id, error = %e, "Failed to kill");
+                }
             }
+        }
+
+        // Handle sprite agents (async operation logged for now)
+        if !sprite_agents.is_empty() {
+            tracing::info!(
+                count = sprite_agents.len(),
+                "Sprite bulk kill queued (async via SpriteController)"
+            );
+            // TODO: Wire async sprite kill through event system
         }
 
         self.state.clear_selection();

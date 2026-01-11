@@ -31,6 +31,7 @@ tokio = { version = "1.43", features = [
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"         # Configuration file parsing
 
 # Error handling
 color-eyre = "0.6"
@@ -48,8 +49,21 @@ notify-rust = "4"       # Cross-platform native desktop notifications
 socket2 = "0.5"         # Socket buffer tuning
 tokio-util = { version = "0.7", features = ["rt"] }  # Graceful shutdown
 
+# Sprites - remote sandbox execution
+sprites = { path = "../sprites-rs" }
+tokio-tungstenite = "0.26"  # WebSocket for remote hook events
+futures-util = "0.3"        # Stream utilities for WebSocket
+
 [dev-dependencies]
 tempfile = "3"
+
+[[bin]]
+name = "rehoboam"
+path = "src/main.rs"
+
+[[bin]]
+name = "rehoboam-bridge"
+path = "src/bin/bridge.rs"
 
 [profile.release]
 lto = true

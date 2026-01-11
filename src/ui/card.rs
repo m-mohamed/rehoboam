@@ -58,13 +58,17 @@ pub fn render_agent_card(
     // Selection indicator prefix
     let selection_indicator = if multi_selected { "● " } else { "" };
 
+    // Sprite indicator (cloud icon for remote agents)
+    let sprite_indicator = if agent.is_sprite { "☁ " } else { "" };
+
     // Build card content
     let mut content = vec![
-        // Line 1: Project name
+        // Line 1: Project name with sprite indicator
         Line::from(format!(
-            "{}{}",
+            "{}{}{}",
             selection_indicator,
-            truncate(&agent.project, area.width.saturating_sub(4) as usize)
+            sprite_indicator,
+            truncate(&agent.project, area.width.saturating_sub(6) as usize)
         ))
         .style(Style::default().fg(colors::FG).add_modifier(Modifier::BOLD)),
     ];

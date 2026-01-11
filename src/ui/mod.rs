@@ -73,6 +73,7 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     // Use cached status counts (O(1) instead of O(4n))
     let [attention, working, compacting, idle] = app.state.status_counts;
     let total = app.state.agents.len();
+    let sprite_count = app.state.sprite_agent_count();
 
     // Build status summary
     let status_parts: Vec<String> = [
@@ -91,13 +92,20 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         ViewMode::Kanban => "",
         ViewMode::Project => " [PROJECT VIEW]",
     };
+    // Show sprite count if any remote agents
+    let sprite_indicator = if sprite_count > 0 {
+        format!(" [☁ {} sprite{}]", sprite_count, if sprite_count == 1 { "" } else { "s" })
+    } else {
+        String::new()
+    };
     let title = if total == 0 {
         format!("Rehoboam{}{}", frozen_indicator, view_indicator)
     } else {
         format!(
-            "Rehoboam ({} agents: {}){}{}",
+            "Rehoboam ({} agents: {}){}{}{}",
             total,
             status_parts.join(", "),
+            sprite_indicator,
             frozen_indicator,
             view_indicator
         )
@@ -189,11 +197,15 @@ fn render_project_view(f: &mut Frame, area: Rect, app: &App) {
                 Status::Idle => "Idle",
             };
 
+            // Sprite indicator for remote agents
+            let sprite_prefix = if agent.is_sprite { "☁ " } else { "" };
+
             let tool_info = agent.tool_display();
             let elapsed = agent.elapsed_display();
 
             let line = format!(
-                "  {} {} ({}) {} {}",
+                "  {}{} {} ({}) {} {}",
+                sprite_prefix,
                 icon,
                 agent.pane_id,
                 status_str,

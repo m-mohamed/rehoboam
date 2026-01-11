@@ -18,6 +18,7 @@ mod event;
 mod git;
 mod init;
 mod notify;
+mod sprite;
 mod state;
 mod tmux;
 mod tui;
@@ -160,6 +161,8 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         subagent_id: hook_input.subagent_id.clone(),
         description: hook_input.description.clone(),
         subagent_duration_ms: hook_input.duration_ms,
+        // v0.10.0 sprite fields
+        source: event::EventSource::Local,
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -312,11 +315,88 @@ async fn main() -> Result<()> {
         }
     });
 
+    // Optionally spawn sprite event forwarder (WebSocket server for remote sprites)
+    let sprite_handle = if cli.enable_sprites {
+        // Validate sprites token is provided
+        if cli.sprites_token.is_none() {
+            return Err(color_eyre::eyre::eyre!(
+                "--sprites-token or SPRITES_TOKEN env required when --enable-sprites is set"
+            ));
+        }
+
+        tracing::info!(
+            "Sprite support enabled, WebSocket server on port {}",
+            cli.sprite_ws_port
+        );
+
+        // Spawn the WebSocket forwarder
+        let (mut sprite_rx, forwarder_handle) =
+            sprite::forwarder::spawn_forwarder(cli.sprite_ws_port);
+
+        // Spawn task to convert RemoteHookEvent -> Event::RemoteHook
+        let sprite_event_tx = event_tx.clone();
+        let converter_handle = tokio::spawn(async move {
+            while let Some(remote_event) = sprite_rx.recv().await {
+                // Convert forwarder's RemoteHookEvent to our HookEvent
+                let hook_event = event::HookEvent {
+                    event: remote_event
+                        .event
+                        .hook_event_name
+                        .unwrap_or_else(|| "Unknown".to_string()),
+                    status: "working".to_string(), // Will be derived by app
+                    attention_type: None,
+                    pane_id: remote_event.sprite_id.clone(),
+                    project: "sprite".to_string(), // TODO: extract from sprite metadata
+                    timestamp: remote_event.timestamp.unwrap_or_else(|| {
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs() as i64)
+                            .unwrap_or(0)
+                    }),
+                    session_id: remote_event.event.session_id,
+                    tool_name: remote_event.event.tool_name,
+                    tool_input: remote_event.event.tool_input,
+                    tool_use_id: None,
+                    reason: None,
+                    subagent_id: None,
+                    description: None,
+                    subagent_duration_ms: None,
+                    source: event::EventSource::Sprite {
+                        sprite_id: remote_event.sprite_id.clone(),
+                    },
+                };
+
+                // Send as RemoteHook event
+                if let Err(e) = sprite_event_tx
+                    .send(event::Event::RemoteHook {
+                        sprite_id: remote_event.sprite_id,
+                        event: Box::new(hook_event),
+                    })
+                    .await
+                {
+                    tracing::error!("Failed to forward sprite event: {}", e);
+                    break;
+                }
+            }
+        });
+
+        Some((forwarder_handle, converter_handle))
+    } else {
+        None
+    };
+
     // Run TUI
     let result = run_tui(event_tx, event_rx, cli.debug, cli.tick_rate, cli.frame_rate).await;
 
     // Cleanup
     socket_handle.abort();
+
+    // Cleanup sprite handles if enabled
+    if let Some((forwarder_handle, converter_handle)) = sprite_handle {
+        forwarder_handle.abort();
+        converter_handle.abort();
+        tracing::debug!("Sprite forwarder shut down");
+    }
 
     // Remove socket file
     if cli.socket.exists() {

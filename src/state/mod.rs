@@ -3,10 +3,10 @@ mod agent;
 pub use agent::{Agent, LoopMode, Status, Subagent};
 
 use crate::config::{MAX_AGENTS, MAX_EVENTS, MAX_SPARKLINE_POINTS};
-use crate::event::HookEvent;
+use crate::event::{EventSource, HookEvent};
 use crate::notify;
 use crate::tmux::TmuxController;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Timeout for Working → Idle transition (seconds)
@@ -42,9 +42,11 @@ pub struct AppState {
     /// Cached status counts: [attention, working, compacting, idle]
     pub status_counts: [usize; NUM_COLUMNS],
     /// Set of selected pane_ids for bulk operations
-    pub selected_agents: std::collections::HashSet<String>,
+    pub selected_agents: HashSet<String>,
     /// Pending loop configs for newly spawned agents (pane_id -> config)
     pub pending_loop_configs: HashMap<String, LoopConfig>,
+    /// Set of sprite agent IDs (for quick lookup)
+    pub sprite_agent_ids: HashSet<String>,
 }
 
 impl Default for AppState {
@@ -55,8 +57,9 @@ impl Default for AppState {
             selected_column: 0,
             selected_card: 0,
             status_counts: [0; NUM_COLUMNS],
-            selected_agents: std::collections::HashSet::new(),
+            selected_agents: HashSet::new(),
             pending_loop_configs: HashMap::new(),
+            sprite_agent_ids: HashSet::new(),
         }
     }
 }
@@ -111,10 +114,18 @@ impl AppState {
     /// - Session lifecycle (start/end)
     /// - Status count caching (v1.1 optimization)
     /// - Agent limit with LRU eviction (v1.1 optimization)
+    /// - Sprite agent tracking (v0.10.0)
     pub fn process_event(&mut self, event: HookEvent) {
         let pane_id = event.pane_id.clone();
         let project = event.project.clone();
         let is_new_agent = !self.agents.contains_key(&pane_id);
+
+        // Check if this is a sprite event
+        let is_sprite = matches!(event.source, EventSource::Sprite { .. });
+        let sprite_id = match &event.source {
+            EventSource::Sprite { sprite_id } => Some(sprite_id.clone()),
+            EventSource::Local => None,
+        };
 
         // Log event reception
         tracing::debug!(
@@ -137,11 +148,16 @@ impl AppState {
             .get(&pane_id)
             .map(|a| status_to_column(&a.status));
 
-        // Update or create agent
-        let agent = self
-            .agents
-            .entry(pane_id.clone())
-            .or_insert_with(|| Agent::new(pane_id.clone(), project));
+        // Update or create agent (sprite-aware)
+        let agent = self.agents.entry(pane_id.clone()).or_insert_with(|| {
+            if is_sprite {
+                // Track this as a sprite agent
+                self.sprite_agent_ids.insert(pane_id.clone());
+                Agent::new_sprite(sprite_id.clone().unwrap_or_else(|| pane_id.clone()), project)
+            } else {
+                Agent::new(pane_id.clone(), project)
+            }
+        });
 
         // Update agent state
         agent.project = event.project.clone();
@@ -328,8 +344,18 @@ impl AppState {
                 );
             } else {
                 // Continue loop: send Enter to re-prompt
-                // Only works for tmux panes (pane_id starts with %)
-                if pane_id.starts_with('%') {
+                // Check agent type to determine how to send input
+                if agent.is_sprite {
+                    // Sprite agents: loop continuation handled async via SpriteController
+                    // The app.rs handle_event will pick this up and send via WebSocket
+                    tracing::info!(
+                        pane_id = %pane_id,
+                        iteration = agent.loop_iteration,
+                        max = agent.loop_max,
+                        "Sprite loop continuing (async)"
+                    );
+                } else if pane_id.starts_with('%') {
+                    // Tmux panes: send Enter directly
                     if let Err(e) = TmuxController::send_enter(&pane_id) {
                         tracing::error!(
                             pane_id = %pane_id,
@@ -372,6 +398,8 @@ impl AppState {
                 let col = status_to_column(&agent.status);
                 self.status_counts[col] = self.status_counts[col].saturating_sub(1);
             }
+            // Clean up sprite tracking
+            self.sprite_agent_ids.remove(&pane_id);
             self.agents.remove(&pane_id);
         }
 
@@ -686,6 +714,34 @@ impl AppState {
     /// Get the pane_id of the currently selected agent
     pub fn selected_pane_id(&self) -> Option<String> {
         self.selected_agent().map(|a| a.pane_id.clone())
+    }
+
+    // v0.10.0 Sprite Methods
+
+    /// Check if an agent is a sprite agent
+    pub fn is_sprite_agent(&self, pane_id: &str) -> bool {
+        self.sprite_agent_ids.contains(pane_id)
+    }
+
+    /// Get list of selected sprite agent IDs
+    pub fn selected_sprite_agents(&self) -> Vec<String> {
+        self.selected_agents
+            .iter()
+            .filter(|id| self.sprite_agent_ids.contains(*id))
+            .cloned()
+            .collect()
+    }
+
+    /// Get count of sprite agents
+    pub fn sprite_agent_count(&self) -> usize {
+        self.sprite_agent_ids.len()
+    }
+
+    /// Get all sprite agents
+    pub fn sprite_agents(&self) -> impl Iterator<Item = &Agent> {
+        self.agents
+            .values()
+            .filter(|a| a.is_sprite)
     }
 }
 
