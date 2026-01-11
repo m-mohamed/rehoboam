@@ -50,7 +50,7 @@ socket2 = "0.5"         # Socket buffer tuning
 tokio-util = { version = "0.7", features = ["rt"] }  # Graceful shutdown
 
 # Sprites - remote sandbox execution
-sprites = { path = "../sprites-rs" }
+sprites = { git = "https://github.com/m-mohamed/sprites-rs" }
 tokio-tungstenite = "0.26"  # WebSocket for remote hook events
 futures-util = "0.3"        # Stream utilities for WebSocket
 

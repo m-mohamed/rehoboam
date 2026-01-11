@@ -2199,6 +2199,7 @@ dependencies = [
 [[package]]
 name = "sprites"
 version = "0.1.0"
+source = "git+https://github.com/m-mohamed/sprites-rs#581864b3211997942a2d42fde743d80a52bd5c45"
 dependencies = [
  "chrono",
  "futures-util",
