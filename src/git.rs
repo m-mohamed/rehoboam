@@ -156,9 +156,9 @@ impl GitController {
                 if line.starts_with("HEAD ") {
                     wt.head = Some(line.strip_prefix("HEAD ").unwrap().to_string());
                 } else if line.starts_with("branch ") {
-                    let branch = line.strip_prefix("branch refs/heads/").unwrap_or(
-                        line.strip_prefix("branch ").unwrap_or(line),
-                    );
+                    let branch = line
+                        .strip_prefix("branch refs/heads/")
+                        .unwrap_or(line.strip_prefix("branch ").unwrap_or(line));
                     wt.branch = Some(branch.to_string());
                 } else if line == "bare" {
                     wt.is_main = true;

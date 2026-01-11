@@ -17,7 +17,8 @@ pub enum Event {
         /// The hook event
         event: Box<HookEvent>,
     },
-    /// Sprite status change
+    /// Sprite status change (scaffolded for connection status UI)
+    #[allow(dead_code)]
     SpriteStatus {
         /// Sprite identifier
         sprite_id: String,
@@ -26,7 +27,8 @@ pub enum Event {
     },
 }
 
-/// Sprite status types
+/// Sprite status types (scaffolded for connection status UI)
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub enum SpriteStatusType {
     /// Sprite connected to WebSocket
@@ -249,10 +251,10 @@ impl ClaudeHookInput {
             "PermissionRequest" => ("attention", Some("permission")),
 
             // IDLE: Claude is waiting for user input (not blocked, just done)
-            "SessionStart" => ("idle", None),  // Session started, waiting for prompt
-            "Stop" => ("idle", None),          // Claude finished responding
-            "SessionEnd" => ("idle", None),    // Session ended
-            "Notification" => ("idle", None),  // Informational message, Claude is done
+            "SessionStart" => ("idle", None), // Session started, waiting for prompt
+            "Stop" => ("idle", None),         // Claude finished responding
+            "SessionEnd" => ("idle", None),   // Session ended
+            "Notification" => ("idle", None), // Informational message, Claude is done
 
             // COMPACTING: Context maintenance
             "PreCompact" => ("compacting", None),

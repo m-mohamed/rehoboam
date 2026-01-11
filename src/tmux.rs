@@ -124,7 +124,9 @@ impl TmuxController {
                 .wrap_err("Failed to write to tmux buffer")?;
         }
 
-        let status = child.wait().wrap_err("Failed to wait for tmux load-buffer")?;
+        let status = child
+            .wait()
+            .wrap_err("Failed to wait for tmux load-buffer")?;
         if !status.success() {
             bail!("tmux load-buffer failed");
         }
@@ -373,33 +375,54 @@ mod tests {
     #[test]
     fn test_detect_status_attention() {
         let output = "Some output\nDo you want to proceed? [y/n]";
-        assert_eq!(TmuxController::detect_status(output), DetectedStatus::Attention);
+        assert_eq!(
+            TmuxController::detect_status(output),
+            DetectedStatus::Attention
+        );
 
         let output = "Requesting permission to run bash";
-        assert_eq!(TmuxController::detect_status(output), DetectedStatus::Attention);
+        assert_eq!(
+            TmuxController::detect_status(output),
+            DetectedStatus::Attention
+        );
     }
 
     #[test]
     fn test_detect_status_success() {
         let output = "Running tests...\n✅ All tests passed!";
-        assert_eq!(TmuxController::detect_status(output), DetectedStatus::Success);
+        assert_eq!(
+            TmuxController::detect_status(output),
+            DetectedStatus::Success
+        );
 
         let output = "Build complete. Success!";
-        assert_eq!(TmuxController::detect_status(output), DetectedStatus::Success);
+        assert_eq!(
+            TmuxController::detect_status(output),
+            DetectedStatus::Success
+        );
     }
 
     #[test]
     fn test_detect_status_failure() {
         let output = "Running tests...\n❌ 3 tests failed";
-        assert_eq!(TmuxController::detect_status(output), DetectedStatus::Failure);
+        assert_eq!(
+            TmuxController::detect_status(output),
+            DetectedStatus::Failure
+        );
 
         let output = "error[E0433]: failed to resolve";
-        assert_eq!(TmuxController::detect_status(output), DetectedStatus::Failure);
+        assert_eq!(
+            TmuxController::detect_status(output),
+            DetectedStatus::Failure
+        );
     }
 
     #[test]
     fn test_detect_status_unknown() {
         let output = "Processing...\nWorking on task";
-        assert_eq!(TmuxController::detect_status(output), DetectedStatus::Unknown);
+        assert_eq!(
+            TmuxController::detect_status(output),
+            DetectedStatus::Unknown
+        );
     }
 }

@@ -153,7 +153,10 @@ impl AppState {
             if is_sprite {
                 // Track this as a sprite agent
                 self.sprite_agent_ids.insert(pane_id.clone());
-                Agent::new_sprite(sprite_id.clone().unwrap_or_else(|| pane_id.clone()), project)
+                Agent::new_sprite(
+                    sprite_id.clone().unwrap_or_else(|| pane_id.clone()),
+                    project,
+                )
             } else {
                 Agent::new(pane_id.clone(), project)
             }
@@ -261,7 +264,8 @@ impl AppState {
             "SubagentStop" => {
                 if let Some(subagent_id) = &event.subagent_id {
                     // Find and update the subagent
-                    if let Some(subagent) = agent.subagents.iter_mut().find(|s| &s.id == subagent_id)
+                    if let Some(subagent) =
+                        agent.subagents.iter_mut().find(|s| &s.id == subagent_id)
                     {
                         subagent.status = "completed".to_string();
                         subagent.duration_ms = event.subagent_duration_ms;
@@ -634,11 +638,12 @@ impl AppState {
             .collect()
     }
 
-    // v0.9.0 Loop Mode Methods
+    // v0.9.0 Loop Mode Methods (scaffolded - TUI loop toggle not yet wired)
 
     /// Enable loop mode on an agent
     ///
     /// Called when spawning an agent in loop mode or enabling loop on existing agent.
+    #[allow(dead_code)]
     pub fn enable_loop_mode(&mut self, pane_id: &str, max_iterations: u32, stop_word: &str) {
         if let Some(agent) = self.agents.get_mut(pane_id) {
             agent.loop_mode = LoopMode::Active;
@@ -716,9 +721,10 @@ impl AppState {
         self.selected_agent().map(|a| a.pane_id.clone())
     }
 
-    // v0.10.0 Sprite Methods
+    // v0.10.0 Sprite Methods (some scaffolded for future UI features)
 
     /// Check if an agent is a sprite agent
+    #[allow(dead_code)]
     pub fn is_sprite_agent(&self, pane_id: &str) -> bool {
         self.sprite_agent_ids.contains(pane_id)
     }
@@ -738,10 +744,9 @@ impl AppState {
     }
 
     /// Get all sprite agents
+    #[allow(dead_code)]
     pub fn sprite_agents(&self) -> impl Iterator<Item = &Agent> {
-        self.agents
-            .values()
-            .filter(|a| a.is_sprite)
+        self.agents.values().filter(|a| a.is_sprite)
     }
 }
 

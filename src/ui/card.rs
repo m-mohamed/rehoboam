@@ -77,17 +77,17 @@ pub fn render_agent_card(
     match &agent.loop_mode {
         LoopMode::Active => {
             content.push(
-                Line::from(format!(
-                    "Loop {}/{}",
-                    agent.loop_iteration, agent.loop_max
-                ))
-                .style(Style::default().fg(colors::WORKING)),
+                Line::from(format!("Loop {}/{}", agent.loop_iteration, agent.loop_max))
+                    .style(Style::default().fg(colors::WORKING)),
             );
         }
         LoopMode::Stalled => {
             content.push(
-                Line::from("STALLED (X/R)")
-                    .style(Style::default().fg(colors::ATTENTION).add_modifier(Modifier::BOLD)),
+                Line::from("STALLED (X/R)").style(
+                    Style::default()
+                        .fg(colors::ATTENTION)
+                        .add_modifier(Modifier::BOLD),
+                ),
             );
         }
         LoopMode::Complete => {
@@ -99,16 +99,22 @@ pub fn render_agent_card(
         LoopMode::None => {
             // Show subagent info if any, otherwise tool display
             if !agent.subagents.is_empty() {
-                let running = agent.subagents.iter().filter(|s| s.status == "running").count();
+                let running = agent
+                    .subagents
+                    .iter()
+                    .filter(|s| s.status == "running")
+                    .count();
                 let total = agent.subagents.len();
                 let display = if running > 0 {
-                    format!("{} subagent{}", running, if running == 1 { "" } else { "s" })
+                    format!(
+                        "{} subagent{}",
+                        running,
+                        if running == 1 { "" } else { "s" }
+                    )
                 } else {
                     format!("{} done", total)
                 };
-                content.push(
-                    Line::from(display).style(Style::default().fg(colors::WORKING)),
-                );
+                content.push(Line::from(display).style(Style::default().fg(colors::WORKING)));
             } else {
                 content.push(
                     Line::from(agent.tool_display()).style(Style::default().fg(colors::IDLE)),
@@ -122,8 +128,15 @@ pub fn render_agent_card(
         // Show most recent subagent description
         if let Some(subagent) = agent.subagents.iter().rev().find(|s| s.status == "running") {
             content.push(
-                Line::from(truncate(&subagent.description, area.width.saturating_sub(4) as usize))
-                    .style(Style::default().fg(colors::IDLE).add_modifier(Modifier::DIM)),
+                Line::from(truncate(
+                    &subagent.description,
+                    area.width.saturating_sub(4) as usize,
+                ))
+                .style(
+                    Style::default()
+                        .fg(colors::IDLE)
+                        .add_modifier(Modifier::DIM),
+                ),
             );
         } else {
             content.push(

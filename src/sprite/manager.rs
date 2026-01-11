@@ -1,4 +1,9 @@
 //! Sprite lifecycle management
+//!
+//! Scaffolded for sprite command integration (not yet wired into main).
+
+#![allow(dead_code)]
+#![allow(unused_imports)]
 
 use crate::sprite::config::{NetworkPreset, SpriteConfig};
 use color_eyre::eyre::{eyre, Result};
@@ -117,7 +122,7 @@ impl SpriteManager {
     }
 
     /// Initialize a sprite with Claude Code and hook bridge
-    pub async fn initialize_sprite(&self, agent_id: &str, prompt: &str) -> Result<()> {
+    pub async fn initialize_sprite(&self, agent_id: &str, _prompt: &str) -> Result<()> {
         let session = self
             .sessions
             .get(agent_id)
@@ -129,8 +134,8 @@ impl SpriteManager {
         info!("Installing Claude Code in sprite...");
 
         // Create the hook bridge configuration
-        let rehoboam_host = std::env::var("REHOBOAM_PUBLIC_HOST")
-            .unwrap_or_else(|_| "localhost".to_string());
+        let rehoboam_host =
+            std::env::var("REHOBOAM_PUBLIC_HOST").unwrap_or_else(|_| "localhost".to_string());
         let ws_url = format!("ws://{}:{}", rehoboam_host, self.config.ws_port);
 
         // Create .claude directory and configure hooks
@@ -175,10 +180,7 @@ echo "Hook configuration complete"
             .map_err(|e| eyre!("Failed to setup hooks: {}", e))?;
 
         if !output.success() {
-            return Err(eyre!(
-                "Hook setup failed: {}",
-                output.stderr_str()
-            ));
+            return Err(eyre!("Hook setup failed: {}", output.stderr_str()));
         }
 
         debug!("Hook setup complete for {}", agent_id);

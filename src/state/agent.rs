@@ -41,6 +41,7 @@ pub struct Subagent {
     /// Current status: "running", "completed", "failed"
     pub status: String,
     /// Start timestamp (Unix seconds)
+    #[allow(dead_code)]
     pub start_time: i64,
     /// Duration in milliseconds (set on SubagentStop)
     pub duration_ms: Option<u64>,

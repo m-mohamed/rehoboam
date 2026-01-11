@@ -94,7 +94,11 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     };
     // Show sprite count if any remote agents
     let sprite_indicator = if sprite_count > 0 {
-        format!(" [☁ {} sprite{}]", sprite_count, if sprite_count == 1 { "" } else { "s" })
+        format!(
+            " [☁ {} sprite{}]",
+            sprite_count,
+            if sprite_count == 1 { "" } else { "s" }
+        )
     } else {
         String::new()
     };
@@ -176,10 +180,18 @@ fn render_project_view(f: &mut Frame, area: Rect, app: &App) {
 
     for (project_name, agents) in &projects {
         // Project header
-        let header = format!("📁 {} ({} agent{})", project_name, agents.len(), if agents.len() == 1 { "" } else { "s" });
-        items.push(ListItem::new(Line::from(vec![
-            Span::styled(header, Style::default().fg(colors::HIGHLIGHT).add_modifier(Modifier::BOLD)),
-        ])));
+        let header = format!(
+            "📁 {} ({} agent{})",
+            project_name,
+            agents.len(),
+            if agents.len() == 1 { "" } else { "s" }
+        );
+        items.push(ListItem::new(Line::from(vec![Span::styled(
+            header,
+            Style::default()
+                .fg(colors::HIGHLIGHT)
+                .add_modifier(Modifier::BOLD),
+        )])));
 
         // Agent entries under this project
         for agent in agents {
@@ -205,17 +217,13 @@ fn render_project_view(f: &mut Frame, area: Rect, app: &App) {
 
             let line = format!(
                 "  {}{} {} ({}) {} {}",
-                sprite_prefix,
-                icon,
-                agent.pane_id,
-                status_str,
-                tool_info,
-                elapsed
+                sprite_prefix, icon, agent.pane_id, status_str, tool_info, elapsed
             );
 
-            items.push(ListItem::new(Line::from(vec![
-                Span::styled(line, Style::default().fg(color)),
-            ])));
+            items.push(ListItem::new(Line::from(vec![Span::styled(
+                line,
+                Style::default().fg(color),
+            )])));
         }
 
         // Add spacing between projects
@@ -491,7 +499,11 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     };
 
     // Project path field (0)
-    let project_cursor = if spawn_state.active_field == 0 { "▏" } else { "" };
+    let project_cursor = if spawn_state.active_field == 0 {
+        "▏"
+    } else {
+        ""
+    };
     let project_widget = Paragraph::new(format!("{}{}", spawn_state.project_path, project_cursor))
         .style(field_style(spawn_state.active_field == 0))
         .block(
@@ -502,7 +514,11 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         );
 
     // Prompt field (1)
-    let prompt_cursor = if spawn_state.active_field == 1 { "▏" } else { "" };
+    let prompt_cursor = if spawn_state.active_field == 1 {
+        "▏"
+    } else {
+        ""
+    };
     let prompt_widget = Paragraph::new(format!("{}{}", spawn_state.prompt, prompt_cursor))
         .style(field_style(spawn_state.active_field == 1))
         .block(
@@ -513,7 +529,11 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         );
 
     // Branch name field (2)
-    let branch_cursor = if spawn_state.active_field == 2 { "▏" } else { "" };
+    let branch_cursor = if spawn_state.active_field == 2 {
+        "▏"
+    } else {
+        ""
+    };
     let branch_widget = Paragraph::new(format!("{}{}", spawn_state.branch_name, branch_cursor))
         .style(field_style(spawn_state.active_field == 2))
         .block(
@@ -524,7 +544,11 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         );
 
     // Worktree toggle (3)
-    let checkbox = if spawn_state.use_worktree { "[x]" } else { "[ ]" };
+    let checkbox = if spawn_state.use_worktree {
+        "[x]"
+    } else {
+        "[ ]"
+    };
     let worktree_text = format!("{} Create isolated git worktree", checkbox);
     let worktree_widget = Paragraph::new(worktree_text)
         .style(field_style(spawn_state.active_field == 3))
@@ -536,7 +560,11 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         );
 
     // Loop mode toggle (4)
-    let loop_checkbox = if spawn_state.loop_enabled { "[x]" } else { "[ ]" };
+    let loop_checkbox = if spawn_state.loop_enabled {
+        "[x]"
+    } else {
+        "[ ]"
+    };
     let loop_text = format!("{} Enable Loop Mode (Ralph-style autonomy)", loop_checkbox);
     let loop_widget = Paragraph::new(loop_text)
         .style(field_style(spawn_state.active_field == 4))
@@ -555,19 +583,29 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         .split(loop_options_area);
 
     // Max iterations field (5)
-    let iter_cursor = if spawn_state.active_field == 5 { "▏" } else { "" };
-    let iter_widget =
-        Paragraph::new(format!("{}{}", spawn_state.loop_max_iterations, iter_cursor))
-            .style(field_style(spawn_state.active_field == 5))
-            .block(
-                Block::default()
-                    .title(" Max Iter ")
-                    .borders(Borders::ALL)
-                    .border_style(border_style(spawn_state.active_field == 5)),
-            );
+    let iter_cursor = if spawn_state.active_field == 5 {
+        "▏"
+    } else {
+        ""
+    };
+    let iter_widget = Paragraph::new(format!(
+        "{}{}",
+        spawn_state.loop_max_iterations, iter_cursor
+    ))
+    .style(field_style(spawn_state.active_field == 5))
+    .block(
+        Block::default()
+            .title(" Max Iter ")
+            .borders(Borders::ALL)
+            .border_style(border_style(spawn_state.active_field == 5)),
+    );
 
     // Stop word field (6)
-    let stop_cursor = if spawn_state.active_field == 6 { "▏" } else { "" };
+    let stop_cursor = if spawn_state.active_field == 6 {
+        "▏"
+    } else {
+        ""
+    };
     let stop_widget = Paragraph::new(format!("{}{}", spawn_state.loop_stop_word, stop_cursor))
         .style(field_style(spawn_state.active_field == 6))
         .block(

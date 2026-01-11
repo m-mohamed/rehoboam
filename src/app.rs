@@ -244,7 +244,11 @@ impl App {
                 tracing::info!(
                     auto_accept = self.auto_accept,
                     "Auto-accept mode {}",
-                    if self.auto_accept { "enabled" } else { "disabled" }
+                    if self.auto_accept {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
                 );
             }
 

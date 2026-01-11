@@ -1,4 +1,8 @@
 //! Sprite configuration types
+//!
+//! Scaffolded for sprite command integration (not yet wired into main).
+
+#![allow(dead_code)]
 
 use sprites::{NetworkPolicy, NetworkPolicyRule, PolicyAction};
 

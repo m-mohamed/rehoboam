@@ -2,6 +2,10 @@
 //!
 //! Provides methods to send input to Claude Code running inside sprites.
 //! This mirrors TmuxController but operates on remote sprites.
+//!
+//! Scaffolded for sprite command integration (not yet wired into main).
+
+#![allow(dead_code)]
 
 use color_eyre::eyre::{eyre, Result};
 use sprites::Sprite;

@@ -70,7 +70,9 @@ async fn main() {
         Ok(host) => host,
         Err(_) => {
             eprintln!("Error: REHOBOAM_HOST environment variable not set");
-            eprintln!("Set it to the Rehoboam server address, e.g., REHOBOAM_HOST=192.168.1.100:9876");
+            eprintln!(
+                "Set it to the Rehoboam server address, e.g., REHOBOAM_HOST=192.168.1.100:9876"
+            );
             std::process::exit(1);
         }
     };

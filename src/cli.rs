@@ -58,7 +58,6 @@ pub struct Cli {
     pub install: bool,
 
     // Sprites integration options
-
     /// Enable remote sprite support (run Claude Code in sandboxed VMs)
     #[arg(long, default_value_t = false, global = true)]
     pub enable_sprites: bool,
@@ -68,7 +67,12 @@ pub struct Cli {
     pub sprites_token: Option<String>,
 
     /// WebSocket port for receiving hook events from remote sprites
-    #[arg(long, env = "REHOBOAM_SPRITE_PORT", default_value_t = 9876, global = true)]
+    #[arg(
+        long,
+        env = "REHOBOAM_SPRITE_PORT",
+        default_value_t = 9876,
+        global = true
+    )]
     pub sprite_ws_port: u16,
 }
 

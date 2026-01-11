@@ -3,6 +3,12 @@
 //! WebSocket server that receives hook events from remote sprites
 //! and forwards them to the main event loop. Includes connection
 //! status tracking and heartbeat monitoring.
+//!
+//! ## Status
+//! - Event forwarding: ACTIVE (spawn_forwarder)
+//! - Connection status UI: SCAFFOLDED (ConnectionStatus, status methods)
+
+#![allow(dead_code)]
 
 use color_eyre::eyre::{eyre, Result};
 use futures_util::{SinkExt, StreamExt};
