@@ -621,12 +621,6 @@ impl AppState {
         }
     }
 
-    /// Check if an agent is selected
-    #[allow(dead_code)]
-    pub fn is_selected(&self, pane_id: &str) -> bool {
-        self.selected_agents.contains(pane_id)
-    }
-
     /// Clear all selections
     pub fn clear_selection(&mut self) {
         self.selected_agents.clear();

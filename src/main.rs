@@ -115,7 +115,6 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     let wezterm_pane = std::env::var("WEZTERM_PANE").ok();
     let tmux_pane = std::env::var("TMUX_PANE").ok();
     let pane_id = wezterm_pane
-        .clone()
         .or_else(|| tmux_pane.clone()) // Tmux: %0, %1, etc.
         .or_else(|| std::env::var("KITTY_WINDOW_ID").ok())
         .or_else(|| std::env::var("ITERM_SESSION_ID").ok())

@@ -92,7 +92,7 @@ impl SpriteManager {
         self.sprite_counter += 1;
         let sprite_name = format!(
             "rehoboam-{}-{}",
-            project.replace('/', "-").replace('.', "-"),
+            project.replace(['/', '.'], "-"),
             self.sprite_counter
         );
 
@@ -115,7 +115,7 @@ impl SpriteManager {
 
         // Apply network policy
         let preset = network_preset.unwrap_or(self.config.network_preset);
-        let policy = preset.to_policy();
+        let policy = preset.into_policy();
         sprite
             .set_policy(policy)
             .await

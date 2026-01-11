@@ -83,8 +83,6 @@ impl Status {
     }
 
     /// Priority for sorting (lower = higher priority)
-    /// Kept for backwards compatibility (was used by sorted_agents)
-    #[allow(dead_code)]
     pub fn priority(&self) -> u8 {
         match self {
             Status::Attention(_) => 0,

@@ -88,7 +88,7 @@ impl NetworkPreset {
     }
 
     /// Convert preset to sprites NetworkPolicy
-    pub fn to_policy(&self) -> NetworkPolicy {
+    pub fn into_policy(self) -> NetworkPolicy {
         match self {
             NetworkPreset::Full => NetworkPolicy {
                 rules: vec![],

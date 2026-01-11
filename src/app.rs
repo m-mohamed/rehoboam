@@ -549,7 +549,7 @@ impl App {
                     // Generate sprite name from project
                     let sprite_name = format!(
                         "rehoboam-{}",
-                        project.replace('/', "-").replace('.', "-")
+                        project.replace(['/', '.'], "-")
                     );
 
                     tracing::info!(sprite_name = %sprite_name, "Creating sprite...");

@@ -77,10 +77,3 @@ pub enum Action {
     None,
 }
 
-impl Action {
-    /// Check if this action should trigger a re-render
-    #[allow(dead_code)]
-    pub fn should_render(&self) -> bool {
-        !matches!(self, Action::None)
-    }
-}
