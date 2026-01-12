@@ -1,6 +1,6 @@
 mod agent;
 
-pub use agent::{Agent, LoopMode, Status, Subagent};
+pub use agent::{Agent, AttentionType, LoopMode, Status, Subagent};
 
 use crate::config::{MAX_AGENTS, MAX_EVENTS, MAX_SPARKLINE_POINTS};
 use crate::event::{EventSource, HookEvent};
@@ -172,6 +172,22 @@ impl AppState {
         // Update agent state
         agent.project = event.project.clone();
         agent.status = Status::from_str(&event.status, event.attention_type.as_deref());
+
+        // Fix: AskUserQuestion waiting for user response should be ATTENTION, not IDLE
+        // PostToolUse doesn't fire until user responds, so current_tool is still set
+        if event.event == "Stop" {
+            if let Some(tool) = &agent.current_tool {
+                if tool == "AskUserQuestion" {
+                    agent.status = Status::Attention(AttentionType::Input);
+                    tracing::info!(
+                        pane_id = %pane_id,
+                        tool = %tool,
+                        "Stop with AskUserQuestion pending → Attention(Input)"
+                    );
+                }
+            }
+        }
+
         agent.last_event = event.event.clone();
         agent.last_update = current_timestamp();
 

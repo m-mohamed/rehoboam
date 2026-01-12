@@ -369,7 +369,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let help = format!(
-        "{mode}Space:select  Y/N:bulk  K:kill  y/n:approve  c:input  s:spawn  ?:help"
+        "{mode}Space:select  Y/N:bulk  K:kill  y/n:approve  c:input  s:spawn  X/R:loop  ?:help"
     );
 
     let footer = Paragraph::new(help)
@@ -413,38 +413,47 @@ fn render_event_log(f: &mut Frame, app: &App) {
 }
 
 fn render_help(f: &mut Frame) {
-    let area = centered_rect(50, 60, f.area());
+    let area = centered_rect(55, 75, f.area());
 
     let help_text = r"
+  Quick Start
+  Agents appear when Claude Code runs in hooked projects.
+  Columns: Attention (needs you) → Working → Compact → Idle
+
   Navigation
-  h/l         Column left/right
-  j/k         Card up/down
-  Enter       Jump to agent pane
+  h/l         Move between columns
+  j/k         Move between cards
+  Enter       Jump to agent's terminal pane
 
   Single Agent
-  y/n         Approve/reject permission
-  c           Custom input (type & send)
-  s           Spawn new agent
+  y/n         Approve/reject permission request
+  c           Send custom input to agent
+  s           Spawn new agent (opens dialog)
+
+  Loop Mode (Ralph)
+  X           Cancel loop on selected agent
+  R           Restart loop on selected agent
 
   Git Operations
-  D           Show git diff
-  g           Git commit (checkpoint)
-  p           Git push
+  D           Show git diff for agent's project
+  g           Git commit (stage all + commit)
+  p           Git push to remote
 
-  Sprites
-  t           Checkpoint timeline
+  Sprites (Remote VMs)
+  t           Show checkpoint timeline
+  K           Kill & permanently destroy sprite
 
   Bulk Operations
-  Space       Toggle selection
-  Y/N         Bulk approve/reject
-  K           Kill selected agents
+  Space       Toggle card selection
+  Y/N         Bulk approve/reject all selected
+  K           Kill all selected agents
   x           Clear selection
 
   Display
   P           Toggle Kanban/Project view
-  A           Toggle auto-accept mode
-  f           Freeze display
-  d           Debug mode
+  A           Toggle auto-accept mode (careful!)
+  f           Freeze display updates
+  d           Debug mode (show event log)
   ?, H        This help
   q, Esc      Quit
 ";
