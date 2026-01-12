@@ -32,6 +32,23 @@ rehoboam
 | `d` | Toggle debug log |
 | `q` | Quit |
 
+## Ralph Loops
+
+Autonomous iteration with fresh sessions per loop. Progress persists, failures evaporate.
+
+In spawn dialog (`n`):
+- Enable **Loop Mode**
+- Set max iterations and stop word
+- Rehoboam creates `.ralph/` directory with state files
+- Each iteration spawns a fresh Claude session
+- Loop stops on stop word detection or max iterations
+
+State files in `.ralph/`:
+- `anchor.md` - Task spec (your prompt)
+- `progress.md` - Track completed work
+- `guardrails.md` - Learned constraints
+- `state.json` - Iteration counter
+
 ## Sprites (Remote VMs)
 
 Spawn Claude Code agents in isolated cloud VMs via [sprites.dev](https://sprites.dev).
