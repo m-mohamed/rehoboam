@@ -291,8 +291,23 @@ impl Agent {
         if let (Some(pending), Some(incoming)) = (&self.pending_tool_use_id, tool_use_id) {
             if pending != incoming {
                 // IDs don't match, this PostToolUse is for a different tool
+                tracing::warn!(
+                    pane_id = %self.pane_id,
+                    pending_id = %pending,
+                    incoming_id = %incoming,
+                    current_tool = ?self.current_tool,
+                    "Tool use ID mismatch - skipping latency calculation"
+                );
                 return;
             }
+        }
+        // Log if we have no pending ID but got one, or vice versa (helpful for debugging)
+        if self.pending_tool_use_id.is_none() && tool_use_id.is_some() {
+            tracing::debug!(
+                pane_id = %self.pane_id,
+                incoming_id = ?tool_use_id,
+                "PostToolUse has ID but no pending PreToolUse ID"
+            );
         }
 
         // Calculate latency if we have a start time

@@ -9,6 +9,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use sprites::SpritesClient;
 use std::path::PathBuf;
 use std::process::Command;
+use tokio::sync::mpsc;
 
 /// Input mode for the application
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -35,8 +36,11 @@ pub enum ViewMode {
 /// State for the spawn dialog
 #[derive(Debug, Clone)]
 pub struct SpawnState {
-    /// Selected project path
+    /// Selected project path (local) OR leave empty for GitHub clone
     pub project_path: String,
+    /// GitHub repository to clone (e.g., "owner/repo" or full URL)
+    /// Only used when use_sprite is true and project_path is empty
+    pub github_repo: String,
     /// Prompt to send to the new agent
     pub prompt: String,
     /// Branch name for git worktree (optional)
@@ -44,7 +48,7 @@ pub struct SpawnState {
     /// Whether to create a git worktree for isolation
     pub use_worktree: bool,
     /// Which field is being edited
-    /// 0 = project, 1 = prompt, 2 = branch, 3 = worktree toggle, 4 = loop toggle,
+    /// 0 = project/github, 1 = prompt, 2 = branch, 3 = worktree toggle, 4 = loop toggle,
     /// 5 = max iter, 6 = stop word, 7 = sprite toggle, 8 = network policy
     pub active_field: usize,
     // v0.9.0 Loop Mode fields
@@ -64,6 +68,7 @@ impl Default for SpawnState {
     fn default() -> Self {
         Self {
             project_path: String::new(),
+            github_repo: String::new(),
             prompt: String::new(),
             branch_name: String::new(),
             use_worktree: false,
@@ -105,6 +110,8 @@ pub struct App {
     pub config: RehoboamConfig,
     /// Sprites API client (None if sprites not enabled)
     pub sprites_client: Option<SpritesClient>,
+    /// Event sender for async operations
+    pub event_tx: Option<mpsc::Sender<Event>>,
     /// Show diff modal
     pub show_diff: bool,
     /// Diff content to display
@@ -118,7 +125,12 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(debug_mode: bool, config: RehoboamConfig, sprites_client: Option<SpritesClient>) -> Self {
+    pub fn new(
+        debug_mode: bool,
+        config: RehoboamConfig,
+        sprites_client: Option<SpritesClient>,
+        event_tx: Option<mpsc::Sender<Event>>,
+    ) -> Self {
         Self {
             state: AppState::new(),
             should_quit: false,
@@ -133,6 +145,7 @@ impl App {
             spawn_state: SpawnState::default(),
             config,
             sprites_client,
+            event_tx,
             show_diff: false,
             diff_content: String::new(),
             show_checkpoint_timeline: false,
@@ -180,6 +193,23 @@ impl App {
                         self.state.sprite_disconnected(&sprite_id);
                     }
                 }
+                self.needs_render = true;
+            }
+            Event::CheckpointData {
+                sprite_id,
+                checkpoints,
+            } => {
+                // Populate checkpoint timeline with fetched data
+                tracing::debug!(
+                    sprite_id = %sprite_id,
+                    count = checkpoints.len(),
+                    "Received checkpoint data"
+                );
+                self.checkpoint_timeline = checkpoints
+                    .into_iter()
+                    .map(CheckpointRecord::from)
+                    .collect();
+                self.selected_checkpoint = 0;
                 self.needs_render = true;
             }
         }
@@ -447,7 +477,12 @@ impl App {
             // Delete last character from active text field
             KeyCode::Backspace => match self.spawn_state.active_field {
                 0 => {
-                    self.spawn_state.project_path.pop();
+                    // Field 0: project_path (local) or github_repo (sprite mode)
+                    if self.spawn_state.use_sprite {
+                        self.spawn_state.github_repo.pop();
+                    } else {
+                        self.spawn_state.project_path.pop();
+                    }
                 }
                 1 => {
                     self.spawn_state.prompt.pop();
@@ -465,7 +500,14 @@ impl App {
             },
             // Type a character into active text field
             KeyCode::Char(c) => match self.spawn_state.active_field {
-                0 => self.spawn_state.project_path.push(c),
+                0 => {
+                    // Field 0: project_path (local) or github_repo (sprite mode)
+                    if self.spawn_state.use_sprite {
+                        self.spawn_state.github_repo.push(c);
+                    } else {
+                        self.spawn_state.project_path.push(c);
+                    }
+                }
                 1 => self.spawn_state.prompt.push(c),
                 2 => self.spawn_state.branch_name.push(c),
                 3 => {
@@ -512,8 +554,11 @@ impl App {
     /// If `loop_enabled` is set, registers a loop config to be applied when
     /// the agent sends its first hook event.
     fn spawn_agent(&mut self) {
-        if self.spawn_state.project_path.is_empty() {
-            tracing::warn!("Cannot spawn: no project path specified");
+        // For sprites, we can use either a local project path OR a GitHub repo
+        let use_github = self.spawn_state.use_sprite && !self.spawn_state.github_repo.is_empty();
+
+        if self.spawn_state.project_path.is_empty() && !use_github {
+            tracing::warn!("Cannot spawn: no project path or GitHub repo specified");
             return;
         }
 
@@ -525,8 +570,11 @@ impl App {
         // Branch: Sprite spawning vs tmux spawning
         if self.spawn_state.use_sprite {
             if let Some(client) = &self.sprites_client {
+                let github_repo = self.spawn_state.github_repo.clone();
+
                 tracing::info!(
                     project = %project_path,
+                    github_repo = %github_repo,
                     prompt_len = prompt.len(),
                     loop_enabled = self.spawn_state.loop_enabled,
                     region = %self.config.sprites.default_region,
@@ -546,11 +594,20 @@ impl App {
                 let stop_word = self.spawn_state.loop_stop_word.clone();
 
                 tokio::spawn(async move {
-                    // Generate sprite name from project
-                    let sprite_name = format!(
-                        "rehoboam-{}",
-                        project.replace(['/', '.'], "-")
-                    );
+                    // Determine sprite name and working directory
+                    let (sprite_name, work_dir) = if !github_repo.is_empty() {
+                        // Extract repo name from GitHub URL/path
+                        let repo_name = extract_repo_name(&github_repo);
+                        let sprite_name = format!("rehoboam-{}", repo_name.replace(['/', '.'], "-"));
+                        let work_dir = format!("/workspace/{}", repo_name);
+                        (sprite_name, work_dir)
+                    } else {
+                        let sprite_name = format!(
+                            "rehoboam-{}",
+                            project.replace(['/', '.'], "-")
+                        );
+                        (sprite_name, "/workspace".to_string())
+                    };
 
                     tracing::info!(sprite_name = %sprite_name, "Creating sprite...");
 
@@ -558,7 +615,56 @@ impl App {
                         Ok(sprite) => {
                             tracing::info!(sprite_name = %sprite_name, "Sprite created");
 
-                            // Start Claude Code in the sprite
+                            // If GitHub repo specified, clone it first
+                            if !github_repo.is_empty() {
+                                tracing::info!(
+                                    sprite_name = %sprite_name,
+                                    repo = %github_repo,
+                                    "Cloning GitHub repository..."
+                                );
+
+                                // Normalize repo format (owner/repo or full URL)
+                                let clone_target = normalize_github_repo(&github_repo);
+
+                                let clone_result = sprite
+                                    .command("gh")
+                                    .arg("repo")
+                                    .arg("clone")
+                                    .arg(&clone_target)
+                                    .arg(&work_dir)
+                                    .output()
+                                    .await;
+
+                                match clone_result {
+                                    Ok(output) if output.success() => {
+                                        tracing::info!(
+                                            sprite_name = %sprite_name,
+                                            repo = %github_repo,
+                                            "Repository cloned successfully"
+                                        );
+                                    }
+                                    Ok(output) => {
+                                        tracing::error!(
+                                            sprite_name = %sprite_name,
+                                            repo = %github_repo,
+                                            stderr = %output.stderr_str(),
+                                            "Failed to clone repository"
+                                        );
+                                        return;
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            sprite_name = %sprite_name,
+                                            repo = %github_repo,
+                                            error = %e,
+                                            "gh repo clone command failed"
+                                        );
+                                        return;
+                                    }
+                                }
+                            }
+
+                            // Build Claude command
                             let claude_cmd = if prompt_clone.is_empty() {
                                 "claude".to_string()
                             } else {
@@ -569,13 +675,14 @@ impl App {
                                 .command("bash")
                                 .arg("-c")
                                 .arg(&claude_cmd)
-                                .current_dir("/workspace")
+                                .current_dir(&work_dir)
                                 .spawn()
                                 .await
                             {
                                 Ok(_) => {
                                     tracing::info!(
                                         sprite_name = %sprite_name,
+                                        work_dir = %work_dir,
                                         loop_enabled = loop_enabled,
                                         "Claude Code started in sprite"
                                     );
@@ -1236,16 +1343,57 @@ impl App {
             return;
         }
 
-        // For now, show empty timeline (checkpoints would be populated from SpriteManager)
-        // In a full implementation, we'd query the SpriteManager for checkpoint history
+        let Some(sprite_id) = agent.sprite_id.clone() else {
+            tracing::warn!("Sprite agent has no sprite_id");
+            return;
+        };
+
+        // Show timeline immediately (will populate when data arrives)
         self.checkpoint_timeline = Vec::new();
         self.selected_checkpoint = 0;
         self.show_checkpoint_timeline = true;
 
+        // Spawn async task to fetch checkpoints from sprites API
+        if let (Some(client), Some(tx)) = (&self.sprites_client, &self.event_tx) {
+            let client = client.clone();
+            let tx = tx.clone();
+            let sprite_id_clone = sprite_id.clone();
+
+            tokio::spawn(async move {
+                let sprite = client.sprite(&sprite_id_clone);
+                match sprite.list_checkpoints().await {
+                    Ok(checkpoints) => {
+                        tracing::debug!(
+                            sprite_id = %sprite_id_clone,
+                            count = checkpoints.len(),
+                            "Fetched checkpoints from API"
+                        );
+                        if let Err(e) = tx
+                            .send(Event::CheckpointData {
+                                sprite_id: sprite_id_clone,
+                                checkpoints,
+                            })
+                            .await
+                        {
+                            tracing::error!("Failed to send checkpoint data: {}", e);
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            sprite_id = %sprite_id_clone,
+                            error = %e,
+                            "Failed to fetch checkpoints"
+                        );
+                    }
+                }
+            });
+        }
+
         tracing::debug!(
             pane_id = %agent.pane_id,
             project = %agent.project,
-            "Showing checkpoint timeline"
+            sprite_id = %sprite_id,
+            "Showing checkpoint timeline (fetching data...)"
         );
     }
 
@@ -1302,4 +1450,49 @@ impl App {
         // Note: Actual restore would be async through SpriteManager
         // This would be wired through an event system in a full implementation
     }
+}
+
+/// Extract repository name from a GitHub URL or path
+///
+/// Handles:
+/// - "owner/repo" -> "repo"
+/// - "github.com/owner/repo" -> "repo"
+/// - "https://github.com/owner/repo" -> "repo"
+/// - "https://github.com/owner/repo.git" -> "repo"
+fn extract_repo_name(input: &str) -> String {
+    // Remove protocol prefix if present
+    let path = input
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("git@")
+        .trim_start_matches("github.com/")
+        .trim_start_matches("github.com:");
+
+    // Get the last segment (repo name)
+    let repo = path
+        .split('/')
+        .next_back()
+        .unwrap_or(path)
+        .trim_end_matches(".git");
+
+    repo.to_string()
+}
+
+/// Normalize GitHub repo input to a format gh CLI can use
+///
+/// Handles:
+/// - "owner/repo" -> "owner/repo" (already correct)
+/// - "https://github.com/owner/repo" -> "owner/repo"
+/// - "github.com/owner/repo" -> "owner/repo"
+fn normalize_github_repo(input: &str) -> String {
+    // Remove protocol and domain prefix
+    let path = input
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("git@")
+        .trim_start_matches("github.com/")
+        .trim_start_matches("github.com:")
+        .trim_end_matches(".git");
+
+    path.to_string()
 }

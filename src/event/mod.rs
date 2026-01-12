@@ -25,6 +25,13 @@ pub enum Event {
         /// New status
         status: SpriteStatusType,
     },
+    /// Checkpoint data fetched from sprites API
+    CheckpointData {
+        /// Sprite identifier
+        sprite_id: String,
+        /// List of checkpoints
+        checkpoints: Vec<sprites::Checkpoint>,
+    },
 }
 
 /// Sprite status types (scaffolded for connection status UI)
@@ -262,6 +269,34 @@ impl ClaudeHookInput {
             // Unknown hooks default to idle (conservative - don't show false WORKING)
             _ => ("idle", None),
         }
+    }
+}
+
+/// Derive rehoboam status from a hook event name string
+///
+/// Standalone function for use by remote event processing (sprites)
+/// where we only have the hook event name as a string.
+///
+/// # Returns
+/// Tuple of (status, optional attention_type) as owned Strings
+pub fn derive_status_from_hook_name(hook_name: &str) -> (String, Option<String>) {
+    match hook_name {
+        // WORKING: Claude is actively doing something
+        "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "SubagentStart" | "SubagentStop" => {
+            ("working".to_string(), None)
+        }
+
+        // ATTENTION: Claude is BLOCKED waiting for explicit user approval
+        "PermissionRequest" => ("attention".to_string(), Some("permission".to_string())),
+
+        // IDLE: Claude is waiting for user input (not blocked, just done)
+        "SessionStart" | "Stop" | "SessionEnd" | "Notification" => ("idle".to_string(), None),
+
+        // COMPACTING: Context maintenance
+        "PreCompact" => ("compacting".to_string(), None),
+
+        // Unknown hooks default to idle (conservative)
+        _ => ("idle".to_string(), None),
     }
 }
 

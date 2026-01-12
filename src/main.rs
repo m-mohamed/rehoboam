@@ -35,7 +35,6 @@
 //!   rehoboam          # Start TUI (default)
 //!   rehoboam hook     # Process hook event from stdin (Claude Code pipes JSON)
 
-mod action;
 mod app;
 mod cli;
 mod config;
@@ -399,15 +398,29 @@ async fn main() -> Result<()> {
         let converter_handle = tokio::spawn(async move {
             while let Some(remote_event) = sprite_rx.recv().await {
                 // Convert forwarder's RemoteHookEvent to our HookEvent
+                let hook_name = remote_event
+                    .event
+                    .hook_event_name
+                    .clone()
+                    .unwrap_or_else(|| "Unknown".to_string());
+
+                // Derive status from hook event name (like local events)
+                let (derived_status, attention_type) =
+                    event::derive_status_from_hook_name(&hook_name);
+
                 let hook_event = event::HookEvent {
-                    event: remote_event
-                        .event
-                        .hook_event_name
-                        .unwrap_or_else(|| "Unknown".to_string()),
-                    status: "working".to_string(), // Will be derived by app
-                    attention_type: None,
+                    event: hook_name,
+                    status: derived_status,
+                    attention_type,
                     pane_id: remote_event.sprite_id.clone(),
-                    project: "sprite".to_string(), // TODO: extract from sprite metadata
+                    project: remote_event
+                        .event
+                        .transcript_path
+                        .as_ref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .and_then(|n| n.to_str())
+                        .map(String::from)
+                        .unwrap_or_else(|| "sprite".to_string()),
                     timestamp: remote_event.timestamp.unwrap_or_else(|| {
                         std::time::SystemTime::now()
                             .duration_since(std::time::UNIX_EPOCH)
@@ -518,8 +531,8 @@ async fn run_tui(
     // RAII guard ensures terminal is restored on panic or early return
     let _guard = tui::TerminalGuard;
 
-    // Create app state with config and sprites client
-    let mut app = App::new(debug_mode, config, sprites_client);
+    // Create app state with config, sprites client, and event channel
+    let mut app = App::new(debug_mode, config, sprites_client, Some(event_tx.clone()));
 
     // Create cancellation token for graceful shutdown
     let cancel = CancellationToken::new();

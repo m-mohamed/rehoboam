@@ -565,8 +565,13 @@ fn render_checkpoint_timeline(f: &mut Frame, app: &App) {
                     Style::default().fg(colors::FG)
                 };
 
-                // Format elapsed time
-                let elapsed = cp.created_at.elapsed();
+                // Format elapsed time from Unix timestamp
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let elapsed_secs = (now - cp.created_at).max(0) as u64;
+                let elapsed = std::time::Duration::from_secs(elapsed_secs);
                 let elapsed_str = format_checkpoint_elapsed(elapsed);
 
                 // Show iteration if in loop mode
@@ -684,17 +689,23 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         }
     };
 
-    // Project path field (0)
+    // Project path / GitHub repo field (0)
+    // When sprite mode is on, this becomes a GitHub repo field
     let project_cursor = if spawn_state.active_field == 0 {
         "▏"
     } else {
         ""
     };
-    let project_widget = Paragraph::new(format!("{}{}", spawn_state.project_path, project_cursor))
+    let (field_value, field_title) = if spawn_state.use_sprite {
+        (&spawn_state.github_repo, " GitHub Repo (owner/repo) ")
+    } else {
+        (&spawn_state.project_path, " Project Path ")
+    };
+    let project_widget = Paragraph::new(format!("{}{}", field_value, project_cursor))
         .style(field_style(spawn_state.active_field == 0))
         .block(
             Block::default()
-                .title(" Project Path ")
+                .title(field_title)
                 .borders(Borders::ALL)
                 .border_style(border_style(spawn_state.active_field == 0)),
         );

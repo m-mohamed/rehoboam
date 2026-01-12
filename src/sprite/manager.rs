@@ -37,11 +37,25 @@ pub struct CheckpointRecord {
     /// User-provided comment/description
     pub comment: String,
 
-    /// When the checkpoint was created
-    pub created_at: Instant,
+    /// When the checkpoint was created (Unix timestamp in seconds)
+    pub created_at: i64,
 
     /// Loop iteration at time of checkpoint (0 if not in loop mode)
     pub iteration: u32,
+}
+
+impl From<sprites::Checkpoint> for CheckpointRecord {
+    fn from(cp: sprites::Checkpoint) -> Self {
+        Self {
+            id: cp.id,
+            comment: cp.comment.unwrap_or_default(),
+            created_at: cp
+                .created_at
+                .map(|dt| dt.timestamp())
+                .unwrap_or(0),
+            iteration: 0,
+        }
+    }
 }
 
 /// Active sprite session metadata
@@ -274,10 +288,14 @@ echo "Hook configuration complete"
         session.last_checkpoint = Some(checkpoint_id.clone());
 
         // Track in history for timeline UI
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
         session.checkpoint_history.push(CheckpointRecord {
             id: checkpoint_id.clone(),
             comment: comment.to_string(),
-            created_at: Instant::now(),
+            created_at: now,
             iteration,
         });
 

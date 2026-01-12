@@ -10,8 +10,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Timeout for Working → Idle transition (seconds)
-/// Reduced from 30s to 10s for faster responsiveness
-const IDLE_TIMEOUT_SECS: i64 = 10;
+/// Increased from 10s to 60s - Claude often thinks for 10-30s between tool calls
+/// The in_response guard prevents false timeouts during active responses
+const IDLE_TIMEOUT_SECS: i64 = 60;
 
 /// Timeout for removing stale sessions (seconds)
 const STALE_TIMEOUT_SECS: i64 = 300; // 5 minutes
@@ -467,12 +468,26 @@ impl AppState {
             // Working → Idle after timeout, BUT NOT if:
             // 1. A tool is currently running (between PreToolUse and PostToolUse)
             // 2. Claude is actively responding (between UserPromptSubmit and Stop)
-            if matches!(agent.status, Status::Working)
-                && elapsed > IDLE_TIMEOUT_SECS
-                && agent.current_tool.is_none()
-                && !agent.in_response
-            {
-                idle_transitions.push(pane_id.clone());
+            if matches!(agent.status, Status::Working) {
+                // Debug: log timeout check conditions
+                if elapsed > 10 {
+                    // Only log after 10s to reduce noise
+                    tracing::debug!(
+                        pane_id = %pane_id,
+                        elapsed_secs = elapsed,
+                        in_response = agent.in_response,
+                        current_tool = ?agent.current_tool,
+                        timeout_threshold = IDLE_TIMEOUT_SECS,
+                        "Timeout check"
+                    );
+                }
+
+                if elapsed > IDLE_TIMEOUT_SECS
+                    && agent.current_tool.is_none()
+                    && !agent.in_response
+                {
+                    idle_transitions.push(pane_id.clone());
+                }
             }
         }
 
