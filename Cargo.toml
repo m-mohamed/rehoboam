@@ -43,6 +43,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
 # Utilities
+chrono = { version = "0.4", features = ["serde"] }
 directories = "5"
 ignore = "0.4"          # Git-aware directory walking (from ripgrep)
 notify-rust = "4"       # Cross-platform native desktop notifications

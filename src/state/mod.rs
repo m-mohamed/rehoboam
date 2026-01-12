@@ -5,6 +5,7 @@ pub use agent::{Agent, LoopMode, Status, Subagent};
 use crate::config::{MAX_AGENTS, MAX_EVENTS, MAX_SPARKLINE_POINTS};
 use crate::event::{EventSource, HookEvent};
 use crate::notify;
+use crate::ralph;
 use crate::tmux::TmuxController;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -27,6 +28,8 @@ pub struct LoopConfig {
     pub max_iterations: u32,
     /// Stop word to detect completion
     pub stop_word: String,
+    /// Path to .ralph/ directory for proper Ralph loops (fresh sessions)
+    pub ralph_dir: Option<std::path::PathBuf>,
 }
 
 /// Application state
@@ -197,10 +200,12 @@ impl AppState {
                 agent.loop_mode = LoopMode::Active;
                 agent.loop_max = loop_config.max_iterations;
                 agent.loop_stop_word = loop_config.stop_word.clone();
+                agent.ralph_dir = loop_config.ralph_dir.clone();
                 tracing::info!(
                     pane_id = %pane_id,
                     max = loop_config.max_iterations,
                     stop_word = %loop_config.stop_word,
+                    ralph_dir = ?loop_config.ralph_dir,
                     "Loop mode applied from spawn config"
                 );
             }
@@ -351,8 +356,8 @@ impl AppState {
                     Some("Basso"),
                 );
             } else {
-                // Continue loop: send Enter to re-prompt
-                // Check agent type to determine how to send input
+                // Continue loop
+                // Check agent type to determine how to continue
                 if agent.is_sprite {
                     // Sprite agents: loop continuation handled async via SpriteController
                     // The app.rs handle_event will pick this up and send via WebSocket
@@ -363,20 +368,54 @@ impl AppState {
                         "Sprite loop continuing (async)"
                     );
                 } else if pane_id.starts_with('%') {
-                    // Tmux panes: send Enter directly
-                    if let Err(e) = TmuxController::send_enter(&pane_id) {
-                        tracing::error!(
-                            pane_id = %pane_id,
-                            error = %e,
-                            "Failed to send Enter for loop continuation"
-                        );
+                    // Tmux panes: check if proper Ralph mode (fresh sessions)
+                    // Clone ralph_dir to avoid borrow conflict with mutable agent
+                    let ralph_dir_clone = agent.ralph_dir.clone();
+                    if let Some(ralph_dir) = ralph_dir_clone {
+                        // Proper Ralph loop: spawn fresh session
+                        match spawn_fresh_ralph_session(&pane_id, &ralph_dir, agent) {
+                            Ok(new_pane_id) => {
+                                tracing::info!(
+                                    old_pane = %pane_id,
+                                    new_pane = %new_pane_id,
+                                    iteration = agent.loop_iteration,
+                                    "Ralph loop: spawned fresh session"
+                                );
+                                // Update pane_id if it changed
+                                if new_pane_id != pane_id {
+                                    agent.pane_id = new_pane_id;
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(
+                                    pane_id = %pane_id,
+                                    error = %e,
+                                    "Failed to spawn fresh Ralph session"
+                                );
+                                agent.loop_mode = LoopMode::Stalled;
+                                notify::send(
+                                    "Ralph Error",
+                                    &format!("{}: {}", agent.project, e),
+                                    Some("Basso"),
+                                );
+                            }
+                        }
                     } else {
-                        tracing::info!(
-                            pane_id = %pane_id,
-                            iteration = agent.loop_iteration,
-                            max = agent.loop_max,
-                            "Loop continuing: sent Enter"
-                        );
+                        // Legacy loop mode: send Enter (same session)
+                        if let Err(e) = TmuxController::send_enter(&pane_id) {
+                            tracing::error!(
+                                pane_id = %pane_id,
+                                error = %e,
+                                "Failed to send Enter for loop continuation"
+                            );
+                        } else {
+                            tracing::info!(
+                                pane_id = %pane_id,
+                                iteration = agent.loop_iteration,
+                                max = agent.loop_max,
+                                "Loop continuing: sent Enter (legacy mode)"
+                            );
+                        }
                     }
                 }
             }
@@ -675,18 +714,27 @@ impl AppState {
     /// Register a pending loop config for a newly spawned agent
     ///
     /// When the agent sends its first hook event, the config will be applied.
-    pub fn register_loop_config(&mut self, pane_id: &str, max_iterations: u32, stop_word: &str) {
+    /// If `ralph_dir` is Some, the agent will use proper Ralph mode (fresh sessions).
+    pub fn register_loop_config(
+        &mut self,
+        pane_id: &str,
+        max_iterations: u32,
+        stop_word: &str,
+        ralph_dir: Option<std::path::PathBuf>,
+    ) {
         self.pending_loop_configs.insert(
             pane_id.to_string(),
             LoopConfig {
                 max_iterations,
                 stop_word: stop_word.to_string(),
+                ralph_dir: ralph_dir.clone(),
             },
         );
         tracing::info!(
             pane_id = %pane_id,
             max = max_iterations,
             stop_word = %stop_word,
+            ralph_dir = ?ralph_dir,
             "Registered pending loop config"
         );
     }
@@ -782,6 +830,100 @@ impl AppState {
             agent.working_dir = Some(working_dir);
         }
     }
+}
+
+/// Spawn a fresh Ralph session in the given pane
+///
+/// This is the core of proper Ralph loops:
+/// 1. Increment iteration counter in state.json
+/// 2. Check stop word in progress.md
+/// 3. Build iteration prompt with current state
+/// 4. Kill old pane, spawn fresh Claude session
+///
+/// Returns the new pane_id (may be different from old one)
+fn spawn_fresh_ralph_session(
+    pane_id: &str,
+    ralph_dir: &std::path::Path,
+    agent: &mut Agent,
+) -> color_eyre::eyre::Result<String> {
+    use color_eyre::eyre::WrapErr;
+
+    // 1. Increment iteration counter
+    let new_iteration = ralph::increment_iteration(ralph_dir)
+        .wrap_err("Failed to increment Ralph iteration")?;
+    agent.loop_iteration = new_iteration;
+
+    // 2. Check stop word in progress.md
+    if ralph::check_stop_word(ralph_dir, &agent.loop_stop_word)
+        .wrap_err("Failed to check stop word")?
+    {
+        agent.loop_mode = LoopMode::Complete;
+        tracing::info!(
+            pane_id = %pane_id,
+            iteration = new_iteration,
+            stop_word = %agent.loop_stop_word,
+            "Ralph loop complete: stop word found"
+        );
+        notify::send(
+            "Ralph Complete",
+            &format!("{}: {} iterations", agent.project, new_iteration),
+            Some("Glass"),
+        );
+        return Ok(pane_id.to_string());
+    }
+
+    // 3. Check max iterations
+    if ralph::check_max_iterations(ralph_dir).wrap_err("Failed to check max iterations")? {
+        agent.loop_mode = LoopMode::Complete;
+        tracing::info!(
+            pane_id = %pane_id,
+            iteration = new_iteration,
+            max = agent.loop_max,
+            "Ralph loop complete: max iterations reached"
+        );
+        notify::send(
+            "Ralph Max Reached",
+            &format!("{}: {} iterations", agent.project, new_iteration),
+            Some("Basso"),
+        );
+        return Ok(pane_id.to_string());
+    }
+
+    // 4. Build iteration prompt
+    let prompt_file = ralph::build_iteration_prompt(ralph_dir)
+        .wrap_err("Failed to build iteration prompt")?;
+
+    // 5. Get project directory for respawn
+    let project_dir = ralph_dir
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|| ".".to_string());
+
+    // 6. Send Ctrl+C to ensure clean shutdown, then kill pane
+    let _ = TmuxController::send_interrupt(pane_id);
+    std::thread::sleep(std::time::Duration::from_millis(100));
+
+    if let Err(e) = TmuxController::kill_pane(pane_id) {
+        tracing::warn!(
+            pane_id = %pane_id,
+            error = %e,
+            "Failed to kill old pane (may already be gone)"
+        );
+    }
+
+    // 7. Respawn fresh Claude session
+    let new_pane_id = TmuxController::respawn_claude(&project_dir, &prompt_file)
+        .wrap_err("Failed to respawn Claude session")?;
+
+    tracing::info!(
+        old_pane = %pane_id,
+        new_pane = %new_pane_id,
+        iteration = new_iteration,
+        prompt_file = %prompt_file,
+        "Spawned fresh Ralph session"
+    );
+
+    Ok(new_pane_id)
 }
 
 fn current_timestamp() -> i64 {

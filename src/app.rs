@@ -1,6 +1,7 @@
 use crate::config::RehoboamConfig;
 use crate::event::Event;
 use crate::git::GitController;
+use crate::ralph::{self, RalphConfig};
 use crate::sprite::controller::SpriteController;
 use crate::sprite::CheckpointRecord;
 use crate::state::AppState;
@@ -770,6 +771,36 @@ impl App {
             Ok(pane_id) => {
                 tracing::info!(pane_id = %pane_id, "Created new tmux pane");
 
+                // Initialize Ralph loop if loop mode is enabled
+                let ralph_dir = if self.spawn_state.loop_enabled && !prompt.is_empty() {
+                    let max_iter = self
+                        .spawn_state
+                        .loop_max_iterations
+                        .parse::<u32>()
+                        .unwrap_or(50);
+                    let config = RalphConfig {
+                        max_iterations: max_iter,
+                        stop_word: self.spawn_state.loop_stop_word.clone(),
+                        pane_id: pane_id.clone(),
+                    };
+
+                    match ralph::init_ralph_dir(&working_dir, prompt, &config) {
+                        Ok(dir) => {
+                            tracing::info!(
+                                ralph_dir = ?dir,
+                                "Initialized Ralph loop directory"
+                            );
+                            Some(dir)
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "Failed to initialize Ralph directory");
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 // Register loop config if loop mode is enabled
                 if self.spawn_state.loop_enabled {
                     let max_iter = self
@@ -781,6 +812,7 @@ impl App {
                         &pane_id,
                         max_iter,
                         &self.spawn_state.loop_stop_word,
+                        ralph_dir.clone(),
                     );
                 }
 
@@ -789,26 +821,54 @@ impl App {
                     .set_agent_working_dir(&pane_id, working_dir.clone());
 
                 // Start Claude Code in the new pane
-                if let Err(e) = TmuxController::send_keys(&pane_id, "claude") {
-                    tracing::error!(error = %e, "Failed to start Claude");
-                    return;
-                }
-
-                // If we have a prompt, send it after a short delay
-                // (Claude needs time to start up)
-                if !prompt.is_empty() {
-                    // Use tokio::spawn for async-friendly delay
-                    let pane_id_clone = pane_id.clone();
-                    let prompt_clone = prompt.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                        if let Err(e) = TmuxController::send_buffered(&pane_id_clone, &prompt_clone)
-                        {
-                            tracing::error!(error = %e, "Failed to send prompt");
-                        } else {
-                            tracing::info!(pane_id = %pane_id_clone, "Sent initial prompt");
+                // For Ralph loops, use --prompt-file with the iteration prompt
+                if let Some(ref ralph_dir) = ralph_dir {
+                    // Build the iteration prompt file
+                    match ralph::build_iteration_prompt(ralph_dir) {
+                        Ok(prompt_file) => {
+                            let cmd = format!("claude --prompt-file '{}'", prompt_file);
+                            if let Err(e) = TmuxController::send_keys(&pane_id, &cmd) {
+                                tracing::error!(error = %e, "Failed to start Claude with prompt file");
+                                return;
+                            }
+                            tracing::info!(
+                                pane_id = %pane_id,
+                                prompt_file = %prompt_file,
+                                "Started Claude in Ralph loop mode"
+                            );
                         }
-                    });
+                        Err(e) => {
+                            tracing::error!(error = %e, "Failed to build iteration prompt");
+                            // Fall back to normal start
+                            if let Err(e) = TmuxController::send_keys(&pane_id, "claude") {
+                                tracing::error!(error = %e, "Failed to start Claude");
+                            }
+                        }
+                    }
+                } else {
+                    // Normal mode: start Claude and send prompt via buffer
+                    if let Err(e) = TmuxController::send_keys(&pane_id, "claude") {
+                        tracing::error!(error = %e, "Failed to start Claude");
+                        return;
+                    }
+
+                    // If we have a prompt, send it after a short delay
+                    // (Claude needs time to start up)
+                    if !prompt.is_empty() {
+                        // Use tokio::spawn for async-friendly delay
+                        let pane_id_clone = pane_id.clone();
+                        let prompt_clone = prompt.clone();
+                        tokio::spawn(async move {
+                            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                            if let Err(e) =
+                                TmuxController::send_buffered(&pane_id_clone, &prompt_clone)
+                            {
+                                tracing::error!(error = %e, "Failed to send prompt");
+                            } else {
+                                tracing::info!(pane_id = %pane_id_clone, "Sent initial prompt");
+                            }
+                        });
+                    }
                 }
             }
             Err(e) => {

@@ -43,6 +43,7 @@ mod event;
 mod git;
 mod init;
 mod notify;
+mod ralph;
 mod sprite;
 mod state;
 mod tmux;

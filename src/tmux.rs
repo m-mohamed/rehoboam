@@ -214,6 +214,90 @@ impl TmuxController {
         Ok(pane_id)
     }
 
+    /// Kill a tmux pane
+    ///
+    /// Used by Ralph loops to kill the old session before respawning fresh.
+    ///
+    /// # Arguments
+    /// * `pane_id` - Tmux pane identifier (e.g., "%1", "%2")
+    pub fn kill_pane(pane_id: &str) -> Result<()> {
+        let status = Command::new("tmux")
+            .args(["kill-pane", "-t", pane_id])
+            .status()
+            .wrap_err("Failed to execute tmux kill-pane")?;
+
+        if !status.success() {
+            bail!("tmux kill-pane failed with status: {}", status);
+        }
+
+        tracing::info!(pane_id = %pane_id, "Killed tmux pane");
+        Ok(())
+    }
+
+    /// Respawn a pane with a fresh Claude Code session
+    ///
+    /// Creates a new pane in the same window and starts Claude with the given prompt file.
+    /// Used by Ralph loops to spawn fresh sessions per iteration.
+    ///
+    /// # Arguments
+    /// * `cwd` - Working directory for the new pane
+    /// * `prompt_file` - Path to the iteration prompt file
+    ///
+    /// # Returns
+    /// The pane ID of the newly created pane
+    pub fn respawn_claude(cwd: &str, prompt_file: &str) -> Result<String> {
+        // Create a new pane with claude command using prompt file
+        let cmd = format!("claude --prompt-file '{}'", prompt_file);
+
+        let output = Command::new("tmux")
+            .args([
+                "split-window",
+                "-h", // horizontal split
+                "-c", cwd,
+                "-P",
+                "-F", "#{pane_id}",
+                &cmd,
+            ])
+            .output()
+            .wrap_err("Failed to execute tmux split-window for respawn")?;
+
+        if !output.status.success() {
+            bail!(
+                "tmux split-window failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        tracing::info!(
+            pane_id = %pane_id,
+            cwd = %cwd,
+            prompt_file = %prompt_file,
+            "Respawned Claude in new pane"
+        );
+        Ok(pane_id)
+    }
+
+    /// Send Ctrl+C to interrupt current process
+    ///
+    /// Used to cleanly stop Claude before killing the pane.
+    ///
+    /// # Arguments
+    /// * `pane_id` - Tmux pane identifier
+    pub fn send_interrupt(pane_id: &str) -> Result<()> {
+        let status = Command::new("tmux")
+            .args(["send-keys", "-t", pane_id, "C-c"])
+            .status()
+            .wrap_err("Failed to execute tmux send-keys C-c")?;
+
+        if !status.success() {
+            bail!("tmux send-keys C-c failed with status: {}", status);
+        }
+
+        tracing::debug!(pane_id = %pane_id, "Sent Ctrl+C to pane");
+        Ok(())
+    }
+
     /// Focus a specific tmux pane
     ///
     /// # Arguments

@@ -196,6 +196,10 @@ pub struct Agent {
     // v1.0 Git operations
     /// Working directory for git operations (worktree path)
     pub working_dir: Option<std::path::PathBuf>,
+
+    // v1.1 Proper Ralph loops
+    /// Ralph directory for proper loop mode (fresh sessions)
+    pub ralph_dir: Option<std::path::PathBuf>,
 }
 
 impl Agent {
@@ -230,6 +234,8 @@ impl Agent {
             sprite_id: None,
             // v1.0 Git operations
             working_dir: None,
+            // v1.1 Proper Ralph loops
+            ralph_dir: None,
         }
     }
 
