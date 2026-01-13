@@ -22,6 +22,8 @@ pub enum InputMode {
     Input,
     /// Spawn dialog mode (creating new agent)
     Spawn,
+    /// Search mode (filtering agents)
+    Search,
 }
 
 /// View mode for the main display
@@ -144,6 +146,12 @@ pub struct App {
     pub output_scroll: u16,
     /// Show subagent tree panel
     pub show_subagents: bool,
+    /// Show progress dashboard overlay
+    pub show_dashboard: bool,
+    /// Search query for agent filtering
+    pub search_query: String,
+    /// Session start time for dashboard
+    pub session_start: std::time::Instant,
 }
 
 impl App {
@@ -178,6 +186,9 @@ impl App {
             last_output_capture: std::time::Instant::now(),
             output_scroll: 0,
             show_subagents: false,
+            show_dashboard: false,
+            search_query: String::new(),
+            session_start: std::time::Instant::now(),
         }
     }
 
@@ -277,6 +288,7 @@ impl App {
             InputMode::Normal => self.handle_key_normal(key),
             InputMode::Input => self.handle_key_input(key),
             InputMode::Spawn => self.handle_key_spawn(key),
+            InputMode::Search => self.handle_key_search(key),
         }
     }
 
@@ -309,9 +321,10 @@ impl App {
             KeyCode::Char('?' | 'H') => {
                 self.show_help = !self.show_help;
             }
-            // Toggle debug mode
+            // Toggle progress dashboard
             KeyCode::Char('d') => {
-                self.debug_mode = !self.debug_mode;
+                self.show_dashboard = !self.show_dashboard;
+                tracing::debug!(show_dashboard = self.show_dashboard, "Toggled dashboard");
             }
             // Toggle freeze mode (stops UI updates for stable selection)
             KeyCode::Char('f') => {
@@ -456,6 +469,13 @@ impl App {
             // Checkpoint timeline (sprites only)
             KeyCode::Char('t') => {
                 self.toggle_checkpoint_timeline();
+            }
+
+            // Agent search
+            KeyCode::Char('/') => {
+                self.input_mode = InputMode::Search;
+                self.search_query.clear();
+                tracing::debug!("Entering search mode");
             }
 
             _ => {}
@@ -632,6 +652,67 @@ impl App {
                 _ => {}
             },
             _ => {}
+        }
+    }
+
+    /// Handle keyboard input in Search mode
+    fn handle_key_search(&mut self, key: crossterm::event::KeyEvent) {
+        match key.code {
+            // Cancel search and return to Normal mode
+            KeyCode::Esc => {
+                self.input_mode = InputMode::Normal;
+                self.search_query.clear();
+                tracing::debug!("Cancelled search mode");
+            }
+            // Execute search / jump to first match
+            KeyCode::Enter => {
+                // Jump to first matching agent if any
+                if !self.search_query.is_empty() {
+                    self.jump_to_search_match();
+                }
+                self.input_mode = InputMode::Normal;
+            }
+            // Delete last character
+            KeyCode::Backspace => {
+                self.search_query.pop();
+            }
+            // Type character into search query
+            KeyCode::Char(c) => {
+                self.search_query.push(c);
+            }
+            _ => {}
+        }
+    }
+
+    /// Jump to the first agent matching the search query
+    fn jump_to_search_match(&mut self) {
+        let query = self.search_query.to_lowercase();
+        if query.is_empty() {
+            return;
+        }
+
+        // Find first matching agent
+        for agent in self.state.agents.values() {
+            let project_lower = agent.project.to_lowercase();
+            let pane_lower = agent.pane_id.to_lowercase();
+
+            if project_lower.contains(&query) || pane_lower.contains(&query) {
+                // Set the selected column to the agent's status column
+                use crate::state::Status;
+                self.state.selected_column = match agent.status {
+                    Status::Attention(_) => 0,
+                    Status::Working => 1,
+                    Status::Compacting => 2,
+                    Status::Idle => 3,
+                };
+                // We found a match - the UI will highlight it
+                tracing::debug!(
+                    project = %agent.project,
+                    pane_id = %agent.pane_id,
+                    "Jumping to search match"
+                );
+                break;
+            }
         }
     }
 

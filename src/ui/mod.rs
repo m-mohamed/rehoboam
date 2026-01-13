@@ -59,6 +59,11 @@ pub fn render(f: &mut Frame, app: &App) {
         render_help(f);
     }
 
+    // Render dashboard overlay if active
+    if app.show_dashboard {
+        render_dashboard(f, app);
+    }
+
     // Render diff modal if active
     if app.show_diff {
         render_diff_modal(f, app);
@@ -580,6 +585,8 @@ fn render_activity(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
+    use crate::app::InputMode;
+
     // Check if we have a status message to display
     if let Some((ref msg, timestamp)) = app.status_message {
         // Only show if less than 5 seconds old
@@ -599,30 +606,70 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         }
     }
 
+    // Search mode: show search input
+    if app.input_mode == InputMode::Search {
+        let search_text = format!("🔍 Search: {}█", app.search_query);
+        let footer = Paragraph::new(search_text)
+            .style(Style::default().fg(Color::Yellow))
+            .alignment(Alignment::Center);
+        f.render_widget(footer, area);
+        return;
+    }
+
     let selection_count = app.state.selected_agents.len();
-    let mode_indicators: Vec<String> = [
-        app.debug_mode.then_some("[debug]".to_string()),
-        app.frozen.then_some("[frozen]".to_string()),
-        app.auto_accept.then_some("[AUTO]".to_string()),
-        if selection_count > 0 {
-            Some(format!("[{selection_count} selected]"))
+
+    // Context-aware help based on selection state
+    let help = if selection_count > 0 {
+        // Multi-select mode
+        format!(
+            "[{selection_count} selected]  Y/N:bulk approve  K:kill all  x:clear  Space:toggle"
+        )
+    } else if let Some(agent) = app.state.selected_agent() {
+        // Single agent selected - show relevant commands
+        use crate::state::LoopMode;
+        let loop_info = if agent.loop_mode != LoopMode::None {
+            format!(" iter:{}/{}", agent.loop_iteration, agent.loop_max)
         } else {
-            None
-        },
-    ]
-    .into_iter()
-    .flatten()
-    .collect();
+            String::new()
+        };
 
-    let mode = if mode_indicators.is_empty() {
-        String::new()
+        let mode_indicators: Vec<&str> = [
+            app.debug_mode.then_some("[debug]"),
+            app.frozen.then_some("[frozen]"),
+            app.auto_accept.then_some("[AUTO]"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        let prefix = if mode_indicators.is_empty() {
+            String::new()
+        } else {
+            format!("{} ", mode_indicators.join(" "))
+        };
+
+        format!(
+            "{prefix}Enter:jump  y/n:approve  c:input  X:cancel  R:restart{loop_info}  d:dash  ?:help"
+        )
     } else {
-        format!("{} ", mode_indicators.join(" "))
-    };
+        // No selection - show general commands
+        let mode_indicators: Vec<&str> = [
+            app.debug_mode.then_some("[debug]"),
+            app.frozen.then_some("[frozen]"),
+            app.auto_accept.then_some("[AUTO]"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
 
-    let help = format!(
-        "{mode}P:view  y/n:approve  c:input  s:spawn  K:kill  X/R:loop  T:subs  ?:help"
-    );
+        let prefix = if mode_indicators.is_empty() {
+            String::new()
+        } else {
+            format!("{} ", mode_indicators.join(" "))
+        };
+
+        format!("{prefix}s:spawn  d:dashboard  P:view  /:search  ?:help  q:quit")
+    };
 
     let footer = Paragraph::new(help)
         .style(Style::default().fg(colors::IDLE))
@@ -705,9 +752,11 @@ fn render_help(f: &mut Frame) {
   P           Cycle views: Kanban → Project → Split
   T           Toggle subagent panel (split view)
   PgUp/PgDn   Scroll live output (split view)
+  d           Dashboard (progress overview)
+  /           Search agents by name
   A           Toggle auto-accept mode (careful!)
   f           Freeze display updates
-  d           Debug mode (show event log)
+  D           Git diff for selected project
   ?, H        This help
   q, Esc      Quit
 ";
@@ -725,6 +774,124 @@ fn render_help(f: &mut Frame) {
 
     f.render_widget(ratatui::widgets::Clear, area);
     f.render_widget(help, area);
+}
+
+fn render_dashboard(f: &mut Frame, app: &App) {
+    use crate::state::LoopMode;
+    use std::collections::HashMap;
+
+    let area = centered_rect(70, 70, f.area());
+
+    // Calculate session duration
+    let session_secs = app.session_start.elapsed().as_secs();
+    let session_hours = session_secs / 3600;
+    let session_mins = (session_secs % 3600) / 60;
+    let session_str = if session_hours > 0 {
+        format!("{}h {}m", session_hours, session_mins)
+    } else {
+        format!("{}m", session_mins)
+    };
+
+    // Get counts
+    let [attention, working, compacting, idle] = app.state.status_counts;
+    let total = app.state.agents.len();
+    let sprite_count = app.state.sprite_agent_count();
+    let local_count = total - sprite_count;
+
+    // Calculate loop stats
+    let mut total_iterations: u32 = 0;
+    let mut active_loops: u32 = 0;
+    let mut completed_loops: u32 = 0;
+    let mut project_counts: HashMap<String, (u32, u32)> = HashMap::new(); // (agents, iters)
+
+    for agent in app.state.agents.values() {
+        total_iterations += agent.loop_iteration;
+
+        match agent.loop_mode {
+            LoopMode::Active => active_loops += 1,
+            LoopMode::Complete => completed_loops += 1,
+            _ => {}
+        }
+
+        // Group by project
+        let entry = project_counts
+            .entry(agent.project.clone())
+            .or_insert((0, 0));
+        entry.0 += 1;
+        entry.1 += agent.loop_iteration;
+    }
+
+    // Build dashboard text
+    let mut lines = vec![
+        String::new(),
+        format!(
+            "  SESSION: {}            AGENTS: {} ({} local, {} sprites)",
+            session_str, total, local_count, sprite_count
+        ),
+        String::new(),
+        format!(
+            "  ┌─ Status ──────────────┐  ┌─ Loop Progress ─────────────┐"
+        ),
+        format!(
+            "  │ 🔔 Attention:   {:>3}   │  │ Total iterations:   {:>5}   │",
+            attention, total_iterations
+        ),
+        format!(
+            "  │ 🤖 Working:     {:>3}   │  │ Completed loops:    {:>5}   │",
+            working, completed_loops
+        ),
+        format!(
+            "  │ 🔄 Compacting:  {:>3}   │  │ Active loops:       {:>5}   │",
+            compacting, active_loops
+        ),
+        format!(
+            "  │ ⏸️  Idle:        {:>3}   │  └─────────────────────────────┘",
+            idle
+        ),
+        "  └──────────────────────┘".to_string(),
+        String::new(),
+    ];
+
+    // Add project breakdown
+    if !project_counts.is_empty() {
+        lines.push("  ┌─ By Project ───────────────────────────────────────┐".to_string());
+        let mut projects: Vec<_> = project_counts.iter().collect();
+        projects.sort_by(|a, b| b.1 .1.cmp(&a.1 .1)); // Sort by iterations desc
+
+        for (project, (agents, iters)) in projects.iter().take(5) {
+            let bar_len = (*iters as usize).min(20);
+            let bar = "█".repeat(bar_len);
+            let project_short = if project.len() > 15 {
+                format!("{}...", &project[..12])
+            } else {
+                project.to_string()
+            };
+            lines.push(format!(
+                "  │ {:15} {:20} {:>2} agents {:>4} iters │",
+                project_short, bar, agents, iters
+            ));
+        }
+        lines.push("  └─────────────────────────────────────────────────────┘".to_string());
+    }
+
+    lines.push(String::new());
+    lines.push("                     Press 'd' to close".to_string());
+
+    let dashboard_text = lines.join("\n");
+
+    let dashboard = Paragraph::new(dashboard_text)
+        .style(Style::default().fg(colors::FG))
+        .block(
+            Block::default()
+                .title(" Rehoboam Dashboard ")
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::HIGHLIGHT))
+                .border_type(ratatui::widgets::BorderType::Rounded)
+                .style(Style::default().bg(colors::BG)),
+        );
+
+    f.render_widget(ratatui::widgets::Clear, area);
+    f.render_widget(dashboard, area);
 }
 
 fn render_diff_modal(f: &mut Frame, app: &App) {
