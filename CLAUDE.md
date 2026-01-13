@@ -17,7 +17,11 @@ cargo build --release          # Release build
 cargo test                     # Run tests
 cargo clippy                   # Lint
 
-# Installation
+# Installation (users)
+cargo install rehoboam              # From crates.io
+brew tap m-mohamed/rehoboam && brew install rehoboam  # Homebrew
+
+# Installation (development)
 cargo build --release && cp target/release/rehoboam ~/.local/bin/
 
 # Usage
