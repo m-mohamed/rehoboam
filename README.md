@@ -2,17 +2,36 @@
 
 Real-time TUI for monitoring Claude Code agents.
 
+[![Crates.io](https://img.shields.io/crates/v/rehoboam.svg)](https://crates.io/crates/rehoboam)
 [![CI](https://github.com/m-mohamed/rehoboam/workflows/CI/badge.svg)](https://github.com/m-mohamed/rehoboam/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 Monitor all your Claude Code sessions from one dashboard. See which agents need attention, which are working, and jump directly to any pane.
 
+## Installation
+
+### Homebrew (macOS/Linux)
+
+```bash
+brew tap m-mohamed/rehoboam
+brew install rehoboam
+```
+
+### Cargo
+
+```bash
+cargo install rehoboam
+```
+
+### From Source
+
+```bash
+cargo install --git https://github.com/m-mohamed/rehoboam
+```
+
 ## Quick Start
 
 ```bash
-# Install
-cargo install --git https://github.com/m-mohamed/rehoboam
-
 # Initialize hooks in your project
 cd ~/your-project
 rehoboam init
