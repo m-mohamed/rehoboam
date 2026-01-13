@@ -457,11 +457,24 @@ impl App {
                     }
                 }
             }
-            // Toggle with Space (when on toggle fields)
+            // Space: toggle on checkbox fields, type space on text fields
             KeyCode::Char(' ') => match self.spawn_state.active_field {
+                // Toggle fields
                 3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                 4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
                 7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                // Text fields - allow space character
+                0 => {
+                    if self.spawn_state.use_sprite {
+                        self.spawn_state.github_repo.push(' ');
+                    } else {
+                        self.spawn_state.project_path.push(' ');
+                    }
+                }
+                1 => self.spawn_state.prompt.push(' '),
+                2 => self.spawn_state.branch_name.push(' '),
+                6 => self.spawn_state.loop_stop_word.push(' '),
+                // Fields 5 (max iter) and 8 (network) don't need spaces
                 _ => {}
             },
             // Cycle network policy with left/right arrows
@@ -823,12 +836,12 @@ impl App {
                     .set_agent_working_dir(&pane_id, working_dir.clone());
 
                 // Start Claude Code in the new pane
-                // For Ralph loops, use --prompt-file with the iteration prompt
+                // For Ralph loops, pipe the iteration prompt to Claude
                 if let Some(ref ralph_dir) = ralph_dir {
                     // Build the iteration prompt file
                     match ralph::build_iteration_prompt(ralph_dir) {
                         Ok(prompt_file) => {
-                            let cmd = format!("claude --prompt-file '{}'", prompt_file);
+                            let cmd = format!("cat '{}' | claude", prompt_file);
                             if let Err(e) = TmuxController::send_keys(&pane_id, &cmd) {
                                 tracing::error!(error = %e, "Failed to start Claude with prompt file");
                                 return;

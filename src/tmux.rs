@@ -246,8 +246,8 @@ impl TmuxController {
     /// # Returns
     /// The pane ID of the newly created pane
     pub fn respawn_claude(cwd: &str, prompt_file: &str) -> Result<String> {
-        // Create a new pane with claude command using prompt file
-        let cmd = format!("claude --prompt-file '{}'", prompt_file);
+        // Create a new pane with claude command, piping prompt file to stdin
+        let cmd = format!("cat '{}' | claude", prompt_file);
 
         let output = Command::new("tmux")
             .args([

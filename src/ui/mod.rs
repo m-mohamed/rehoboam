@@ -707,13 +707,31 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         ""
     };
-    let (field_value, field_title) = if spawn_state.use_sprite {
-        (&spawn_state.github_repo, " GitHub Repo (owner/repo) ")
+    let (field_value, field_title, placeholder) = if spawn_state.use_sprite {
+        (
+            &spawn_state.github_repo,
+            " GitHub Repo (owner/repo) ",
+            "e.g. owner/repo or https://github.com/owner/repo",
+        )
     } else {
-        (&spawn_state.project_path, " Project Path ")
+        (
+            &spawn_state.project_path,
+            " Local Directory ",
+            "e.g. ~/projects/my-app or /path/to/project",
+        )
     };
-    let project_widget = Paragraph::new(format!("{}{}", field_value, project_cursor))
-        .style(field_style(spawn_state.active_field == 0))
+    let display_text = if field_value.is_empty() && spawn_state.active_field != 0 {
+        placeholder.to_string()
+    } else {
+        format!("{}{}", field_value, project_cursor)
+    };
+    let text_style = if field_value.is_empty() && spawn_state.active_field != 0 {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        field_style(spawn_state.active_field == 0)
+    };
+    let project_widget = Paragraph::new(display_text)
+        .style(text_style)
         .block(
             Block::default()
                 .title(field_title)
@@ -727,8 +745,19 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         ""
     };
-    let prompt_widget = Paragraph::new(format!("{}{}", spawn_state.prompt, prompt_cursor))
-        .style(field_style(spawn_state.active_field == 1))
+    let prompt_placeholder = "e.g. Build a REST API with authentication...";
+    let prompt_display = if spawn_state.prompt.is_empty() && spawn_state.active_field != 1 {
+        prompt_placeholder.to_string()
+    } else {
+        format!("{}{}", spawn_state.prompt, prompt_cursor)
+    };
+    let prompt_style = if spawn_state.prompt.is_empty() && spawn_state.active_field != 1 {
+        Style::default().fg(Color::DarkGray)
+    } else {
+        field_style(spawn_state.active_field == 1)
+    };
+    let prompt_widget = Paragraph::new(prompt_display)
+        .style(prompt_style)
         .block(
             Block::default()
                 .title(" Prompt (optional) ")
