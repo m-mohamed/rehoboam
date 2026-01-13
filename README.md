@@ -61,18 +61,21 @@ rehoboam
 
 Autonomous iteration with fresh sessions per loop. Progress persists, failures evaporate.
 
-In spawn dialog (`n`):
+In spawn dialog (`s`):
 - Enable **Loop Mode**
 - Set max iterations and stop word
 - Rehoboam creates `.ralph/` directory with state files
 - Each iteration spawns a fresh Claude session
-- Loop stops on stop word detection or max iterations
+- Git checkpoint created between iterations for rollback
+- Loop stops on stop word, `<promise>COMPLETE</promise>` tag, or max iterations
 
 State files in `.ralph/`:
 - `anchor.md` - Task spec (your prompt)
 - `progress.md` - Track completed work
-- `guardrails.md` - Learned constraints
-- `state.json` - Iteration counter
+- `guardrails.md` - Learned constraints (auto-populated from repeated errors)
+- `state.json` - Iteration counter, timing data
+- `activity.log` - Per-iteration timing and outcomes
+- `session_history.log` - State transitions for debugging
 
 ## Sprites (Remote VMs)
 
