@@ -83,7 +83,7 @@ The `derive_status()` function maps hook events to TUI status:
 | PreToolUse | working | - |
 | PostToolUse | working | - |
 | PermissionRequest | attention | permission |
-| Notification | attention | notification |
+| Notification | idle | - |
 | Stop | idle | - |
 | SessionEnd | idle (removes agent) | - |
 | PreCompact | compacting | - |

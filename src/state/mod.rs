@@ -537,9 +537,7 @@ impl AppState {
                     );
                 }
 
-                if elapsed > IDLE_TIMEOUT_SECS
-                    && agent.current_tool.is_none()
-                    && !agent.in_response
+                if elapsed > IDLE_TIMEOUT_SECS && agent.current_tool.is_none() && !agent.in_response
                 {
                     idle_transitions.push(pane_id.clone());
                 }
@@ -865,8 +863,8 @@ fn spawn_fresh_ralph_session(
     use color_eyre::eyre::WrapErr;
 
     // 1. Increment iteration counter
-    let new_iteration = ralph::increment_iteration(ralph_dir)
-        .wrap_err("Failed to increment Ralph iteration")?;
+    let new_iteration =
+        ralph::increment_iteration(ralph_dir).wrap_err("Failed to increment Ralph iteration")?;
     agent.loop_iteration = new_iteration;
 
     // 2. Check stop word in progress.md
@@ -906,8 +904,8 @@ fn spawn_fresh_ralph_session(
     }
 
     // 4. Build iteration prompt
-    let prompt_file = ralph::build_iteration_prompt(ralph_dir)
-        .wrap_err("Failed to build iteration prompt")?;
+    let prompt_file =
+        ralph::build_iteration_prompt(ralph_dir).wrap_err("Failed to build iteration prompt")?;
 
     // 5. Get project directory for respawn
     let project_dir = ralph_dir

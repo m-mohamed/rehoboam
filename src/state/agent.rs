@@ -72,8 +72,7 @@ impl Status {
         match status {
             "working" => Status::Working,
             "attention" => {
-                let attn = attention_type
-                    .map_or(AttentionType::Input, AttentionType::from_str);
+                let attn = attention_type.map_or(AttentionType::Input, AttentionType::from_str);
                 Status::Attention(attn)
             }
             "compacting" => Status::Compacting,
@@ -325,7 +324,8 @@ impl Agent {
             self.total_tool_calls += 1;
             let avg = self.avg_latency_ms.unwrap_or(0);
             self.avg_latency_ms = Some(
-                (avg * u64::from(self.total_tool_calls - 1) + latency) / u64::from(self.total_tool_calls),
+                (avg * u64::from(self.total_tool_calls - 1) + latency)
+                    / u64::from(self.total_tool_calls),
             );
         }
 

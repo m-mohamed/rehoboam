@@ -49,10 +49,7 @@ impl From<sprites::Checkpoint> for CheckpointRecord {
         Self {
             id: cp.id,
             comment: cp.comment.unwrap_or_default(),
-            created_at: cp
-                .created_at
-                .map(|dt| dt.timestamp())
-                .unwrap_or(0),
+            created_at: cp.created_at.map(|dt| dt.timestamp()).unwrap_or(0),
             iteration: 0,
         }
     }

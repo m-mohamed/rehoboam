@@ -599,14 +599,12 @@ impl App {
                     let (sprite_name, work_dir) = if !github_repo.is_empty() {
                         // Extract repo name from GitHub URL/path
                         let repo_name = extract_repo_name(&github_repo);
-                        let sprite_name = format!("rehoboam-{}", repo_name.replace(['/', '.'], "-"));
+                        let sprite_name =
+                            format!("rehoboam-{}", repo_name.replace(['/', '.'], "-"));
                         let work_dir = format!("/workspace/{}", repo_name);
                         (sprite_name, work_dir)
                     } else {
-                        let sprite_name = format!(
-                            "rehoboam-{}",
-                            project.replace(['/', '.'], "-")
-                        );
+                        let sprite_name = format!("rehoboam-{}", project.replace(['/', '.'], "-"));
                         (sprite_name, "/workspace".to_string())
                     };
 

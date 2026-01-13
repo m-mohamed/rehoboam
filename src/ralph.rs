@@ -65,11 +65,7 @@ impl Default for RalphConfig {
 /// - progress.md (empty, for tracking)
 /// - errors.log (empty)
 /// - state.json (initial state)
-pub fn init_ralph_dir(
-    project_dir: &Path,
-    prompt: &str,
-    config: &RalphConfig,
-) -> Result<PathBuf> {
+pub fn init_ralph_dir(project_dir: &Path, prompt: &str, config: &RalphConfig) -> Result<PathBuf> {
     let ralph_dir = project_dir.join(".ralph");
 
     // Create directory (ok if exists)
@@ -143,10 +139,10 @@ Starting iteration 1...
 /// Load Ralph state from directory
 pub fn load_state(ralph_dir: &Path) -> Result<RalphState> {
     let state_path = ralph_dir.join("state.json");
-    let content = fs::read_to_string(&state_path)
-        .map_err(|e| eyre!("Failed to read state.json: {}", e))?;
-    let state: RalphState = serde_json::from_str(&content)
-        .map_err(|e| eyre!("Failed to parse state.json: {}", e))?;
+    let content =
+        fs::read_to_string(&state_path).map_err(|e| eyre!("Failed to read state.json: {}", e))?;
+    let state: RalphState =
+        serde_json::from_str(&content).map_err(|e| eyre!("Failed to parse state.json: {}", e))?;
     Ok(state)
 }
 
@@ -250,7 +246,10 @@ Remember: Progress persists, failures evaporate. Make incremental progress.
     let prompt_file = ralph_dir.join("_iteration_prompt.md");
     fs::write(&prompt_file, &prompt)?;
 
-    debug!("Built iteration prompt for iteration {}", state.iteration + 1);
+    debug!(
+        "Built iteration prompt for iteration {}",
+        state.iteration + 1
+    );
     Ok(prompt_file.to_string_lossy().to_string())
 }
 

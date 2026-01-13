@@ -210,8 +210,10 @@ pub fn list_projects() {
 
     println!("Discovered git repositories:\n");
     for project in &projects {
-        let name = project
-            .file_name().map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
+        let name = project.file_name().map_or_else(
+            || "unknown".to_string(),
+            |n| n.to_string_lossy().to_string(),
+        );
 
         let status = if has_rehoboam_hooks(project) {
             "✓ initialized"
@@ -236,8 +238,10 @@ pub fn select_projects() -> Vec<PathBuf> {
     println!("Select projects to initialize (enter numbers separated by spaces, or 'all'):\n");
 
     for (i, project) in projects.iter().enumerate() {
-        let name = project
-            .file_name().map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
+        let name = project.file_name().map_or_else(
+            || "unknown".to_string(),
+            |n| n.to_string_lossy().to_string(),
+        );
 
         let status = if has_rehoboam_hooks(project) {
             " [already initialized]"
@@ -277,8 +281,10 @@ pub fn select_projects() -> Vec<PathBuf> {
 
 /// Initialize a single project with hooks
 pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
-    let name = project
-        .file_name().map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
+    let name = project.file_name().map_or_else(
+        || "unknown".to_string(),
+        |n| n.to_string_lossy().to_string(),
+    );
 
     // Verify it's a directory
     if !project.is_dir() {
@@ -340,12 +346,12 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
                                     .and_then(|h| h.as_array())
                                     .is_some_and(|hooks| {
                                         hooks.iter().any(|h| {
-                                            h.get("command")
-                                                .and_then(|c| c.as_str())
-                                                .is_some_and(|s| {
+                                            h.get("command").and_then(|c| c.as_str()).is_some_and(
+                                                |s| {
                                                     s.contains("rehoboam hook")
                                                         || s.contains("rehoboam send")
-                                                })
+                                                },
+                                            )
                                         })
                                     })
                             });

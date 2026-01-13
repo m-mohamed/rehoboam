@@ -25,11 +25,17 @@ rehoboam
 
 | Key | Action |
 |-----|--------|
+| `h/l` | Navigate columns |
 | `j/k` | Navigate agents |
 | `Enter` | Jump to agent's tmux pane |
-| `n` | Spawn new agent |
-| `y` | Approve permission |
-| `d` | Toggle debug log |
+| `y/n` | Approve/reject permission |
+| `c` | Custom input to agent |
+| `s` | Spawn new agent |
+| `Space` | Toggle selection |
+| `Y/N` | Bulk approve/reject |
+| `K` | Kill selected agents |
+| `X/R` | Cancel/restart loop |
+| `?` | Help |
 | `q` | Quit |
 
 ## Ralph Loops

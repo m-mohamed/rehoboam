@@ -76,15 +76,17 @@ struct HookEventData {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     // Read required environment variables
-    let rehoboam_host = if let Ok(host) = std::env::var("REHOBOAM_HOST") { host } else {
+    let rehoboam_host = if let Ok(host) = std::env::var("REHOBOAM_HOST") {
+        host
+    } else {
         eprintln!("Error: REHOBOAM_HOST environment variable not set");
-        eprintln!(
-            "Set it to the Rehoboam server address, e.g., REHOBOAM_HOST=192.168.1.100:9876"
-        );
+        eprintln!("Set it to the Rehoboam server address, e.g., REHOBOAM_HOST=192.168.1.100:9876");
         std::process::exit(1);
     };
 
-    let sprite_id = if let Ok(id) = std::env::var("SPRITE_ID") { id } else {
+    let sprite_id = if let Ok(id) = std::env::var("SPRITE_ID") {
+        id
+    } else {
         eprintln!("Error: SPRITE_ID environment variable not set");
         eprintln!("Set it to a unique identifier for this sprite");
         std::process::exit(1);

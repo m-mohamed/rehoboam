@@ -253,9 +253,11 @@ impl TmuxController {
             .args([
                 "split-window",
                 "-h", // horizontal split
-                "-c", cwd,
+                "-c",
+                cwd,
                 "-P",
-                "-F", "#{pane_id}",
+                "-F",
+                "#{pane_id}",
                 &cmd,
             ])
             .output()

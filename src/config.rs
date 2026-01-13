@@ -127,7 +127,10 @@ impl RehoboamConfig {
 
     /// Get the default configuration path
     pub fn default_path() -> PathBuf {
-        directories::BaseDirs::new().map_or_else(|| PathBuf::from("~/.config/rehoboam/config.toml"), |dirs| dirs.config_dir().join("rehoboam").join("config.toml"))
+        directories::BaseDirs::new().map_or_else(
+            || PathBuf::from("~/.config/rehoboam/config.toml"),
+            |dirs| dirs.config_dir().join("rehoboam").join("config.toml"),
+        )
     }
 
     /// Load configuration from a specific path

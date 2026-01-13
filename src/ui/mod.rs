@@ -495,7 +495,9 @@ fn render_diff_modal(f: &mut Frame, app: &App) {
             } else if line.starts_with("@@") {
                 Style::default().fg(Color::Cyan)
             } else if line.starts_with("diff ") || line.starts_with("index ") {
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::DIM)
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::DIM)
             } else {
                 Style::default().fg(colors::FG)
             };
@@ -822,11 +824,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         );
 
     // Sprite toggle (7)
-    let sprite_checkbox = if spawn_state.use_sprite {
-        "[x]"
-    } else {
-        "[ ]"
-    };
+    let sprite_checkbox = if spawn_state.use_sprite { "[x]" } else { "[ ]" };
     let sprite_text = format!("{sprite_checkbox} Run on remote Sprite (cloud VM)");
     let sprite_widget = Paragraph::new(sprite_text)
         .style(field_style(spawn_state.active_field == 7))
@@ -847,9 +845,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         .style(if spawn_state.use_sprite {
             field_style(spawn_state.active_field == 8)
         } else {
-            Style::default()
-                .fg(colors::FG)
-                .add_modifier(Modifier::DIM)
+            Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
         })
         .alignment(Alignment::Center)
         .block(
@@ -859,7 +855,9 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .border_style(if spawn_state.use_sprite {
                     border_style(spawn_state.active_field == 8)
                 } else {
-                    Style::default().fg(colors::BORDER).add_modifier(Modifier::DIM)
+                    Style::default()
+                        .fg(colors::BORDER)
+                        .add_modifier(Modifier::DIM)
                 }),
         );
 

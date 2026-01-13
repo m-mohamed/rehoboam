@@ -64,7 +64,10 @@ const SESSION_ID_PREFIX_LEN: usize = 8;
 
 /// Get the log directory path
 fn get_log_dir() -> PathBuf {
-    directories::BaseDirs::new().map_or_else(|| PathBuf::from("/tmp/rehoboam/logs"), |dirs| dirs.cache_dir().join("rehoboam").join("logs"))
+    directories::BaseDirs::new().map_or_else(
+        || PathBuf::from("/tmp/rehoboam/logs"),
+        |dirs| dirs.cache_dir().join("rehoboam").join("logs"),
+    )
 }
 
 /// Install the binary to ~/.local/bin/
