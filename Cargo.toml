@@ -6,6 +6,8 @@ description = "Real-time observability TUI for Claude Code agents - tracks all, 
 license = "MIT"
 authors = ["Mohamed Mohamed"]
 repository = "https://github.com/m-mohamed/rehoboam"
+homepage = "https://github.com/m-mohamed/rehoboam"
+readme = "README.md"
 keywords = ["cli", "tui", "claude", "observability"]
 categories = ["command-line-utilities", "development-tools"]
 
