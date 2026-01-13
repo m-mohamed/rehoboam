@@ -32,6 +32,8 @@ pub enum ViewMode {
     Kanban,
     /// Grouped by project name
     Project,
+    /// Split view: agent list on left, live output on right
+    Split,
 }
 
 /// State for the spawn dialog
@@ -55,30 +57,39 @@ pub struct SpawnState {
     // v0.9.0 Loop Mode fields
     /// Whether to enable loop mode for the new agent
     pub loop_enabled: bool,
-    /// Maximum iterations before stopping (default: 50)
+    /// Maximum iterations before stopping (default: 20)
     pub loop_max_iterations: String,
-    /// Stop word to detect completion (default: "DONE")
+    /// Stop word to detect completion (default: "COMPLETE")
     pub loop_stop_word: String,
     /// Whether to spawn on a remote sprite (cloud VM)
     pub use_sprite: bool,
     /// Network policy for sprite (only applies when use_sprite is true)
     pub network_preset: crate::sprite::config::NetworkPreset,
+    /// Validation error to display in the dialog
+    pub validation_error: Option<String>,
 }
 
 impl Default for SpawnState {
     fn default() -> Self {
+        // Try to get current directory as default
+        let default_path = std::env::current_dir()
+            .ok()
+            .and_then(|p| p.to_str().map(String::from))
+            .unwrap_or_default();
+
         Self {
-            project_path: String::new(),
+            project_path: default_path,
             github_repo: String::new(),
             prompt: String::new(),
             branch_name: String::new(),
             use_worktree: false,
             active_field: 0,
             loop_enabled: false,
-            loop_max_iterations: "50".to_string(),
-            loop_stop_word: "DONE".to_string(),
+            loop_max_iterations: "20".to_string(),
+            loop_stop_word: "COMPLETE".to_string(),
             use_sprite: false,
             network_preset: crate::sprite::config::NetworkPreset::ClaudeOnly,
+            validation_error: None,
         }
     }
 }
@@ -123,6 +134,16 @@ pub struct App {
     pub checkpoint_timeline: Vec<CheckpointRecord>,
     /// Selected checkpoint index in timeline
     pub selected_checkpoint: usize,
+    /// Status message to display in footer (message, timestamp)
+    pub status_message: Option<(String, std::time::Instant)>,
+    /// Live output from selected agent's pane (for split view)
+    pub live_output: String,
+    /// Last time we captured pane output
+    pub last_output_capture: std::time::Instant,
+    /// Scroll offset for live output view
+    pub output_scroll: u16,
+    /// Show subagent tree panel
+    pub show_subagents: bool,
 }
 
 impl App {
@@ -152,6 +173,27 @@ impl App {
             show_checkpoint_timeline: false,
             checkpoint_timeline: Vec::new(),
             selected_checkpoint: 0,
+            status_message: None,
+            live_output: String::new(),
+            last_output_capture: std::time::Instant::now(),
+            output_scroll: 0,
+            show_subagents: false,
+        }
+    }
+
+    /// Show a status message in the footer (clears after 5 seconds)
+    pub fn show_status(&mut self, msg: &str) {
+        self.status_message = Some((msg.to_string(), std::time::Instant::now()));
+        self.needs_render = true;
+    }
+
+    /// Clear status message if it's older than 5 seconds
+    #[allow(dead_code)]
+    pub fn clear_old_status(&mut self) {
+        if let Some((_, timestamp)) = &self.status_message {
+            if timestamp.elapsed() > std::time::Duration::from_secs(5) {
+                self.status_message = None;
+            }
         }
     }
 
@@ -297,13 +339,38 @@ impl App {
             }
 
             // === Phase 2.0: View mode toggle ===
-            // Toggle between Kanban (status columns) and Project (grouped by project) views
+            // Cycle through Kanban → Project → Split views
             KeyCode::Char('P') => {
                 self.view_mode = match self.view_mode {
                     ViewMode::Kanban => ViewMode::Project,
-                    ViewMode::Project => ViewMode::Kanban,
+                    ViewMode::Project => ViewMode::Split,
+                    ViewMode::Split => ViewMode::Kanban,
                 };
+                // Capture output when entering split view
+                if self.view_mode == ViewMode::Split {
+                    self.capture_selected_output();
+                }
                 tracing::debug!(view_mode = ?self.view_mode, "Toggled view mode");
+            }
+
+            // Toggle subagent tree panel (in split view)
+            KeyCode::Char('T') => {
+                self.show_subagents = !self.show_subagents;
+                tracing::debug!(show_subagents = self.show_subagents, "Toggled subagent panel");
+            }
+
+            // Scroll output (in split view) - Page Up/Down
+            KeyCode::PageUp => {
+                if self.view_mode == ViewMode::Split {
+                    self.output_scroll = self.output_scroll.saturating_add(10);
+                    self.needs_render = true;
+                }
+            }
+            KeyCode::PageDown => {
+                if self.view_mode == ViewMode::Split {
+                    self.output_scroll = self.output_scroll.saturating_sub(10);
+                    self.needs_render = true;
+                }
             }
 
             // === Phase 3.0: Agent spawning ===
@@ -448,11 +515,18 @@ impl App {
                     4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
                     7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                     _ => {
-                        // Spawn if we have a project path
-                        if !self.spawn_state.project_path.is_empty() {
-                            self.spawn_agent();
-                            self.input_mode = InputMode::Normal;
-                            self.spawn_state = SpawnState::default();
+                        // Validate before spawning
+                        match self.validate_spawn() {
+                            Ok(()) => {
+                                self.spawn_state.validation_error = None;
+                                self.spawn_agent();
+                                self.input_mode = InputMode::Normal;
+                                self.spawn_state = SpawnState::default();
+                            }
+                            Err(msg) => {
+                                self.spawn_state.validation_error = Some(msg);
+                                // Don't close dialog - let user fix the error
+                            }
                         }
                     }
                 }
@@ -561,6 +635,55 @@ impl App {
         }
     }
 
+    /// Validate spawn dialog inputs before spawning
+    ///
+    /// Returns Ok(()) if all inputs are valid, Err(message) otherwise.
+    fn validate_spawn(&self) -> Result<(), String> {
+        let state = &self.spawn_state;
+
+        // Check project path (required for local mode)
+        if !state.use_sprite && state.project_path.is_empty() {
+            return Err("Local Directory is required".to_string());
+        }
+
+        // Check GitHub repo (required for sprite mode without local path)
+        if state.use_sprite && state.project_path.is_empty() && state.github_repo.is_empty() {
+            return Err("GitHub Repo or Local Directory required".to_string());
+        }
+
+        // Validate local path exists (only for local mode)
+        if !state.use_sprite && !state.project_path.is_empty() {
+            let path = expand_tilde(&state.project_path);
+            if !std::path::Path::new(&path).exists() {
+                return Err(format!("Directory not found: {}", state.project_path));
+            }
+        }
+
+        // Check branch name if worktree enabled
+        if state.use_worktree && state.branch_name.is_empty() {
+            return Err("Branch name required when Git Isolation enabled".to_string());
+        }
+
+        // Validate branch name format (no spaces, special chars)
+        if !state.branch_name.is_empty()
+            && (state.branch_name.contains(' ') || state.branch_name.contains(".."))
+        {
+            return Err("Invalid branch name (no spaces or '..')".to_string());
+        }
+
+        // Validate max iterations
+        if state.loop_enabled {
+            match state.loop_max_iterations.parse::<u32>() {
+                Ok(0) => return Err("Max iterations must be > 0".to_string()),
+                Ok(n) if n > 1000 => return Err("Max iterations too high (max 1000)".to_string()),
+                Err(_) => return Err("Invalid max iterations number".to_string()),
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
     /// Spawn a new Claude agent in a tmux pane
     ///
     /// If `use_worktree` is enabled and `branch_name` is set, creates an
@@ -572,7 +695,7 @@ impl App {
         let use_github = self.spawn_state.use_sprite && !self.spawn_state.github_repo.is_empty();
 
         if self.spawn_state.project_path.is_empty() && !use_github {
-            tracing::warn!("Cannot spawn: no project path or GitHub repo specified");
+            self.show_status("⚠ No project path or GitHub repo specified");
             return;
         }
 
@@ -944,6 +1067,65 @@ impl App {
         }
     }
 
+    /// Capture output from selected agent's pane
+    ///
+    /// Uses TmuxController::capture_pane for local agents.
+    /// Called periodically in split view to show live output.
+    pub fn capture_selected_output(&mut self) {
+        // Rate limit captures to avoid performance issues
+        if self.last_output_capture.elapsed() < std::time::Duration::from_millis(500) {
+            return;
+        }
+        self.last_output_capture = std::time::Instant::now();
+
+        if let Some(agent) = self.state.selected_agent() {
+            let pane_id = &agent.pane_id;
+
+            if agent.is_sprite {
+                // Sprite agents: would need async capture via sprite.get_output()
+                self.live_output = format!(
+                    "☁ Sprite Agent: {}\n\
+                     Project: {}\n\
+                     Status: {:?}\n\
+                     \n\
+                     [Live output from sprites requires async capture - coming soon]\n",
+                    pane_id,
+                    agent.project,
+                    agent.status,
+                );
+            } else if pane_id.starts_with('%') {
+                // Tmux panes: capture directly
+                match TmuxController::capture_pane(pane_id) {
+                    Ok(output) => {
+                        self.live_output = output;
+                        self.output_scroll = 0; // Reset scroll on new capture
+                    }
+                    Err(e) => {
+                        self.live_output = format!(
+                            "Error capturing pane {}: {}\n\n\
+                             The pane may have closed or be unavailable.",
+                            pane_id, e
+                        );
+                    }
+                }
+            } else {
+                self.live_output = format!(
+                    "Pane {} (non-tmux)\n\
+                     Project: {}\n\
+                     Status: {:?}\n\
+                     \n\
+                     [Live output requires tmux pane]",
+                    pane_id,
+                    agent.project,
+                    agent.status,
+                );
+            }
+            self.needs_render = true;
+        } else {
+            self.live_output = "No agent selected.\n\nUse j/k to select an agent.".to_string();
+        }
+    }
+
     /// Tick for triggering re-renders
     ///
     /// Best practice from ratatui async-template:
@@ -955,6 +1137,12 @@ impl App {
     pub fn tick(&mut self) {
         // Process timeout-based state transitions
         self.state.tick();
+
+        // Capture pane output periodically in split view
+        if self.view_mode == ViewMode::Split {
+            self.capture_selected_output();
+        }
+
         // Tick triggers re-render for elapsed time updates
         self.needs_render = true;
     }
@@ -1559,15 +1747,61 @@ fn extract_repo_name(input: &str) -> String {
 /// - "owner/repo" -> "owner/repo" (already correct)
 /// - "https://github.com/owner/repo" -> "owner/repo"
 /// - "github.com/owner/repo" -> "owner/repo"
+/// - "git@github.com:owner/repo.git" -> "owner/repo" (SSH format)
 fn normalize_github_repo(input: &str) -> String {
-    // Remove protocol and domain prefix
-    let path = input
+    input
+        .trim()
         .trim_start_matches("https://")
         .trim_start_matches("http://")
         .trim_start_matches("git@")
+        .replace("github.com:", "") // SSH format: git@github.com:owner/repo
         .trim_start_matches("github.com/")
-        .trim_start_matches("github.com:")
-        .trim_end_matches(".git");
+        .trim_end_matches(".git")
+        .trim_matches('/')
+        .to_string()
+}
 
+/// Expand tilde in path to home directory
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return path.replacen("~", &home.to_string_lossy(), 1);
+        }
+    }
     path.to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_github_repo() {
+        assert_eq!(normalize_github_repo("owner/repo"), "owner/repo");
+        assert_eq!(
+            normalize_github_repo("https://github.com/owner/repo"),
+            "owner/repo"
+        );
+        assert_eq!(
+            normalize_github_repo("git@github.com:owner/repo.git"),
+            "owner/repo"
+        );
+        assert_eq!(
+            normalize_github_repo("github.com/owner/repo/"),
+            "owner/repo"
+        );
+    }
+
+    #[test]
+    fn test_expand_tilde() {
+        // Test with actual home dir
+        let home = std::env::var("HOME").unwrap_or_default();
+        if !home.is_empty() {
+            assert_eq!(expand_tilde("~/test"), format!("{}/test", home));
+            assert_eq!(expand_tilde("~/a/b/c"), format!("{}/a/b/c", home));
+        }
+        // Non-tilde paths unchanged
+        assert_eq!(expand_tilde("/absolute/path"), "/absolute/path");
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+    }
 }

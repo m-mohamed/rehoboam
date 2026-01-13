@@ -241,11 +241,20 @@ pub fn build_iteration_prompt(ralph_dir: &Path) -> Result<String> {
     let guardrails = fs::read_to_string(ralph_dir.join("guardrails.md")).unwrap_or_default();
     let progress = fs::read_to_string(ralph_dir.join("progress.md")).unwrap_or_default();
 
+    // Get recent iteration context (last 5 iterations)
+    let recent = get_recent_progress_summary(ralph_dir, 5).unwrap_or_default();
+    let recent_section = if recent.is_empty() {
+        String::new()
+    } else {
+        format!("## Recent Activity\n{}\n", recent)
+    };
+
     let prompt = format!(
         r#"# Ralph Loop - Iteration {iteration}
 
 You are in a Ralph loop. Each iteration starts fresh - make incremental progress.
 
+{recent_section}
 ## Your Task (Anchor)
 {anchor}
 
@@ -270,13 +279,14 @@ Remember: Progress persists, failures evaporate. Make incremental progress.
 Git commits are created between iterations for easy rollback.
 "#,
         iteration = state.iteration + 1, // Display as 1-indexed
+        recent_section = recent_section,
         anchor = anchor,
         guardrails = guardrails,
         progress = progress,
         stop_word = state.stop_word,
     );
 
-    // Write to a temp file for claude --prompt-file
+    // Write to a temp file for claude stdin piping
     let prompt_file = ralph_dir.join("_iteration_prompt.md");
     fs::write(&prompt_file, &prompt)?;
 
@@ -648,6 +658,46 @@ pub fn log_session_transition(
     fs::write(history_path, content)?;
 
     debug!("Session transition: {} -> {}", from_state, to_state);
+    Ok(())
+}
+
+// =============================================================================
+// NEW: Progress Injection - Recent Iteration Context
+// =============================================================================
+
+/// Get summary of recent iteration outcomes for context injection
+///
+/// Returns the last N entries from activity.log formatted for inclusion
+/// in the iteration prompt. This helps Claude understand recent progress.
+pub fn get_recent_progress_summary(ralph_dir: &Path, count: usize) -> Result<String> {
+    let activity_path = ralph_dir.join("activity.log");
+
+    if !activity_path.exists() {
+        return Ok(String::new());
+    }
+
+    let content = fs::read_to_string(&activity_path)?;
+    let lines: Vec<&str> = content.lines().rev().take(count).collect();
+
+    if lines.is_empty() {
+        return Ok(String::new());
+    }
+
+    let mut summary = String::from("Recent iteration outcomes:\n");
+    for line in lines.iter().rev() {
+        summary.push_str(&format!("  {}\n", line));
+    }
+
+    Ok(summary)
+}
+
+/// Append to guardrails without full sign format (for simple additions)
+#[allow(dead_code)]
+pub fn append_guardrail(ralph_dir: &Path, content: &str) -> Result<()> {
+    let guardrails_path = ralph_dir.join("guardrails.md");
+    let mut existing = fs::read_to_string(&guardrails_path).unwrap_or_default();
+    existing.push_str(content);
+    fs::write(guardrails_path, existing)?;
     Ok(())
 }
 

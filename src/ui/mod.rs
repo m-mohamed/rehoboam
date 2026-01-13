@@ -43,6 +43,7 @@ pub fn render(f: &mut Frame, app: &App) {
     match app.view_mode {
         ViewMode::Kanban => render_agent_columns(f, chunks[1], app),
         ViewMode::Project => render_project_view(f, chunks[1], app),
+        ViewMode::Split => render_split_view(f, chunks[1], app),
     }
 
     render_activity(f, chunks[2], app);
@@ -101,6 +102,7 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     let view_indicator = match app.view_mode {
         ViewMode::Kanban => "",
         ViewMode::Project => " [PROJECT VIEW]",
+        ViewMode::Split => " [SPLIT VIEW]",
     };
     // Show sprite count with connection status if any remote agents
     let connected_count = app.state.connected_sprite_count();
@@ -263,6 +265,237 @@ fn render_project_view(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(list, area);
 }
 
+/// Render split view: agent list on left, live output on right
+fn render_split_view(f: &mut Frame, area: Rect, app: &App) {
+    // Calculate split ratio based on whether subagent panel is shown
+    let constraints = if app.show_subagents {
+        vec![
+            Constraint::Percentage(25), // Agent list
+            Constraint::Percentage(50), // Live output
+            Constraint::Percentage(25), // Subagent tree
+        ]
+    } else {
+        vec![
+            Constraint::Percentage(30), // Agent list
+            Constraint::Percentage(70), // Live output
+        ]
+    };
+
+    let chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints(constraints)
+        .split(area);
+
+    // Left panel: Agent list (compact)
+    render_agent_list_compact(f, chunks[0], app);
+
+    // Right panel: Live output
+    render_live_output(f, chunks[1], app);
+
+    // Subagent panel (if shown)
+    if app.show_subagents && chunks.len() > 2 {
+        render_subagent_tree(f, chunks[2], app);
+    }
+}
+
+/// Render compact agent list for split view
+fn render_agent_list_compact(f: &mut Frame, area: Rect, app: &App) {
+    let columns = app.state.agents_by_column();
+    let agents: Vec<&_> = columns.iter().flatten().copied().collect();
+
+    if agents.is_empty() {
+        let placeholder = Paragraph::new("No agents running.\n\nPress 's' to spawn.")
+            .style(Style::default().fg(colors::IDLE))
+            .block(
+                Block::default()
+                    .title(" Agents ")
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(colors::BORDER)),
+            );
+        f.render_widget(placeholder, area);
+        return;
+    }
+
+    let selected_pane = app.state.selected_agent().map(|a| a.pane_id.as_str());
+
+    let items: Vec<ListItem> = agents
+        .iter()
+        .map(|agent| {
+            let (icon, color) = match &agent.status {
+                Status::Attention(_) => ("🔔", colors::ATTENTION),
+                Status::Working => ("🤖", colors::WORKING),
+                Status::Compacting => ("🔄", colors::COMPACTING),
+                Status::Idle => ("⏸️ ", colors::IDLE),
+            };
+
+            let sprite_prefix = if agent.is_sprite { "☁" } else { "" };
+            let selected = if Some(agent.pane_id.as_str()) == selected_pane {
+                "▶"
+            } else {
+                " "
+            };
+
+            // Show loop iteration if in Ralph mode
+            let loop_info = if agent.loop_mode != crate::state::LoopMode::None {
+                format!(" [{}]", agent.loop_iteration)
+            } else {
+                String::new()
+            };
+
+            let line = format!(
+                "{} {}{} {}{}",
+                selected,
+                sprite_prefix,
+                icon,
+                truncate(&agent.project, 15),
+                loop_info
+            );
+
+            let style = if Some(agent.pane_id.as_str()) == selected_pane {
+                Style::default().fg(color).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(color)
+            };
+
+            ListItem::new(Line::from(vec![Span::styled(line, style)]))
+        })
+        .collect();
+
+    let list = List::new(items).block(
+        Block::default()
+            .title(" Agents [j/k] ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors::HIGHLIGHT)),
+    );
+
+    f.render_widget(list, area);
+}
+
+/// Render live output panel
+fn render_live_output(f: &mut Frame, area: Rect, app: &App) {
+    let output_lines: Vec<Line> = app
+        .live_output
+        .lines()
+        .skip(app.output_scroll as usize)
+        .take(area.height.saturating_sub(2) as usize)
+        .map(|line| {
+            // Color code based on content
+            let style = if line.starts_with("Error") || line.contains("error") {
+                Style::default().fg(Color::Red)
+            } else if line.starts_with('>') || line.starts_with("claude") {
+                Style::default().fg(colors::WORKING)
+            } else if line.contains("✓") || line.contains("passed") {
+                Style::default().fg(Color::Green)
+            } else if line.contains("warning") {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(colors::FG)
+            };
+            Line::from(vec![Span::styled(line, style)])
+        })
+        .collect();
+
+    let title = if let Some(agent) = app.state.selected_agent() {
+        format!(
+            " {} | {} | {:?} ",
+            agent.project, agent.pane_id, agent.status
+        )
+    } else {
+        " Live Output ".to_string()
+    };
+
+    let output = Paragraph::new(output_lines)
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(colors::HIGHLIGHT))
+                .border_type(ratatui::widgets::BorderType::Rounded),
+        )
+        .wrap(ratatui::widgets::Wrap { trim: false });
+
+    f.render_widget(output, area);
+}
+
+/// Render subagent tree panel
+fn render_subagent_tree(f: &mut Frame, area: Rect, app: &App) {
+    let agent = app.state.selected_agent();
+
+    let content = if let Some(agent) = agent {
+        if agent.subagents.is_empty() {
+            vec![
+                Line::from("No subagents spawned."),
+                Line::from(""),
+                Line::from(Span::styled(
+                    "Subagents appear when Claude",
+                    Style::default().fg(colors::IDLE),
+                )),
+                Line::from(Span::styled(
+                    "uses the Task tool.",
+                    Style::default().fg(colors::IDLE),
+                )),
+            ]
+        } else {
+            let mut lines = vec![Line::from(Span::styled(
+                format!("Subagents: {}", agent.subagents.len()),
+                Style::default()
+                    .fg(colors::HIGHLIGHT)
+                    .add_modifier(Modifier::BOLD),
+            ))];
+
+            for subagent in &agent.subagents {
+                let duration = subagent
+                    .duration_ms
+                    .map(|d| format!("{}ms", d))
+                    .unwrap_or_else(|| "running...".to_string());
+
+                // Status indicator with color
+                let (status_icon, status_color) = match subagent.status.as_str() {
+                    "running" => ("⚡", colors::WORKING),
+                    "completed" => ("✓", Color::Green),
+                    "failed" => ("✗", Color::Red),
+                    _ => ("?", colors::IDLE),
+                };
+
+                lines.push(Line::from(vec![
+                    Span::styled("├─ ", Style::default().fg(colors::BORDER)),
+                    Span::styled(
+                        format!("{} {}", status_icon, truncate(&subagent.id, 8)),
+                        Style::default().fg(status_color),
+                    ),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("│  ", Style::default().fg(colors::BORDER)),
+                    Span::styled(
+                        truncate(
+                            &subagent.description,
+                            area.width.saturating_sub(6) as usize,
+                        ),
+                        Style::default().fg(colors::IDLE),
+                    ),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("│  ", Style::default().fg(colors::BORDER)),
+                    Span::styled(duration, Style::default().fg(colors::COMPACTING)),
+                ]));
+            }
+
+            lines
+        }
+    } else {
+        vec![Line::from("Select an agent to see subagents.")]
+    };
+
+    let tree = Paragraph::new(content).block(
+        Block::default()
+            .title(" Subagents [T] ")
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors::BORDER)),
+    );
+
+    f.render_widget(tree, area);
+}
+
 fn render_activity(f: &mut Frame, area: Rect, app: &App) {
     // Flatten already-sorted columns instead of O(n log n) sorted_agents()
     let columns = app.state.agents_by_column();
@@ -347,6 +580,25 @@ fn render_activity(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
+    // Check if we have a status message to display
+    if let Some((ref msg, timestamp)) = app.status_message {
+        // Only show if less than 5 seconds old
+        if timestamp.elapsed() < std::time::Duration::from_secs(5) {
+            let style = if msg.starts_with("Error") || msg.starts_with("⚠") {
+                Style::default().fg(Color::Red)
+            } else if msg.starts_with("✓") {
+                Style::default().fg(Color::Green)
+            } else {
+                Style::default().fg(Color::Yellow)
+            };
+            let status = Paragraph::new(msg.as_str())
+                .style(style)
+                .alignment(Alignment::Center);
+            f.render_widget(status, area);
+            return;
+        }
+    }
+
     let selection_count = app.state.selected_agents.len();
     let mode_indicators: Vec<String> = [
         app.debug_mode.then_some("[debug]".to_string()),
@@ -369,7 +621,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     };
 
     let help = format!(
-        "{mode}Space:select  Y/N:bulk  K:kill  y/n:approve  c:input  s:spawn  X/R:loop  ?:help"
+        "{mode}P:view  y/n:approve  c:input  s:spawn  K:kill  X/R:loop  T:subs  ?:help"
     );
 
     let footer = Paragraph::new(help)
@@ -450,7 +702,9 @@ fn render_help(f: &mut Frame) {
   x           Clear selection
 
   Display
-  P           Toggle Kanban/Project view
+  P           Cycle views: Kanban → Project → Split
+  T           Toggle subagent panel (split view)
+  PgUp/PgDn   Scroll live output (split view)
   A           Toggle auto-accept mode (careful!)
   f           Freeze display updates
   d           Debug mode (show event log)
@@ -667,7 +921,7 @@ fn render_input_dialog(f: &mut Frame, app: &App) {
 fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     let area = centered_rect(70, 80, f.area());
 
-    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, sprite toggle, network policy, instructions
+    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, sprite toggle, network policy, error, instructions
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -679,22 +933,27 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             Constraint::Length(3), // Loop options (5, 6)
             Constraint::Length(3), // Sprite toggle (7)
             Constraint::Length(3), // Network policy (8)
-            Constraint::Length(2), // Instructions
+            Constraint::Length(2), // Error message (9)
+            Constraint::Length(2), // Instructions (10)
         ])
         .margin(1)
         .split(area);
 
-    // Helper for field styling
+    // Helper for field styling - bold when active
     let field_style = |active: bool| {
         if active {
-            Style::default().fg(colors::HIGHLIGHT)
+            Style::default()
+                .fg(colors::HIGHLIGHT)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(colors::FG)
         }
     };
     let border_style = |active: bool| {
         if active {
-            Style::default().fg(colors::HIGHLIGHT)
+            Style::default()
+                .fg(colors::HIGHLIGHT)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(colors::BORDER)
         }
@@ -890,11 +1149,28 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 }),
         );
 
-    // Instructions
-    let instructions =
-        Paragraph::new("[Tab/↑↓] Navigate  [Space] Toggle  [Enter] Spawn  [Esc] Cancel")
-            .style(Style::default().fg(colors::IDLE))
-            .alignment(Alignment::Center);
+    // Validation error display
+    let error_widget = if let Some(ref error) = spawn_state.validation_error {
+        Paragraph::new(format!("⚠ {}", error))
+            .style(
+                Style::default()
+                    .fg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .alignment(Alignment::Center)
+    } else {
+        Paragraph::new("")
+    };
+
+    // Instructions - context-aware
+    let instructions_text = if spawn_state.use_sprite {
+        "[Tab] Navigate  [Space] Toggle  [←/→] Network  [Enter] Spawn  [Esc] Cancel"
+    } else {
+        "[Tab] Navigate  [Space] Toggle  [Enter] Spawn  [Esc] Cancel"
+    };
+    let instructions = Paragraph::new(instructions_text)
+        .style(Style::default().fg(colors::IDLE).add_modifier(Modifier::DIM))
+        .alignment(Alignment::Center);
 
     // Main dialog block
     let dialog = Block::default()
@@ -915,7 +1191,8 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     f.render_widget(stop_widget, loop_options_chunks[1]);
     f.render_widget(sprite_widget, chunks[6]);
     f.render_widget(network_widget, chunks[7]);
-    f.render_widget(instructions, chunks[8]);
+    f.render_widget(error_widget, chunks[8]);
+    f.render_widget(instructions, chunks[9]);
 }
 
 // Helper functions
