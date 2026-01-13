@@ -1011,6 +1011,126 @@ fn current_timestamp() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::HookEvent;
+
+    /// Create a test hook event with minimal required fields
+    fn make_event(event: &str, status: &str, pane_id: &str, project: &str) -> HookEvent {
+        HookEvent {
+            event: event.to_string(),
+            status: status.to_string(),
+            attention_type: None,
+            pane_id: pane_id.to_string(),
+            project: project.to_string(),
+            timestamp: current_timestamp(),
+            session_id: None,
+            tool_name: None,
+            tool_input: None,
+            tool_use_id: None,
+            reason: None,
+            subagent_id: None,
+            description: None,
+            subagent_duration_ms: None,
+            source: crate::event::EventSource::Local,
+        }
+    }
+
+    #[test]
+    fn test_process_event_new_agent() {
+        let mut state = AppState::new();
+        let event = make_event("SessionStart", "working", "%0", "test-project");
+
+        state.process_event(event);
+
+        assert_eq!(state.agents.len(), 1);
+        assert_eq!(state.status_counts[1], 1); // Working is column 1
+        assert!(state.agents.contains_key("%0"));
+
+        let agent = state.agents.get("%0").unwrap();
+        assert_eq!(agent.project, "test-project");
+        assert!(matches!(agent.status, Status::Working));
+    }
+
+    #[test]
+    fn test_status_counts_updated_on_transition() {
+        let mut state = AppState::new();
+
+        // Create an agent in working state
+        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        assert_eq!(state.status_counts[1], 1); // Working
+
+        // Transition to idle
+        state.process_event(make_event("Stop", "idle", "%0", "test"));
+        assert_eq!(state.status_counts[1], 0); // Working now 0
+        assert_eq!(state.status_counts[3], 1); // Idle now 1
+    }
+
+    #[test]
+    fn test_loop_mode_stop_word_detection() {
+        let mut state = AppState::new();
+
+        // Create an agent
+        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Enable loop mode with stop word
+        state.enable_loop_mode("%0", 10, "COMPLETE");
+
+        // Send Stop with stop word in reason
+        let mut stop_event = make_event("Stop", "idle", "%0", "test");
+        stop_event.reason = Some("Task COMPLETE - all done".to_string());
+        state.process_event(stop_event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(matches!(agent.loop_mode, LoopMode::Complete));
+    }
+
+    #[test]
+    fn test_agent_eviction_at_capacity() {
+        use crate::config::MAX_AGENTS;
+        let mut state = AppState::new();
+
+        // Fill to capacity with idle agents
+        let base_time = current_timestamp();
+        for i in 0..MAX_AGENTS {
+            let mut event = make_event("SessionStart", "idle", &format!("%{}", i), "test");
+            // Vary timestamps so we have a clear oldest
+            // %0 gets oldest timestamp, each subsequent agent gets newer
+            event.timestamp = base_time + (i as i64);
+            state.process_event(event);
+        }
+
+        assert_eq!(state.agents.len(), MAX_AGENTS);
+
+        // Manually set last_update to match our timestamps
+        // (process_event uses current_timestamp() for last_update)
+        for i in 0..MAX_AGENTS {
+            if let Some(agent) = state.agents.get_mut(&format!("%{}", i)) {
+                agent.last_update = base_time + (i as i64);
+            }
+        }
+
+        // Add one more - should evict oldest idle (%0)
+        state.process_event(make_event("SessionStart", "working", "%new", "test"));
+
+        assert_eq!(state.agents.len(), MAX_AGENTS);
+        assert!(state.agents.contains_key("%new"));
+        // %0 should have been evicted (oldest by last_update)
+        assert!(!state.agents.contains_key("%0"));
+    }
+
+    #[test]
+    fn test_session_end_removes_agent() {
+        let mut state = AppState::new();
+
+        // Create an agent
+        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        assert_eq!(state.agents.len(), 1);
+
+        // End the session
+        state.process_event(make_event("SessionEnd", "idle", "%0", "test"));
+        assert_eq!(state.agents.len(), 0);
+        assert_eq!(state.status_counts[1], 0); // Working
+        assert_eq!(state.status_counts[3], 0); // Idle
+    }
 
     #[test]
     fn test_is_stalled_empty() {

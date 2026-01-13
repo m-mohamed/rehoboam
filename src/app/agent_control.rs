@@ -1,0 +1,231 @@
+//! Agent control operations: approve, reject, kill, custom input
+
+use crate::sprite::controller::SpriteController;
+use crate::state::AppState;
+use crate::tmux::TmuxController;
+use sprites::SpritesClient;
+
+/// Send a signal to the selected agent
+///
+/// Handles both tmux and sprite agents with unified logging.
+pub fn send_to_selected(
+    state: &AppState,
+    sprites_client: Option<&SpritesClient>,
+    signal: &str,
+    action_name: &str,
+) {
+    let Some(agent) = state.selected_agent() else {
+        return;
+    };
+
+    let pane_id = &agent.pane_id;
+
+    tracing::info!(
+        pane_id = %pane_id,
+        project = %agent.project,
+        is_sprite = agent.is_sprite,
+        action = %action_name,
+    );
+
+    if agent.is_sprite {
+        send_sprite_signal(sprites_client, pane_id, signal, action_name);
+    } else if pane_id.starts_with('%') {
+        send_tmux_signal(pane_id, signal, action_name);
+    } else {
+        tracing::warn!(pane_id = %pane_id, "Cannot {}: unknown pane type", action_name);
+    }
+}
+
+/// Send a signal to a sprite agent
+fn send_sprite_signal(
+    sprites_client: Option<&SpritesClient>,
+    pane_id: &str,
+    signal: &str,
+    action_name: &str,
+) {
+    let Some(client) = sprites_client else {
+        tracing::warn!(
+            pane_id = %pane_id,
+            "Cannot {} sprite: sprites client not configured",
+            action_name
+        );
+        return;
+    };
+
+    let sprite = client.sprite(pane_id);
+    let action_name = action_name.to_string();
+
+    match signal {
+        "y" => {
+            tokio::spawn(async move {
+                if let Err(e) = SpriteController::approve(&sprite).await {
+                    tracing::error!(error = %e, "Sprite {} failed", action_name);
+                }
+            });
+        }
+        "n" => {
+            tokio::spawn(async move {
+                if let Err(e) = SpriteController::reject(&sprite).await {
+                    tracing::error!(error = %e, "Sprite {} failed", action_name);
+                }
+            });
+        }
+        "C-c" => {
+            tokio::spawn(async move {
+                if let Err(e) = SpriteController::kill(&sprite).await {
+                    tracing::error!(error = %e, "Sprite {} failed", action_name);
+                }
+            });
+        }
+        _ => {
+            tracing::warn!(signal = %signal, "Unknown signal for sprite");
+        }
+    }
+}
+
+/// Send a signal to a tmux pane
+fn send_tmux_signal(pane_id: &str, signal: &str, action_name: &str) {
+    let result = if signal == "C-c" {
+        TmuxController::send_keys_raw(pane_id, signal)
+    } else {
+        TmuxController::send_keys(pane_id, signal)
+    };
+
+    if let Err(e) = result {
+        tracing::error!(
+            pane_id = %pane_id,
+            error = %e,
+            "Failed to send {}",
+            action_name
+        );
+    }
+}
+
+/// Approve permission request for selected agent
+pub fn approve_selected(state: &AppState, sprites_client: Option<&SpritesClient>) {
+    send_to_selected(state, sprites_client, "y", "approval");
+}
+
+/// Reject permission request for selected agent
+pub fn reject_selected(state: &AppState, sprites_client: Option<&SpritesClient>) {
+    send_to_selected(state, sprites_client, "n", "rejection");
+}
+
+/// Bulk send a signal to all selected agents
+///
+/// Handles both tmux and sprite agents with unified logging.
+pub fn bulk_send_signal(
+    state: &mut AppState,
+    sprites_client: Option<&SpritesClient>,
+    tmux_signal: &str,
+    action_name: &str,
+) {
+    let tmux_panes = state.selected_tmux_panes();
+    let sprite_agents = state.selected_sprite_agents();
+
+    if tmux_panes.is_empty() && sprite_agents.is_empty() {
+        tracing::warn!("No agents selected for bulk {}", action_name);
+        return;
+    }
+
+    // Handle tmux agents
+    if !tmux_panes.is_empty() {
+        tracing::info!(count = tmux_panes.len(), "Bulk {} tmux agents", action_name);
+        for pane_id in &tmux_panes {
+            let result = if tmux_signal == "C-c" {
+                TmuxController::send_keys_raw(pane_id, tmux_signal)
+            } else {
+                TmuxController::send_keys(pane_id, tmux_signal)
+            };
+            if let Err(e) = result {
+                tracing::error!(pane_id = %pane_id, error = %e, "Failed to {}", action_name);
+            }
+        }
+    }
+
+    // Handle sprite agents
+    if !sprite_agents.is_empty() {
+        if let Some(client) = sprites_client {
+            tracing::info!(count = sprite_agents.len(), "Bulk {} sprite agents", action_name);
+            for sprite_id in sprite_agents {
+                send_sprite_signal(Some(client), &sprite_id, tmux_signal, action_name);
+            }
+        } else {
+            tracing::warn!(
+                count = sprite_agents.len(),
+                "Cannot {} sprites: sprites client not configured",
+                action_name
+            );
+        }
+    }
+
+    state.clear_selection();
+}
+
+/// Bulk approve all selected agents
+pub fn bulk_approve(state: &mut AppState, sprites_client: Option<&SpritesClient>) {
+    bulk_send_signal(state, sprites_client, "y", "approval");
+}
+
+/// Bulk reject all selected agents
+pub fn bulk_reject(state: &mut AppState, sprites_client: Option<&SpritesClient>) {
+    bulk_send_signal(state, sprites_client, "n", "rejection");
+}
+
+/// Bulk kill all selected agents (send Ctrl+C)
+pub fn bulk_kill(state: &mut AppState, sprites_client: Option<&SpritesClient>) {
+    bulk_send_signal(state, sprites_client, "C-c", "kill");
+}
+
+/// Send custom input to selected agent
+///
+/// Uses buffered send for multi-line or long input.
+pub fn send_custom_input(state: &AppState, input: &str) {
+    if input.is_empty() {
+        return;
+    }
+
+    let Some(agent) = state.selected_agent() else {
+        return;
+    };
+
+    let pane_id = &agent.pane_id;
+
+    tracing::info!(
+        pane_id = %pane_id,
+        project = %agent.project,
+        input_len = input.len(),
+        is_sprite = agent.is_sprite,
+        "Sending custom input"
+    );
+
+    if agent.is_sprite {
+        // Sprite agents: input would go through SpriteController (async)
+        tracing::info!(
+            pane_id = %pane_id,
+            "Sprite input queued (async via SpriteController)"
+        );
+        // TODO: Wire async sprite input through event system
+    } else if pane_id.starts_with('%') {
+        // Tmux panes: send directly
+        // Use buffered send for multi-line or long input, simple send for short
+        let result = if input.contains('\n') || input.len() > 100 {
+            TmuxController::send_buffered(pane_id, input)
+        } else {
+            TmuxController::send_keys(pane_id, input)
+        };
+
+        if let Err(e) = result {
+            tracing::error!(
+                pane_id = %pane_id,
+                error = %e,
+                "Failed to send custom input"
+            );
+        }
+    } else {
+        tracing::warn!(
+            pane_id = %pane_id,
+            "Cannot send input: unknown pane type"
+        );
+    }
+}

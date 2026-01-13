@@ -132,8 +132,12 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     let hook_input: event::ClaudeHookInput = match serde_json::from_str(&input) {
         Ok(parsed) => parsed,
         Err(e) => {
-            tracing::debug!("Failed to parse hook JSON: {}", e);
-            return Ok(()); // Silent exit - invalid JSON
+            tracing::warn!(
+                error = %e,
+                input_len = input.len(),
+                "Invalid hook JSON from Claude Code (check hook configuration)"
+            );
+            return Ok(()); // Exit - invalid JSON
         }
     };
 
@@ -463,11 +467,11 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Load configuration from file
-    let config = config::RehoboamConfig::load();
+    // Load configuration from file (used for feature flags logging)
+    let _config = config::RehoboamConfig::load();
     tracing::info!(
         "Loaded config: sprites.enabled = {}",
-        config.sprites.enabled
+        _config.sprites.enabled
     );
 
     // Create SpritesClient if token is provided
@@ -483,7 +487,6 @@ async fn main() -> Result<()> {
         cli.debug,
         cli.tick_rate,
         cli.frame_rate,
-        config,
         sprites_client,
     )
     .await;
@@ -513,7 +516,6 @@ async fn run_tui(
     debug_mode: bool,
     tick_rate: f64,
     frame_rate: f64,
-    config: config::RehoboamConfig,
     sprites_client: Option<sprites::SpritesClient>,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
@@ -535,8 +537,8 @@ async fn run_tui(
     // RAII guard ensures terminal is restored on panic or early return
     let _guard = tui::TerminalGuard;
 
-    // Create app state with config, sprites client, and event channel
-    let mut app = App::new(debug_mode, config, sprites_client, Some(event_tx.clone()));
+    // Create app state with sprites client and event channel
+    let mut app = App::new(debug_mode, sprites_client, Some(event_tx.clone()));
 
     // Create cancellation token for graceful shutdown
     let cancel = CancellationToken::new();

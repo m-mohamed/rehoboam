@@ -17,6 +17,39 @@ pub struct RehoboamConfig {
     /// Sprites configuration
     #[serde(default)]
     pub sprites: SpritesConfig,
+
+    /// Timeout configuration
+    #[serde(default)]
+    pub timeouts: TimeoutConfig,
+}
+
+/// Timeout configuration for state transitions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimeoutConfig {
+    /// Seconds before Working -> Idle transition (default: 60)
+    #[serde(default = "default_idle_timeout")]
+    pub idle_timeout_secs: i64,
+
+    /// Seconds before removing stale sessions (default: 300)
+    #[serde(default = "default_stale_timeout")]
+    pub stale_timeout_secs: i64,
+}
+
+impl Default for TimeoutConfig {
+    fn default() -> Self {
+        Self {
+            idle_timeout_secs: default_idle_timeout(),
+            stale_timeout_secs: default_stale_timeout(),
+        }
+    }
+}
+
+fn default_idle_timeout() -> i64 {
+    60
+}
+
+fn default_stale_timeout() -> i64 {
+    300
 }
 
 /// Sprites-specific configuration
@@ -181,6 +214,13 @@ impl RehoboamConfig {
     pub fn example() -> String {
         r#"# Rehoboam Configuration
 # Place this file at ~/.config/rehoboam/config.toml
+
+[timeouts]
+# Seconds before Working -> Idle transition
+idle_timeout_secs = 60
+
+# Seconds before removing stale sessions
+stale_timeout_secs = 300
 
 [sprites]
 # Enable sprite support (remote sandboxed VMs)
