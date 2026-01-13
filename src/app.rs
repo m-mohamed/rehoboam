@@ -784,6 +784,10 @@ impl App {
 
                     match ralph::init_ralph_dir(&working_dir, prompt, &config) {
                         Ok(dir) => {
+                            // Log initial session transition
+                            let _ = ralph::log_session_transition(&dir, "init", "starting", Some(&pane_id));
+                            let _ = ralph::mark_iteration_start(&dir);
+
                             tracing::info!(
                                 ralph_dir = ?dir,
                                 "Initialized Ralph loop directory"

@@ -360,6 +360,21 @@ impl AppState {
             } else if is_stalled(&agent.loop_last_reasons) {
                 // Stall detected (5+ identical reasons)
                 agent.loop_mode = LoopMode::Stalled;
+
+                // Track error pattern for potential auto-guardrail
+                if let Some(ref ralph_dir) = agent.ralph_dir {
+                    let error_msg = format!("Stalled: {}", reason_str);
+                    if let Ok(added_guardrail) = ralph::track_error_pattern(ralph_dir, &error_msg) {
+                        if added_guardrail {
+                            tracing::info!(
+                                pane_id = %pane_id,
+                                "Auto-added guardrail for stall pattern"
+                            );
+                        }
+                    }
+                    let _ = ralph::log_session_transition(ralph_dir, "working", "stalled", Some(reason_str));
+                }
+
                 tracing::warn!(
                     pane_id = %pane_id,
                     iteration = agent.loop_iteration,
@@ -403,6 +418,11 @@ impl AppState {
                                 }
                             }
                             Err(e) => {
+                                // Track error pattern for potential auto-guardrail
+                                let error_msg = format!("Spawn failed: {}", e);
+                                let _ = ralph::track_error_pattern(&ralph_dir, &error_msg);
+                                let _ = ralph::log_session_transition(&ralph_dir, "respawning", "error", Some(&error_msg));
+
                                 tracing::error!(
                                     pane_id = %pane_id,
                                     error = %e,
@@ -862,25 +882,46 @@ fn spawn_fresh_ralph_session(
 ) -> color_eyre::eyre::Result<String> {
     use color_eyre::eyre::WrapErr;
 
+    // Log session transition: iteration ending
+    let _ = ralph::log_session_transition(ralph_dir, "working", "stopping", Some("iteration ending"));
+
+    // Get iteration duration before incrementing
+    let duration = ralph::get_iteration_duration(ralph_dir);
+
     // 1. Increment iteration counter
     let new_iteration =
         ralph::increment_iteration(ralph_dir).wrap_err("Failed to increment Ralph iteration")?;
     agent.loop_iteration = new_iteration;
 
-    // 2. Check stop word in progress.md
-    if ralph::check_stop_word(ralph_dir, &agent.loop_stop_word)
-        .wrap_err("Failed to check stop word")?
-    {
+    // 2. Check completion (stop word OR promise tag)
+    let (is_complete, completion_reason) =
+        ralph::check_completion(ralph_dir, &agent.loop_stop_word)
+            .wrap_err("Failed to check completion")?;
+
+    if is_complete {
+        // Log activity for completed iteration
+        let _ = ralph::log_activity(
+            ralph_dir,
+            new_iteration,
+            duration,
+            None,
+            &format!("complete:{}", completion_reason),
+        );
+
+        // Create final git checkpoint
+        let _ = ralph::create_git_checkpoint(ralph_dir);
+        let _ = ralph::log_session_transition(ralph_dir, "stopping", "complete", Some(&completion_reason));
+
         agent.loop_mode = LoopMode::Complete;
         tracing::info!(
             pane_id = %pane_id,
             iteration = new_iteration,
-            stop_word = %agent.loop_stop_word,
-            "Ralph loop complete: stop word found"
+            reason = %completion_reason,
+            "Ralph loop complete"
         );
         notify::send(
             "Ralph Complete",
-            &format!("{}: {} iterations", agent.project, new_iteration),
+            &format!("{}: {} iterations ({})", agent.project, new_iteration, completion_reason),
             Some("Glass"),
         );
         return Ok(pane_id.to_string());
@@ -888,6 +929,13 @@ fn spawn_fresh_ralph_session(
 
     // 3. Check max iterations
     if ralph::check_max_iterations(ralph_dir).wrap_err("Failed to check max iterations")? {
+        // Log activity
+        let _ = ralph::log_activity(ralph_dir, new_iteration, duration, None, "max_iterations");
+
+        // Create git checkpoint
+        let _ = ralph::create_git_checkpoint(ralph_dir);
+        let _ = ralph::log_session_transition(ralph_dir, "stopping", "max_reached", None);
+
         agent.loop_mode = LoopMode::Complete;
         tracing::info!(
             pane_id = %pane_id,
@@ -903,17 +951,26 @@ fn spawn_fresh_ralph_session(
         return Ok(pane_id.to_string());
     }
 
-    // 4. Build iteration prompt
+    // Log activity for continuing iteration
+    let _ = ralph::log_activity(ralph_dir, new_iteration, duration, None, "continuing");
+
+    // 4. Create git checkpoint before respawning
+    let _ = ralph::create_git_checkpoint(ralph_dir);
+
+    // 5. Build iteration prompt
     let prompt_file =
         ralph::build_iteration_prompt(ralph_dir).wrap_err("Failed to build iteration prompt")?;
 
-    // 5. Get project directory for respawn
+    // 6. Get project directory for respawn
     let project_dir = ralph_dir
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string());
 
-    // 6. Send Ctrl+C to ensure clean shutdown, then kill pane
+    // Log session transition: respawning
+    let _ = ralph::log_session_transition(ralph_dir, "stopping", "respawning", Some(&format!("iteration {}", new_iteration + 1)));
+
+    // 7. Send Ctrl+C to ensure clean shutdown, then kill pane
     let _ = TmuxController::send_interrupt(pane_id);
     std::thread::sleep(std::time::Duration::from_millis(100));
 
@@ -925,9 +982,13 @@ fn spawn_fresh_ralph_session(
         );
     }
 
-    // 7. Respawn fresh Claude session
+    // 8. Respawn fresh Claude session
     let new_pane_id = TmuxController::respawn_claude(&project_dir, &prompt_file)
         .wrap_err("Failed to respawn Claude session")?;
+
+    // 9. Mark iteration start time for next iteration
+    let _ = ralph::mark_iteration_start(ralph_dir);
+    let _ = ralph::log_session_transition(ralph_dir, "respawning", "working", Some(&new_pane_id));
 
     tracing::info!(
         old_pane = %pane_id,
