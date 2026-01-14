@@ -173,7 +173,29 @@ impl AppState {
 
         // Update agent state
         agent.project = event.project.clone();
-        agent.status = Status::from_str(&event.status, event.attention_type.as_deref());
+
+        // Priority-aware status update: don't let Working override blocking Attention states
+        let new_status = Status::from_str(&event.status, event.attention_type.as_deref());
+        let should_update = match (&agent.status, &new_status) {
+            // Current status is blocking Attention (Permission or Input)
+            // Don't let Working or lower-priority Attention override it
+            (Status::Attention(current_attn), Status::Working)
+                if matches!(current_attn, AttentionType::Permission | AttentionType::Input) =>
+            {
+                false
+            }
+            // Current is Attention, new is also Attention - use priority
+            (Status::Attention(current_attn), Status::Attention(new_attn)) => {
+                // Only update if new attention has equal or higher priority (lower number)
+                new_attn.priority() <= current_attn.priority()
+            }
+            // All other cases - allow the update
+            _ => true,
+        };
+
+        if should_update {
+            agent.status = new_status;
+        }
 
         // Fix: AskUserQuestion waiting for user response should be ATTENTION, not IDLE
         // PostToolUse doesn't fire until user responds, so current_tool is still set
