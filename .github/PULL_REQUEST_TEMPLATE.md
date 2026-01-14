@@ -7,6 +7,10 @@
 <!-- Bullet points of key changes -->
 -
 
+## Screenshots
+
+<!-- For UI changes, add before/after screenshots. Delete this section if not applicable. -->
+
 ## Test plan
 
 <!-- How did you verify these changes work? -->

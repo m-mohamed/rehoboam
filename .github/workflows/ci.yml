@@ -40,6 +40,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  # Dependency & license auditing
+  deny:
+    name: Cargo Deny
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
   # Documentation build check
   docs:
     name: Documentation
@@ -79,6 +88,9 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact: rehoboam-linux-x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            artifact: rehoboam-linux-aarch64
           - os: macos-latest
             target: x86_64-apple-darwin
             artifact: rehoboam-macos-x86_64
