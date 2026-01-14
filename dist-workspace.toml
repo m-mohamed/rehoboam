@@ -19,3 +19,5 @@ targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-da
 include = ["completions/rehoboam.bash", "completions/_rehoboam", "completions/rehoboam.fish"]
 # Publish jobs to run
 publish-jobs = ["homebrew"]
+# Allow CI file customizations (we check if release exists before creating)
+allow-dirty = ["ci"]
