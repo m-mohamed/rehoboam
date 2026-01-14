@@ -16,6 +16,18 @@ use std::process::{Command, Stdio};
 
 use color_eyre::eyre::{bail, Result, WrapErr};
 
+/// Type of prompt detected in pane output via reconciliation
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)] // Used by reconciler in later commits
+pub enum PromptType {
+    /// Permission request: tool needs approval ([y/n], approve, etc.)
+    Permission,
+    /// Input request: Claude asking a question
+    Input,
+    /// Command prompt: shell is ready, Claude stopped
+    CommandPrompt,
+}
+
 /// Controller for tmux operations
 ///
 /// Provides methods for interacting with tmux panes where Claude Code agents run.
@@ -171,6 +183,151 @@ impl TmuxController {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     }
 
+    /// Check if a tmux pane exists and is alive
+    ///
+    /// Uses `display-message` to query the pane's `pane_dead` flag.
+    ///
+    /// # Arguments
+    /// * `pane_id` - Tmux pane identifier (e.g., "%1", "%2")
+    ///
+    /// # Returns
+    /// - `Ok(true)` if pane exists and is alive
+    /// - `Ok(false)` if pane is dead (pane_dead flag set)
+    /// - `Err(_)` if pane doesn't exist or tmux error
+    #[allow(dead_code)] // Used by reconciler in later commits
+    pub fn is_pane_alive(pane_id: &str) -> Result<bool> {
+        let output = Command::new("tmux")
+            .args(["display-message", "-t", pane_id, "-p", "#{pane_dead}"])
+            .output()
+            .wrap_err("Failed to execute tmux display-message")?;
+
+        if !output.status.success() {
+            bail!(
+                "tmux display-message failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let result = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // pane_dead returns "0" if alive, "1" if dead
+        Ok(result != "1")
+    }
+
+    /// Capture the last N lines from a pane
+    ///
+    /// More efficient than full capture for pattern matching during reconciliation.
+    /// Uses `capture-pane` with `-S` (start line) option.
+    ///
+    /// # Arguments
+    /// * `pane_id` - Tmux pane identifier
+    /// * `lines` - Number of lines to capture from bottom
+    ///
+    /// # Returns
+    /// The captured lines as a string
+    #[allow(dead_code)] // Used by reconciler in later commits
+    pub fn capture_pane_tail(pane_id: &str, lines: usize) -> Result<String> {
+        let start_line = format!("-{}", lines);
+        let output = Command::new("tmux")
+            .args(["capture-pane", "-t", pane_id, "-p", "-S", &start_line])
+            .output()
+            .wrap_err("Failed to execute tmux capture-pane")?;
+
+        if !output.status.success() {
+            bail!(
+                "tmux capture-pane failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    /// Pattern match captured pane output for permission/input prompts
+    ///
+    /// Pure function separated for testability without tmux dependency.
+    /// Used by reconciliation to detect prompts when hooks fail.
+    ///
+    /// # Arguments
+    /// * `output` - Captured pane content (typically last 30 lines)
+    ///
+    /// # Returns
+    /// - `Some(PromptType::Permission)` if permission prompt detected
+    /// - `Some(PromptType::Input)` if input prompt detected
+    /// - `None` if no prompt or still working (spinner visible)
+    #[allow(dead_code)] // Used by reconciler in later commits
+    pub fn match_prompt_patterns(output: &str) -> Option<PromptType> {
+        // Check for spinner/working indicators first (negative patterns)
+        // If spinner is visible, Claude is still working - don't match
+        const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+        const WORKING_INDICATORS: &[&str] = &["Thinking", "Running", "Compacting"];
+
+        // Only check last few lines for freshness
+        let recent_lines: Vec<&str> = output.lines().rev().take(10).collect();
+        let recent_text = recent_lines.join("\n");
+
+        // If any spinner char in recent output, still working
+        if SPINNER_CHARS.iter().any(|c| recent_text.contains(*c)) {
+            return None;
+        }
+
+        // If working indicator present, still working
+        if WORKING_INDICATORS.iter().any(|s| recent_text.contains(s)) {
+            return None;
+        }
+
+        // Permission patterns (Claude Code approval prompts)
+        const PERMISSION_PATTERNS: &[&str] = &[
+            "[y/n]",
+            "(y/n)",
+            "[Y/N]",
+            "(Y/N)",
+            "Allow this",
+            "allow this",
+            "Allow once",
+            "Allow always",
+            "approve",
+            "Approve",
+            "Do you want to",
+            "Deny",
+        ];
+
+        // Check for permission prompt
+        if PERMISSION_PATTERNS.iter().any(|p| recent_text.contains(p)) {
+            return Some(PromptType::Permission);
+        }
+
+        // Input patterns (Claude asking for user input)
+        // More conservative - only match if we see clear input indicators
+        // at the end of lines
+        for line in recent_lines.iter().take(3) {
+            let trimmed = line.trim();
+            if trimmed.ends_with('?') && trimmed.len() > 10 {
+                return Some(PromptType::Input);
+            }
+        }
+
+        // Shell prompt detection (Claude stopped, shell ready)
+        // Very conservative - only match clear shell prompts
+        for line in recent_lines.iter().take(2) {
+            let trimmed = line.trim_start(); // Only trim leading whitespace, preserve trailing
+                                             // Common shell prompts: "$ ", "> ", "% ", "❯ "
+                                             // Also check without trailing space for EOL cases
+            if trimmed.ends_with("$ ")
+                || trimmed.ends_with("> ")
+                || trimmed.ends_with("% ")
+                || trimmed.ends_with("❯ ")
+                || trimmed == "$"
+                || trimmed == ">"
+                || trimmed == "%"
+                || trimmed == "❯"
+            {
+                return Some(PromptType::CommandPrompt);
+            }
+        }
+
+        None
+    }
+
     /// Create a new tmux pane via split
     ///
     /// # Arguments
@@ -283,5 +440,88 @@ impl TmuxController {
 
         tracing::debug!(pane_id = %pane_id, "Sent Ctrl+C to pane");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_match_permission_patterns_yn() {
+        let output = "Do you want to allow this action? [y/n]";
+        assert_eq!(
+            TmuxController::match_prompt_patterns(output),
+            Some(PromptType::Permission)
+        );
+    }
+
+    #[test]
+    fn test_match_permission_patterns_allow_this() {
+        let output = "Allow this tool to execute?\n> ";
+        assert_eq!(
+            TmuxController::match_prompt_patterns(output),
+            Some(PromptType::Permission)
+        );
+    }
+
+    #[test]
+    fn test_match_permission_patterns_approve() {
+        let output = "Please approve the following action:";
+        assert_eq!(
+            TmuxController::match_prompt_patterns(output),
+            Some(PromptType::Permission)
+        );
+    }
+
+    #[test]
+    fn test_match_working_spinner_blocks() {
+        // Spinner char should block pattern matching (still working)
+        let output = "⠋ Thinking about your request...\n[y/n]";
+        assert_eq!(TmuxController::match_prompt_patterns(output), None);
+    }
+
+    #[test]
+    fn test_match_working_indicator_blocks() {
+        let output = "Running tool: Bash\nAllow this?";
+        assert_eq!(TmuxController::match_prompt_patterns(output), None);
+    }
+
+    #[test]
+    fn test_match_input_prompt_question() {
+        let output = "Some context here\nWhat would you like me to do next?";
+        assert_eq!(
+            TmuxController::match_prompt_patterns(output),
+            Some(PromptType::Input)
+        );
+    }
+
+    #[test]
+    fn test_match_command_prompt_dollar() {
+        let output = "Command completed successfully\n$ ";
+        assert_eq!(
+            TmuxController::match_prompt_patterns(output),
+            Some(PromptType::CommandPrompt)
+        );
+    }
+
+    #[test]
+    fn test_match_command_prompt_chevron() {
+        let output = "Done!\n❯ ";
+        assert_eq!(
+            TmuxController::match_prompt_patterns(output),
+            Some(PromptType::CommandPrompt)
+        );
+    }
+
+    #[test]
+    fn test_match_no_prompt_normal_output() {
+        let output = "Reading file contents...\nProcessing data...";
+        assert_eq!(TmuxController::match_prompt_patterns(output), None);
+    }
+
+    #[test]
+    fn test_match_empty_output() {
+        assert_eq!(TmuxController::match_prompt_patterns(""), None);
     }
 }
