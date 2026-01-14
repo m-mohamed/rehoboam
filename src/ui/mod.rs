@@ -86,8 +86,8 @@ pub fn render(f: &mut Frame, app: &App) {
 }
 
 fn render_header(f: &mut Frame, area: Rect, app: &App) {
-    // Use cached status counts (O(1) instead of O(4n))
-    let [attention, working, compacting, idle] = app.state.status_counts;
+    // Use cached status counts (O(1) instead of O(3n))
+    let [attention, working, compacting] = app.state.status_counts;
     let total = app.state.agents.len();
     let sprite_count = app.state.sprite_agent_count();
 
@@ -96,7 +96,6 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         (attention, "attention"),
         (working, "working"),
         (compacting, "compacting"),
-        (idle, "idle"),
     ]
     .iter()
     .filter(|(count, _)| *count > 0)
@@ -160,11 +159,10 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
 fn render_agent_columns(f: &mut Frame, area: Rect, app: &App) {
     let columns = app.state.agents_by_column();
 
-    // 4 equal-width columns
+    // 3 equal-width columns (Attention, Working, Compacting)
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Ratio(1, NUM_COLUMNS as u32),
             Constraint::Ratio(1, NUM_COLUMNS as u32),
             Constraint::Ratio(1, NUM_COLUMNS as u32),
             Constraint::Ratio(1, NUM_COLUMNS as u32),
@@ -228,14 +226,12 @@ fn render_project_view(f: &mut Frame, area: Rect, app: &App) {
                 Status::Attention(_) => ("🔔", colors::ATTENTION),
                 Status::Working => ("🤖", colors::WORKING),
                 Status::Compacting => ("🔄", colors::COMPACTING),
-                Status::Idle => ("⏸️ ", colors::IDLE),
             };
 
             let status_str = match &agent.status {
                 Status::Attention(_) => "Attention",
                 Status::Working => "Working",
                 Status::Compacting => "Compacting",
-                Status::Idle => "Idle",
             };
 
             // Sprite indicator for remote agents
@@ -330,7 +326,6 @@ fn render_agent_list_compact(f: &mut Frame, area: Rect, app: &App) {
                 Status::Attention(_) => ("🔔", colors::ATTENTION),
                 Status::Working => ("🤖", colors::WORKING),
                 Status::Compacting => ("🔄", colors::COMPACTING),
-                Status::Idle => ("⏸️ ", colors::IDLE),
             };
 
             let sprite_prefix = if agent.is_sprite { "☁" } else { "" };
@@ -712,7 +707,7 @@ fn render_help(f: &mut Frame) {
     let help_text = r"
   Quick Start
   Agents appear when Claude Code runs in hooked projects.
-  Columns: Attention (needs you) → Working → Compact → Idle
+  Columns: Attention (needs you) → Working → Compacting
 
   Navigation
   h/l         Move between columns
@@ -788,7 +783,7 @@ fn render_dashboard(f: &mut Frame, app: &App) {
     };
 
     // Get counts
-    let [attention, working, compacting, idle] = app.state.status_counts;
+    let [attention, working, compacting] = app.state.status_counts;
     let total = app.state.agents.len();
     let sprite_count = app.state.sprite_agent_count();
     let local_count = total - sprite_count;
@@ -837,11 +832,7 @@ fn render_dashboard(f: &mut Frame, app: &App) {
             "  │ 🔄 Compacting:  {:>3}   │  │ Active loops:       {:>5}   │",
             compacting, active_loops
         ),
-        format!(
-            "  │ ⏸️  Idle:        {:>3}   │  └─────────────────────────────┘",
-            idle
-        ),
-        "  └──────────────────────┘".to_string(),
+        "  └──────────────────────┘  └─────────────────────────────┘".to_string(),
         String::new(),
     ];
 
@@ -1358,7 +1349,6 @@ fn status_base_color(status: &Status) -> Color {
         Status::Working => colors::WORKING,
         Status::Attention(_) => colors::ATTENTION,
         Status::Compacting => colors::COMPACTING,
-        Status::Idle => colors::IDLE,
     }
 }
 

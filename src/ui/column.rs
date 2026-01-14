@@ -1,7 +1,7 @@
 //! Status column widget for Kanban display
 //!
 //! Renders a column containing agent cards for a specific status.
-//! Columns are: Attention, Working, Compacting, Idle
+//! Columns are: Attention, Working, Compacting
 
 use crate::config::colors;
 use crate::state::Agent;
@@ -14,19 +14,14 @@ use ratatui::{
 };
 
 /// Column definitions with titles and emoji icons
-pub const COLUMNS: [(&str, &str); 4] = [
-    ("ATTENTION", "🔔"),
-    ("WORKING", "🤖"),
-    ("COMPACT", "🔄"),
-    ("IDLE", "⏸️"),
-];
+pub const COLUMNS: [(&str, &str); 3] = [("ATTENTION", "🔔"), ("WORKING", "🤖"), ("COMPACT", "🔄")];
 
 /// Render a status column with agent cards
 ///
 /// # Arguments
 /// * `f` - Frame to render into
 /// * `area` - Area for the column
-/// * `column_index` - Index of this column (0-3)
+/// * `column_index` - Index of this column (0-2)
 /// * `agents` - Agents in this column
 /// * `selected_card` - Index of selected card if this column is active, None otherwise
 /// * `column_active` - Whether this column is the currently selected column

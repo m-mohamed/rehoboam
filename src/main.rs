@@ -223,17 +223,32 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
 
     // Send desktop notification if requested
     if should_notify {
-        match status {
-            "attention" => {
-                let msg = match attention_type {
-                    Some("notification") => hook_input
-                        .message
-                        .unwrap_or_else(|| "Notification".to_string()),
-                    _ => format!("Approve in {project}"),
-                };
-                notify::send("Claude Needs Attention", &msg, Some("Basso"));
+        match (status, attention_type) {
+            // Permission request - needs user approval
+            ("attention", Some("permission")) => {
+                notify::send(
+                    "Claude Needs Attention",
+                    &format!("Approve in {project}"),
+                    Some("Basso"),
+                );
             }
-            "idle" if hook_input.hook_event_name == "Stop" => {
+            // Input request - waiting for user response
+            ("attention", Some("input")) => {
+                notify::send(
+                    "Claude Needs Attention",
+                    &format!("Input needed in {project}"),
+                    Some("Basso"),
+                );
+            }
+            // Notification from Claude
+            ("attention", Some("notification")) => {
+                let msg = hook_input
+                    .message
+                    .unwrap_or_else(|| "Notification".to_string());
+                notify::send("Claude Notification", &msg, Some("default"));
+            }
+            // Waiting (was idle) - only notify on Stop event (completion)
+            ("attention", Some("waiting")) if hook_input.hook_event_name == "Stop" => {
                 let reason = hook_input.reason.unwrap_or_else(|| "Complete".to_string());
                 notify::send(
                     "Claude Done",

@@ -46,19 +46,18 @@ pub struct Subagent {
 
 /// Current status of a Claude Code agent
 ///
-/// Status determines visual representation and sorting priority:
-/// - **Attention (0)**: Needs user input, highest priority (🔔)
+/// Status determines visual representation and column placement:
+/// - **Attention (0)**: Needs user attention - includes Permission, Input, Notification, Waiting
 /// - **Compacting (1)**: Context compaction in progress (🔄)
 /// - **Working (2)**: Actively processing (🤖)
-/// - **Idle (3)**: Waiting for input, lowest priority (⏸️)
+///
+/// Note: Idle state has been merged into Attention(Waiting) for better visibility
 #[derive(Debug, Clone, PartialEq)]
 pub enum Status {
-    /// Session inactive, waiting for user input
-    Idle,
+    /// Claude needs user attention (permission, input, notification, or waiting)
+    Attention(AttentionType),
     /// Claude is actively processing a request
     Working,
-    /// Claude needs user attention (permission or input)
-    Attention(AttentionType),
     /// Context compaction in progress
     Compacting,
 }
@@ -73,7 +72,8 @@ impl Status {
                 Status::Attention(attn)
             }
             "compacting" => Status::Compacting,
-            _ => Status::Idle,
+            // Previously "idle" - now maps to Attention(Waiting)
+            _ => Status::Attention(AttentionType::Waiting),
         }
     }
 
@@ -83,7 +83,6 @@ impl Status {
             Status::Attention(_) => 0,
             Status::Compacting => 1,
             Status::Working => 2,
-            Status::Idle => 3,
         }
     }
 }
@@ -91,9 +90,10 @@ impl Status {
 /// Type of attention the agent needs from the user
 ///
 /// Used to determine notification style and urgency:
-/// - **Permission**: Tool or action requires explicit approval
+/// - **Permission**: Tool or action requires explicit approval (highest priority)
 /// - **Input**: Agent is waiting for user response in the conversation
 /// - **Notification**: Claude sent a notification (informational)
+/// - **Waiting**: Agent is idle, ready for new prompt (lowest priority, was Status::Idle)
 #[derive(Debug, Clone, PartialEq)]
 pub enum AttentionType {
     /// A tool or action requires explicit user permission
@@ -102,6 +102,8 @@ pub enum AttentionType {
     Input,
     /// Claude sent a notification (informational alert)
     Notification,
+    /// Agent is idle, waiting for user to start interaction (was Status::Idle)
+    Waiting,
 }
 
 impl AttentionType {
@@ -110,7 +112,18 @@ impl AttentionType {
         match s {
             "permission" => AttentionType::Permission,
             "notification" => AttentionType::Notification,
+            "waiting" => AttentionType::Waiting,
             _ => AttentionType::Input,
+        }
+    }
+
+    /// Priority for sorting within Attention column (lower = higher priority)
+    pub fn priority(&self) -> u8 {
+        match self {
+            AttentionType::Permission => 0,
+            AttentionType::Input => 1,
+            AttentionType::Notification => 2,
+            AttentionType::Waiting => 3,
         }
     }
 }
@@ -164,7 +177,7 @@ pub struct Agent {
     /// Total tool calls this session
     pub total_tool_calls: u32,
     /// True when Claude is actively responding (between UserPromptSubmit and Stop)
-    /// Prevents timeout to IDLE while Claude is generating text (no tool hooks)
+    /// Prevents timeout to Waiting while Claude is generating text (no tool hooks)
     pub in_response: bool,
 
     // v0.9.0 Loop Mode fields
@@ -203,7 +216,7 @@ impl Agent {
         Self {
             pane_id,
             project,
-            status: Status::Idle,
+            status: Status::Attention(AttentionType::Waiting),
             start_time: 0,
             last_update: 0,
             last_event: String::new(),
