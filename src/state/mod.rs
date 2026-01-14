@@ -272,11 +272,22 @@ impl AppState {
             "PreToolUse" => {
                 if let Some(tool) = &event.tool_name {
                     agent.start_tool(tool, event.tool_use_id.as_deref(), event.timestamp);
-                    tracing::debug!(
-                        pane_id = %pane_id,
-                        tool = %tool,
-                        "Tool started"
-                    );
+
+                    // AskUserQuestion immediately needs user input - transition now
+                    // (PostToolUse won't fire until user responds)
+                    if tool == "AskUserQuestion" {
+                        agent.status = Status::Attention(AttentionType::Input);
+                        tracing::info!(
+                            pane_id = %pane_id,
+                            "PreToolUse AskUserQuestion → Attention(Input)"
+                        );
+                    } else {
+                        tracing::debug!(
+                            pane_id = %pane_id,
+                            tool = %tool,
+                            "Tool started"
+                        );
+                    }
                 }
             }
             "PostToolUse" => {
