@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-01-14
+
+### Added
+
+- Enhanced agent spawn with GitHub clone and sprite management ([#9](https://github.com/m-mohamed/rehoboam/pull/9))
+- Add tmux-based reconciliation polling ([#10](https://github.com/m-mohamed/rehoboam/pull/10))
+- Add dashboard overlay and context-aware footer
+- Add split view with live agent output
+- Enhance Ralph loops with observability
+
+### Changed
+
+- Reset version to 0.9.1 for release-plz bootstrap
+- Bump version to 0.9.3 for release-plz bootstrap
+- Add shell completions for release
+- Merge Idle into Attention with Waiting type ([#8](https://github.com/m-mohamed/rehoboam/pull/8))
+- Add Rust best practices and remove dead code ([#5](https://github.com/m-mohamed/rehoboam/pull/5))
+- Split app.rs into focused modules
+
+### Documentation
+
+- Update Ralph loops documentation
+- Add user installation methods to CLAUDE.md
+- Add crates.io and homebrew installation options
+
+### Fixed
+
+- Use hardcoded repo URL in cliff.toml footer
+- Remove invalid release_commit_message field
+- Escape closes overlays before quitting ([#13](https://github.com/m-mohamed/rehoboam/pull/13))
+- Use switch-client for cross-session tmux navigation ([#12](https://github.com/m-mohamed/rehoboam/pull/12))
+- Allow dirty CI file for custom release check
+- Check if release exists before creating
+- Use explicit paths for completions in dist config
+- Spawn dialog UX improvements and critical bug fix
+[0.9.2]: https://github.com/m-mohamed/rehoboam/compare/0.9.0...0.9.2
+
+
 ## [0.9.0] - 2026-01-10
 
 ### Added
