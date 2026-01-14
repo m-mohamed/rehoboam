@@ -1,0 +1,500 @@
+#compdef rehoboam
+
+autoload -U is-at-least
+
+_rehoboam() {
+    typeset -A opt_args
+    typeset -a _arguments_options
+    local ret=1
+
+    if is-at-least 5.2; then
+        _arguments_options=(-s -S -C)
+    else
+        _arguments_options=(-s -C)
+    fi
+
+    local context curcontext="$curcontext" state line
+    _arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--install[Install binary to ~/.local/bin/]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+":: :_rehoboam_commands" \
+"*::: :->rehoboam" \
+&& ret=0
+    case $state in
+    (rehoboam)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rehoboam-command-$line[1]:"
+        case $line[1] in
+            (hook)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-N[Send desktop notification (for attention and stop events)]' \
+'--notify[Send desktop notification (for attention and stop events)]' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help (see more with '\''--help'\'')]' \
+'--help[Print help (see more with '\''--help'\'')]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(init)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'--all[Discover and select from git repos interactively]' \
+'--list[List discovered git repositories]' \
+'--force[Force overwrite existing hooks (default\: merge)]' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+'::path -- Project path (default\: current directory):_files' \
+&& ret=0
+;;
+(completions)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':shell -- Shell to generate completions for:(bash elvish fish powershell zsh)' \
+&& ret=0
+;;
+(sprites)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+":: :_rehoboam__sprites_commands" \
+"*::: :->sprites" \
+&& ret=0
+
+    case $state in
+    (sprites)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rehoboam-sprites-command-$line[1]:"
+        case $line[1] in
+            (list)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(info)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':name -- Sprite name:_default' \
+&& ret=0
+;;
+(destroy)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+':name -- Sprite name:_default' \
+&& ret=0
+;;
+(destroy-all)
+_arguments "${_arguments_options[@]}" : \
+'-s+[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'--socket=[Socket path for receiving hook events (default\: \$XDG_RUNTIME_DIR/rehoboam.sock or /tmp/rehoboam.sock)]:SOCKET:_files' \
+'-l+[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'--log-level=[Log level (trace, debug, info, warn, error)]:LOG_LEVEL:_default' \
+'-t+[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'--tick-rate=[Tick rate in ticks per second (default\: 1.0)]:TICK_RATE:_default' \
+'-F+[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--frame-rate=[Frame rate in frames per second (default\: 30.0)]:FRAME_RATE:_default' \
+'--sprites-token=[Sprites API token (required if --enable-sprites)]:SPRITES_TOKEN:_default' \
+'--sprite-ws-port=[WebSocket port for receiving hook events from remote sprites]:SPRITE_WS_PORT:_default' \
+'-y[Skip confirmation]' \
+'--yes[Skip confirmation]' \
+'-d[Run in debug mode (shows event log)]' \
+'--debug[Run in debug mode (shows event log)]' \
+'--enable-sprites[Enable remote sprite support (run Claude Code in sandboxed VMs)]' \
+'-h[Print help]' \
+'--help[Print help]' \
+'-V[Print version]' \
+'--version[Print version]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_rehoboam__sprites__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rehoboam-sprites-help-command-$line[1]:"
+        case $line[1] in
+            (list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(destroy)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(destroy-all)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_rehoboam__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rehoboam-help-command-$line[1]:"
+        case $line[1] in
+            (hook)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(init)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(completions)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(sprites)
+_arguments "${_arguments_options[@]}" : \
+":: :_rehoboam__help__sprites_commands" \
+"*::: :->sprites" \
+&& ret=0
+
+    case $state in
+    (sprites)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:rehoboam-help-sprites-command-$line[1]:"
+        case $line[1] in
+            (list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(destroy)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(destroy-all)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
+}
+
+(( $+functions[_rehoboam_commands] )) ||
+_rehoboam_commands() {
+    local commands; commands=(
+'hook:Process Claude Code hook JSON from stdin (v1.0+)' \
+'init:Install Claude Code hooks to a project' \
+'completions:Generate shell completions' \
+'sprites:Manage remote sprites (cloud VMs)' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rehoboam commands' commands "$@"
+}
+(( $+functions[_rehoboam__completions_commands] )) ||
+_rehoboam__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam completions commands' commands "$@"
+}
+(( $+functions[_rehoboam__help_commands] )) ||
+_rehoboam__help_commands() {
+    local commands; commands=(
+'hook:Process Claude Code hook JSON from stdin (v1.0+)' \
+'init:Install Claude Code hooks to a project' \
+'completions:Generate shell completions' \
+'sprites:Manage remote sprites (cloud VMs)' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rehoboam help commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__completions_commands] )) ||
+_rehoboam__help__completions_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help completions commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__help_commands] )) ||
+_rehoboam__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help help commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__hook_commands] )) ||
+_rehoboam__help__hook_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help hook commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__init_commands] )) ||
+_rehoboam__help__init_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help init commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__sprites_commands] )) ||
+_rehoboam__help__sprites_commands() {
+    local commands; commands=(
+'list:List all sprites with status' \
+'info:Show detailed info for a sprite' \
+'destroy:Destroy a sprite (frees all resources)' \
+'destroy-all:Destroy all sprites' \
+    )
+    _describe -t commands 'rehoboam help sprites commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__sprites__destroy_commands] )) ||
+_rehoboam__help__sprites__destroy_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help sprites destroy commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__sprites__destroy-all_commands] )) ||
+_rehoboam__help__sprites__destroy-all_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help sprites destroy-all commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__sprites__info_commands] )) ||
+_rehoboam__help__sprites__info_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help sprites info commands' commands "$@"
+}
+(( $+functions[_rehoboam__help__sprites__list_commands] )) ||
+_rehoboam__help__sprites__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam help sprites list commands' commands "$@"
+}
+(( $+functions[_rehoboam__hook_commands] )) ||
+_rehoboam__hook_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam hook commands' commands "$@"
+}
+(( $+functions[_rehoboam__init_commands] )) ||
+_rehoboam__init_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam init commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites_commands] )) ||
+_rehoboam__sprites_commands() {
+    local commands; commands=(
+'list:List all sprites with status' \
+'info:Show detailed info for a sprite' \
+'destroy:Destroy a sprite (frees all resources)' \
+'destroy-all:Destroy all sprites' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rehoboam sprites commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__destroy_commands] )) ||
+_rehoboam__sprites__destroy_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites destroy commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__destroy-all_commands] )) ||
+_rehoboam__sprites__destroy-all_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites destroy-all commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__help_commands] )) ||
+_rehoboam__sprites__help_commands() {
+    local commands; commands=(
+'list:List all sprites with status' \
+'info:Show detailed info for a sprite' \
+'destroy:Destroy a sprite (frees all resources)' \
+'destroy-all:Destroy all sprites' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'rehoboam sprites help commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__help__destroy_commands] )) ||
+_rehoboam__sprites__help__destroy_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites help destroy commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__help__destroy-all_commands] )) ||
+_rehoboam__sprites__help__destroy-all_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites help destroy-all commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__help__help_commands] )) ||
+_rehoboam__sprites__help__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites help help commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__help__info_commands] )) ||
+_rehoboam__sprites__help__info_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites help info commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__help__list_commands] )) ||
+_rehoboam__sprites__help__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites help list commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__info_commands] )) ||
+_rehoboam__sprites__info_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites info commands' commands "$@"
+}
+(( $+functions[_rehoboam__sprites__list_commands] )) ||
+_rehoboam__sprites__list_commands() {
+    local commands; commands=()
+    _describe -t commands 'rehoboam sprites list commands' commands "$@"
+}
+
+if [ "$funcstack[1]" = "_rehoboam" ]; then
+    _rehoboam "$@"
+else
+    compdef _rehoboam rehoboam
+fi
