@@ -12,6 +12,77 @@ use color_eyre::eyre::{bail, Result, WrapErr};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Clone a GitHub repository to a local directory
+///
+/// Uses `gh repo clone` for authentication support (private repos).
+///
+/// # Arguments
+/// * `repo` - Repository in format "owner/repo" or full URL
+/// * `destination` - Local directory to clone into
+///
+/// # Returns
+/// Path to the cloned repository
+///
+/// # Example
+/// ```ignore
+/// let path = clone_repo("anthropics/claude-code", "/tmp/claude-code")?;
+/// ```
+pub fn clone_repo(repo: &str, destination: &Path) -> Result<PathBuf> {
+    // Normalize the repo string (remove URL prefix if present)
+    let normalized = repo
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .trim_start_matches("git@")
+        .replace("github.com:", "")
+        .trim_start_matches("github.com/")
+        .trim_end_matches(".git")
+        .trim_matches('/')
+        .to_string();
+
+    if normalized.is_empty() {
+        bail!("Invalid repository: {}", repo);
+    }
+
+    // Note: destination existence is already validated in spawn.rs before calling this
+
+    // Create parent directory if needed
+    if let Some(parent) = destination.parent() {
+        std::fs::create_dir_all(parent)
+            .wrap_err_with(|| format!("Failed to create directory: {}", parent.display()))?;
+    }
+
+    tracing::info!(
+        repo = %normalized,
+        destination = %destination.display(),
+        "Cloning GitHub repository..."
+    );
+
+    // Use gh CLI for clone (supports auth for private repos)
+    let output = Command::new("gh")
+        .args([
+            "repo",
+            "clone",
+            &normalized,
+            destination.to_str().unwrap_or("."),
+        ])
+        .output()
+        .wrap_err("Failed to execute gh repo clone")?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("gh repo clone failed: {}", stderr);
+    }
+
+    tracing::info!(
+        repo = %normalized,
+        path = %destination.display(),
+        "Repository cloned successfully"
+    );
+
+    Ok(destination.to_path_buf())
+}
+
 /// Controller for git operations
 pub struct GitController {
     /// Path to the main repository

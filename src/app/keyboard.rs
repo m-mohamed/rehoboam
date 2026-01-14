@@ -213,7 +213,11 @@ impl App {
                 tracing::debug!("Cancelled input mode");
             }
             KeyCode::Enter => {
-                agent_control::send_custom_input(&self.state, &self.input_buffer);
+                agent_control::send_custom_input(
+                    &self.state,
+                    self.sprites_client.as_ref(),
+                    &self.input_buffer,
+                );
                 self.input_mode = InputMode::Normal;
                 self.input_buffer.clear();
             }
@@ -250,7 +254,10 @@ impl App {
                     3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                     4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
                     7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
-                    _ => match spawn::validate_spawn(&self.spawn_state) {
+                    _ => match spawn::validate_spawn(
+                        &self.spawn_state,
+                        self.sprites_client.is_some(),
+                    ) {
                         Ok(()) => {
                             self.spawn_state.validation_error = None;
                             if let Some(err) = spawn::spawn_agent(
@@ -315,6 +322,15 @@ impl App {
                 6 => {
                     self.spawn_state.loop_stop_word.pop();
                 }
+                9 => {
+                    self.spawn_state.ram_mb.pop();
+                }
+                10 => {
+                    self.spawn_state.cpus.pop();
+                }
+                11 => {
+                    self.spawn_state.clone_destination.pop();
+                }
                 _ => {}
             },
             KeyCode::Char(c) => match self.spawn_state.active_field {
@@ -354,6 +370,19 @@ impl App {
                     }
                 }
                 6 => self.spawn_state.loop_stop_word.push(c),
+                9 => {
+                    if c.is_ascii_digit() {
+                        self.spawn_state.ram_mb.push(c);
+                    }
+                }
+                10 => {
+                    if c.is_ascii_digit() {
+                        self.spawn_state.cpus.push(c);
+                    }
+                }
+                11 => {
+                    self.spawn_state.clone_destination.push(c);
+                }
                 _ => {}
             },
             _ => {}

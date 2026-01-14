@@ -112,6 +112,34 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
+
+    /// Manage remote sprites (cloud VMs)
+    Sprites {
+        #[command(subcommand)]
+        action: SpritesAction,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SpritesAction {
+    /// List all sprites with status
+    List,
+    /// Show detailed info for a sprite
+    Info {
+        /// Sprite name
+        name: String,
+    },
+    /// Destroy a sprite (frees all resources)
+    Destroy {
+        /// Sprite name
+        name: String,
+    },
+    /// Destroy all sprites
+    DestroyAll {
+        /// Skip confirmation
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
 }
 
 /// Generate shell completions and print to stdout

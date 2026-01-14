@@ -53,7 +53,7 @@ mod ui;
 
 use app::App;
 use clap::Parser;
-use cli::{Cli, Commands};
+use cli::{Cli, Commands, SpritesAction};
 use color_eyre::Result;
 use std::path::PathBuf;
 use std::process::Command;
@@ -95,6 +95,97 @@ fn install_binary() -> Result<()> {
 
     println!("Installed to: {}", install_path.display());
     println!("Make sure ~/.local/bin is in your PATH");
+    Ok(())
+}
+
+/// Handle sprites management commands
+async fn handle_sprites_command(action: SpritesAction, token: Option<String>) -> Result<()> {
+    let token = token.ok_or_else(|| {
+        color_eyre::eyre::eyre!("SPRITES_TOKEN required. Set env var or use --sprites-token")
+    })?;
+
+    let client = sprites::SpritesClient::new(&token);
+
+    match action {
+        SpritesAction::List => {
+            let sprites = client
+                .list()
+                .await
+                .map_err(|e| color_eyre::eyre::eyre!("Failed to list sprites: {}", e))?;
+
+            if sprites.is_empty() {
+                println!("No sprites found");
+            } else {
+                println!("{:<30} {:<12} {:<20}", "NAME", "STATUS", "CREATED");
+                println!("{}", "-".repeat(62));
+                for sprite in sprites {
+                    let created = sprite
+                        .created_at
+                        .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
+                        .unwrap_or_else(|| "-".to_string());
+                    println!(
+                        "{:<30} {:<12} {:<20}",
+                        sprite.name,
+                        format!("{:?}", sprite.status),
+                        created
+                    );
+                }
+            }
+        }
+        SpritesAction::Info { name } => {
+            let info = client
+                .get(&name)
+                .await
+                .map_err(|e| color_eyre::eyre::eyre!("Failed to get sprite '{}': {}", name, e))?;
+            println!("Name:    {}", info.name);
+            println!("Status:  {:?}", info.status);
+            if let Some(created) = info.created_at {
+                println!("Created: {}", created.format("%Y-%m-%d %H:%M:%S"));
+            }
+        }
+        SpritesAction::Destroy { name } => {
+            client.delete(&name).await.map_err(|e| {
+                color_eyre::eyre::eyre!("Failed to destroy sprite '{}': {}", name, e)
+            })?;
+            println!("Destroyed: {}", name);
+        }
+        SpritesAction::DestroyAll { yes } => {
+            let sprites = client
+                .list()
+                .await
+                .map_err(|e| color_eyre::eyre::eyre!("Failed to list sprites: {}", e))?;
+
+            if sprites.is_empty() {
+                println!("No sprites to destroy");
+                return Ok(());
+            }
+
+            if !yes {
+                println!("This will destroy {} sprites:", sprites.len());
+                for sprite in &sprites {
+                    println!("  - {} ({:?})", sprite.name, sprite.status);
+                }
+                print!("Continue? [y/N] ");
+                use std::io::Write;
+                std::io::stdout().flush()?;
+
+                let mut input = String::new();
+                std::io::stdin().read_line(&mut input)?;
+                if !input.trim().eq_ignore_ascii_case("y") {
+                    println!("Cancelled");
+                    return Ok(());
+                }
+            }
+
+            for sprite in sprites {
+                match client.delete(&sprite.name).await {
+                    Ok(()) => println!("Destroyed: {}", sprite.name),
+                    Err(e) => eprintln!("Failed to destroy {}: {}", sprite.name, e),
+                }
+            }
+        }
+    }
+
     Ok(())
 }
 
@@ -323,6 +414,10 @@ async fn main() -> Result<()> {
             // Generate shell completions
             cli::print_completions(shell);
             return Ok(());
+        }
+        Some(Commands::Sprites { action }) => {
+            // Sprites management commands
+            return handle_sprites_command(action, cli.sprites_token).await;
         }
         None => {
             // TUI mode: continue with full setup
