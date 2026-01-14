@@ -21,6 +21,3 @@ changelog_config = "cliff.toml"
 # PR settings
 pr_draft = false
 pr_labels = ["release"]
-
-# Commit message for release PR
-release_commit_message = "chore: release"
