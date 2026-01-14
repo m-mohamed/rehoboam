@@ -464,10 +464,10 @@ fn start_claude_in_pane(pane_id: &str, prompt: &str, ralph_dir: Option<&PathBuf>
 /// Extract repository name from a GitHub URL or path
 ///
 /// Handles:
-/// - "owner/repo" -> "repo"
-/// - "github.com/owner/repo" -> "repo"
-/// - "https://github.com/owner/repo" -> "repo"
-/// - "https://github.com/owner/repo.git" -> "repo"
+/// - `owner/repo` -> `repo`
+/// - `github.com/owner/repo` -> `repo`
+/// - `https://github.com/owner/repo` -> `repo`
+/// - `https://github.com/owner/repo.git` -> `repo`
 pub fn extract_repo_name(input: &str) -> String {
     // Remove protocol prefix if present
     let path = input
@@ -490,10 +490,10 @@ pub fn extract_repo_name(input: &str) -> String {
 /// Normalize GitHub repo input to a format gh CLI can use
 ///
 /// Handles:
-/// - "owner/repo" -> "owner/repo" (already correct)
-/// - "https://github.com/owner/repo" -> "owner/repo"
-/// - "github.com/owner/repo" -> "owner/repo"
-/// - "git@github.com:owner/repo.git" -> "owner/repo" (SSH format)
+/// - `owner/repo` -> `owner/repo` (already correct)
+/// - `https://github.com/owner/repo` -> `owner/repo`
+/// - `github.com/owner/repo` -> `owner/repo`
+/// - `git@github.com:owner/repo.git` -> `owner/repo` (SSH format)
 pub fn normalize_github_repo(input: &str) -> String {
     input
         .trim()
