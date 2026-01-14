@@ -9,7 +9,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0  # Faster builds, better caching
-  MSRV: "1.80"
+  MSRV: "1.85"
 
 jobs:
   # Fast checks - run first to fail fast
@@ -37,7 +37,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        rust: ["1.80"]
+        rust: ["1.85"]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@master

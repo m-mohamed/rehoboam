@@ -14,7 +14,7 @@ Thanks for your interest in contributing! This document outlines the process and
 
 ## Prerequisites
 
-- Rust 1.70+ (stable)
+- Rust 1.85+ (stable)
 - tmux (for local agent testing)
 - Git
 
