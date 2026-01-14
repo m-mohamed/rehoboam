@@ -61,7 +61,6 @@ pub fn jump_to_search_match(state: &mut AppState, query: &str) {
                 Status::Attention(_) => 0,
                 Status::Working => 1,
                 Status::Compacting => 2,
-                Status::Idle => 3,
             };
             tracing::debug!(
                 project = %agent.project,

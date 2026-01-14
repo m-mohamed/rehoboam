@@ -10,16 +10,16 @@ use crate::tmux::TmuxController;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Timeout for Working → Idle transition (seconds)
+/// Timeout for Working → Attention(Waiting) transition (seconds)
 /// Increased from 10s to 60s - Claude often thinks for 10-30s between tool calls
 /// The in_response guard prevents false timeouts during active responses
-const IDLE_TIMEOUT_SECS: i64 = 60;
+const WAITING_TIMEOUT_SECS: i64 = 60;
 
 /// Timeout for removing stale sessions (seconds)
 const STALE_TIMEOUT_SECS: i64 = 300; // 5 minutes
 
-/// Number of status columns in Kanban view
-pub const NUM_COLUMNS: usize = 4;
+/// Number of status columns in Kanban view (Attention, Working, Compacting)
+pub const NUM_COLUMNS: usize = 3;
 
 /// Loop configuration for pending spawn
 #[derive(Debug, Clone)]
@@ -39,11 +39,11 @@ pub struct AppState {
     pub agents: HashMap<String, Agent>,
     /// Recent events for the event log
     pub events: VecDeque<HookEvent>,
-    /// Currently selected column (0=Attention, 1=Working, 2=Compact, 3=Idle)
+    /// Currently selected column (0=Attention, 1=Working, 2=Compacting)
     pub selected_column: usize,
     /// Currently selected card index within the column
     pub selected_card: usize,
-    /// Cached status counts: [attention, working, compacting, idle]
+    /// Cached status counts: [attention, working, compacting]
     pub status_counts: [usize; NUM_COLUMNS],
     /// Set of selected pane_ids for bulk operations
     pub selected_agents: HashSet<String>,
@@ -77,7 +77,6 @@ fn status_to_column(status: &Status) -> usize {
         Status::Attention(_) => 0,
         Status::Working => 1,
         Status::Compacting => 2,
-        Status::Idle => 3,
     }
 }
 
@@ -87,7 +86,6 @@ fn column_name(col: usize) -> &'static str {
         0 => "attention",
         1 => "working",
         2 => "compacting",
-        3 => "idle",
         _ => "unknown",
     }
 }
@@ -148,9 +146,9 @@ impl AppState {
             "Processing hook event"
         );
 
-        // Evict oldest idle agent if at capacity and adding new agent
+        // Evict oldest waiting agent if at capacity and adding new agent
         if is_new_agent && self.agents.len() >= MAX_AGENTS {
-            self.evict_oldest_idle();
+            self.evict_oldest_waiting();
         }
 
         // Track old status for count update (None if new agent)
@@ -478,9 +476,12 @@ impl AppState {
         // Add activity point for sparkline
         let activity_value = match &agent.status {
             Status::Working => 1.0,
-            Status::Attention(_) => 0.8,
+            Status::Attention(attn) => match attn {
+                AttentionType::Permission | AttentionType::Input => 0.8,
+                AttentionType::Notification => 0.5,
+                AttentionType::Waiting => 0.1,
+            },
             Status::Compacting => 0.6,
-            Status::Idle => 0.1,
         };
         agent.activity.push_back(activity_value);
         if agent.activity.len() > MAX_SPARKLINE_POINTS {
@@ -508,18 +509,18 @@ impl AppState {
         true // State was modified
     }
 
-    /// Evict the oldest idle agent to make room for new ones
-    fn evict_oldest_idle(&mut self) {
-        // Find oldest idle agent by last_update
-        let oldest_idle = self
+    /// Evict the oldest waiting agent to make room for new ones
+    fn evict_oldest_waiting(&mut self) {
+        // Find oldest Attention(Waiting) agent by last_update
+        let oldest_waiting = self
             .agents
             .iter()
-            .filter(|(_, a)| matches!(a.status, Status::Idle))
+            .filter(|(_, a)| matches!(a.status, Status::Attention(AttentionType::Waiting)))
             .min_by_key(|(_, a)| a.last_update)
             .map(|(id, _)| id.clone());
 
-        if let Some(pane_id) = oldest_idle {
-            self.status_counts[3] = self.status_counts[3].saturating_sub(1); // Idle is column 3
+        if let Some(pane_id) = oldest_waiting {
+            self.status_counts[0] = self.status_counts[0].saturating_sub(1); // Attention is column 0
             self.agents.remove(&pane_id);
         } else {
             // No idle agents, evict oldest of any status
@@ -539,12 +540,12 @@ impl AppState {
     /// Periodic tick for timeout-based state transitions
     ///
     /// Handles:
-    /// - Working → Idle after IDLE_TIMEOUT_SECS (30s) of no events
+    /// - Working → Attention(Waiting) after WAITING_TIMEOUT_SECS (60s) of no events
     /// - Remove stale sessions after STALE_TIMEOUT_SECS (5 min) of no events
     pub fn tick(&mut self) {
         let now = current_timestamp();
         let mut to_remove: Vec<String> = Vec::new();
-        let mut idle_transitions: Vec<String> = Vec::new();
+        let mut waiting_transitions: Vec<String> = Vec::new();
 
         for (pane_id, agent) in &self.agents {
             let elapsed = now - agent.last_update;
@@ -555,7 +556,7 @@ impl AppState {
                 continue;
             }
 
-            // Working → Idle after timeout, BUT NOT if:
+            // Working → Attention(Waiting) after timeout, BUT NOT if:
             // 1. A tool is currently running (between PreToolUse and PostToolUse)
             // 2. Claude is actively responding (between UserPromptSubmit and Stop)
             if matches!(agent.status, Status::Working) {
@@ -567,23 +568,23 @@ impl AppState {
                         elapsed_secs = elapsed,
                         in_response = agent.in_response,
                         current_tool = ?agent.current_tool,
-                        timeout_threshold = IDLE_TIMEOUT_SECS,
+                        timeout_threshold = WAITING_TIMEOUT_SECS,
                         "Timeout check"
                     );
                 }
 
-                if elapsed > IDLE_TIMEOUT_SECS && agent.current_tool.is_none() && !agent.in_response
+                if elapsed > WAITING_TIMEOUT_SECS && agent.current_tool.is_none() && !agent.in_response
                 {
-                    idle_transitions.push(pane_id.clone());
+                    waiting_transitions.push(pane_id.clone());
                 }
             }
         }
 
-        // Apply idle transitions
-        for pane_id in idle_transitions {
+        // Apply waiting transitions
+        for pane_id in waiting_transitions {
             if let Some(agent) = self.agents.get_mut(&pane_id) {
                 let old_col = status_to_column(&agent.status);
-                agent.status = Status::Idle;
+                agent.status = Status::Attention(AttentionType::Waiting);
                 let new_col = status_to_column(&agent.status);
 
                 // Update status counts
@@ -594,7 +595,7 @@ impl AppState {
                     pane_id = %pane_id,
                     project = %agent.project,
                     elapsed_secs = %(now - agent.last_update),
-                    "Timeout: Working → Idle"
+                    "Timeout: Working → Attention(Waiting)"
                 );
             }
         }
@@ -616,8 +617,8 @@ impl AppState {
 
     /// Get agents grouped by status column
     ///
-    /// Returns 4 vectors: [Attention, Working, Compacting, Idle]
-    /// Each sorted by project name for consistency
+    /// Returns 3 vectors: [Attention, Working, Compacting]
+    /// Attention column sorted by AttentionType priority, then by project name
     pub fn agents_by_column(&self) -> [Vec<&Agent>; NUM_COLUMNS] {
         let mut columns: [Vec<&Agent>; NUM_COLUMNS] = Default::default();
         for agent in self.agents.values() {
@@ -625,12 +626,21 @@ impl AppState {
                 Status::Attention(_) => 0,
                 Status::Working => 1,
                 Status::Compacting => 2,
-                Status::Idle => 3,
             };
             columns[col].push(agent);
         }
-        // Sort each column by project name for consistent ordering
-        for col in &mut columns {
+        // Sort Attention column by AttentionType priority, then by project name
+        columns[0].sort_by(|a, b| {
+            match (&a.status, &b.status) {
+                (Status::Attention(a_type), Status::Attention(b_type)) => {
+                    a_type.priority().cmp(&b_type.priority())
+                        .then_with(|| a.project.cmp(&b.project))
+                }
+                _ => a.project.cmp(&b.project),
+            }
+        });
+        // Sort other columns by project name for consistent ordering
+        for col in &mut columns[1..] {
             col.sort_by(|a, b| a.project.cmp(&b.project));
         }
         columns
@@ -1056,10 +1066,10 @@ mod tests {
         let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
         assert_eq!(state.status_counts[1], 1); // Working
 
-        // Transition to idle
+        // Transition to idle (now Attention(Waiting) in column 0)
         let _ = state.process_event(make_event("Stop", "idle", "%0", "test"));
         assert_eq!(state.status_counts[1], 0); // Working now 0
-        assert_eq!(state.status_counts[3], 1); // Idle now 1
+        assert_eq!(state.status_counts[0], 1); // Attention (includes Waiting) now 1
     }
 
     #[test]
@@ -1108,7 +1118,7 @@ mod tests {
         let _ = state.process_event(make_event("SessionEnd", "idle", "%0", "test"));
         assert_eq!(state.agents.len(), 0);
         assert_eq!(state.status_counts[1], 0); // Working
-        assert_eq!(state.status_counts[3], 0); // Idle
+        assert_eq!(state.status_counts[0], 0); // Attention (includes Waiting)
     }
 
     #[test]

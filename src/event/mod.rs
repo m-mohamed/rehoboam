@@ -125,8 +125,8 @@ pub struct HookEvent {
 }
 
 impl HookEvent {
-    /// Valid status values
-    pub const VALID_STATUSES: [&'static str; 4] = ["idle", "working", "attention", "compacting"];
+    /// Valid status values (idle removed - now Attention with Waiting type)
+    pub const VALID_STATUSES: [&'static str; 3] = ["working", "attention", "compacting"];
 
     /// Validate that required fields are present and status is valid
     ///
@@ -141,7 +141,7 @@ impl HookEvent {
             return Err("project is required");
         }
         if !Self::VALID_STATUSES.contains(&self.status.as_str()) {
-            return Err("invalid status: expected idle, working, attention, or compacting");
+            return Err("invalid status: expected working, attention, or compacting");
         }
         Ok(())
     }
@@ -209,15 +209,15 @@ pub struct ClaudeHookInput {
 impl ClaudeHookInput {
     /// Derive rehoboam status from Claude Code hook_event_name
     ///
-    /// Maps Claude's hook types to our 4-state system:
-    /// - idle: Claude waiting for user input
+    /// Maps Claude's hook types to our 3-state system:
     /// - working: Claude actively processing (tools, thinking)
-    /// - attention: Claude needs explicit approval (permission prompts ONLY)
+    /// - attention: Claude needs user attention (permission, input, notification, waiting)
     /// - compacting: Context compaction in progress
     ///
-    /// Key insight: ATTENTION is ONLY for PermissionRequest where Claude
-    /// is blocked waiting for y/n approval. Notifications are informational
-    /// (Claude saying "hi" or "task complete") and mean Claude is IDLE.
+    /// Attention sub-types:
+    /// - permission: Tool needs explicit approval (blocking)
+    /// - notification: Informational alert
+    /// - waiting: Ready for new prompt (was "idle")
     ///
     /// # Returns
     /// Tuple of (status, optional attention_type)
@@ -230,20 +230,20 @@ impl ClaudeHookInput {
             "SubagentStart" => ("working", None),    // Spawned a subagent
             "SubagentStop" => ("working", None),     // Subagent finished, may continue
 
-            // ATTENTION: Claude is BLOCKED waiting for explicit user approval
+            // ATTENTION: Claude needs user attention
             "PermissionRequest" => ("attention", Some("permission")),
 
-            // IDLE: Claude is waiting for user input (not blocked, just done)
-            "SessionStart" => ("idle", None), // Session started, waiting for prompt
-            "Stop" => ("idle", None),         // Claude finished responding
-            "SessionEnd" => ("idle", None),   // Session ended
-            "Notification" => ("idle", None), // Informational message, Claude is done
+            // ATTENTION(Waiting): Claude is waiting for user input (was idle)
+            "SessionStart" => ("attention", Some("waiting")), // Session started, waiting for prompt
+            "Stop" => ("attention", Some("waiting")),         // Claude finished responding
+            "SessionEnd" => ("attention", Some("waiting")),   // Session ended
+            "Notification" => ("attention", Some("notification")), // Informational message
 
             // COMPACTING: Context maintenance
             "PreCompact" => ("compacting", None),
 
-            // Unknown hooks default to idle (conservative - don't show false WORKING)
-            _ => ("idle", None),
+            // Unknown hooks default to attention(waiting)
+            _ => ("attention", Some("waiting")),
         }
     }
 }
@@ -265,14 +265,19 @@ pub fn derive_status_from_hook_name(hook_name: &str) -> (String, Option<String>)
         // ATTENTION: Claude is BLOCKED waiting for explicit user approval
         "PermissionRequest" => ("attention".to_string(), Some("permission".to_string())),
 
-        // IDLE: Claude is waiting for user input (not blocked, just done)
-        "SessionStart" | "Stop" | "SessionEnd" | "Notification" => ("idle".to_string(), None),
+        // ATTENTION(Waiting): Claude is waiting for user input (was "idle")
+        "SessionStart" | "Stop" | "SessionEnd" => {
+            ("attention".to_string(), Some("waiting".to_string()))
+        }
+
+        // ATTENTION(Notification): Informational alert
+        "Notification" => ("attention".to_string(), Some("notification".to_string())),
 
         // COMPACTING: Context maintenance
         "PreCompact" => ("compacting".to_string(), None),
 
-        // Unknown hooks default to idle (conservative)
-        _ => ("idle".to_string(), None),
+        // Unknown hooks default to attention(waiting) (conservative)
+        _ => ("attention".to_string(), Some("waiting".to_string())),
     }
 }
 
@@ -381,7 +386,7 @@ mod tests {
         };
         assert_eq!(
             event.validate(),
-            Err("invalid status: expected idle, working, attention, or compacting")
+            Err("invalid status: expected working, attention, or compacting")
         );
     }
 
