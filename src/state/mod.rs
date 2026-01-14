@@ -122,7 +122,11 @@ impl AppState {
     /// - Status count caching (v1.1 optimization)
     /// - Agent limit with LRU eviction (v1.1 optimization)
     /// - Sprite agent tracking (v0.10.0)
-    pub fn process_event(&mut self, event: HookEvent) {
+    ///
+    /// # Returns
+    /// Returns `true` if the event caused a state change that requires re-render.
+    #[must_use = "check if state changed to trigger re-render"]
+    pub fn process_event(&mut self, event: HookEvent) -> bool {
         let pane_id = event.pane_id.clone();
         let project = event.project.clone();
         let is_new_agent = !self.agents.contains_key(&pane_id);
@@ -491,6 +495,8 @@ impl AppState {
         if self.events.len() > MAX_EVENTS {
             self.events.pop_back();
         }
+
+        true // State was modified
     }
 
     /// Evict the oldest idle agent to make room for new ones
@@ -1039,8 +1045,9 @@ mod tests {
         let mut state = AppState::new();
         let event = make_event("SessionStart", "working", "%0", "test-project");
 
-        state.process_event(event);
+        let changed = state.process_event(event);
 
+        assert!(changed);
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.status_counts[1], 1); // Working is column 1
         assert!(state.agents.contains_key("%0"));
@@ -1055,11 +1062,11 @@ mod tests {
         let mut state = AppState::new();
 
         // Create an agent in working state
-        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
         assert_eq!(state.status_counts[1], 1); // Working
 
         // Transition to idle
-        state.process_event(make_event("Stop", "idle", "%0", "test"));
+        let _ = state.process_event(make_event("Stop", "idle", "%0", "test"));
         assert_eq!(state.status_counts[1], 0); // Working now 0
         assert_eq!(state.status_counts[3], 1); // Idle now 1
     }
@@ -1069,7 +1076,7 @@ mod tests {
         let mut state = AppState::new();
 
         // Create an agent
-        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
 
         // Enable loop mode with stop word
         state.enable_loop_mode("%0", 10, "COMPLETE");
@@ -1077,7 +1084,7 @@ mod tests {
         // Send Stop with stop word in reason
         let mut stop_event = make_event("Stop", "idle", "%0", "test");
         stop_event.reason = Some("Task COMPLETE - all done".to_string());
-        state.process_event(stop_event);
+        let _ = state.process_event(stop_event);
 
         let agent = state.agents.get("%0").unwrap();
         assert!(matches!(agent.loop_mode, LoopMode::Complete));
@@ -1095,7 +1102,7 @@ mod tests {
             // Vary timestamps so we have a clear oldest
             // %0 gets oldest timestamp, each subsequent agent gets newer
             event.timestamp = base_time + (i as i64);
-            state.process_event(event);
+            let _ = state.process_event(event);
         }
 
         assert_eq!(state.agents.len(), MAX_AGENTS);
@@ -1109,7 +1116,7 @@ mod tests {
         }
 
         // Add one more - should evict oldest idle (%0)
-        state.process_event(make_event("SessionStart", "working", "%new", "test"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%new", "test"));
 
         assert_eq!(state.agents.len(), MAX_AGENTS);
         assert!(state.agents.contains_key("%new"));
@@ -1122,11 +1129,11 @@ mod tests {
         let mut state = AppState::new();
 
         // Create an agent
-        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
         assert_eq!(state.agents.len(), 1);
 
         // End the session
-        state.process_event(make_event("SessionEnd", "idle", "%0", "test"));
+        let _ = state.process_event(make_event("SessionEnd", "idle", "%0", "test"));
         assert_eq!(state.agents.len(), 0);
         assert_eq!(state.status_counts[1], 0); // Working
         assert_eq!(state.status_counts[3], 0); // Idle

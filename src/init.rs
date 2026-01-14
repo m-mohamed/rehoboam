@@ -377,7 +377,10 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
             if let Some(obj) = existing.as_object_mut() {
                 obj.insert(
                     "hooks".to_string(),
-                    our_hooks.get("hooks").cloned().unwrap(),
+                    our_hooks
+                        .get("hooks")
+                        .cloned()
+                        .expect("hook template must contain 'hooks' key"),
                 );
             }
             existing
