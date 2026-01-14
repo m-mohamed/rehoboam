@@ -108,7 +108,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
           path: target/${{ matrix.target }}/release/rehoboam
