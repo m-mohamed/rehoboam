@@ -27,17 +27,17 @@ body = """
 {% endfor %}
 """
 
-# Footer with version comparison links
+# Footer with version comparison links (tags use v prefix)
 footer = """
 {% for release in releases -%}
 {% if release.version -%}
 {% if release.previous.version -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/m-mohamed/rehoboam/compare/{{ release.previous.version }}...{{ release.version }}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/m-mohamed/rehoboam/compare/v{{ release.previous.version | trim_start_matches(pat="v") }}...v{{ release.version | trim_start_matches(pat="v") }}
 {% else -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/m-mohamed/rehoboam/releases/tag/{{ release.version }}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/m-mohamed/rehoboam/releases/tag/v{{ release.version | trim_start_matches(pat="v") }}
 {% endif -%}
 {% else -%}
-[Unreleased]: https://github.com/m-mohamed/rehoboam/compare/{{ release.previous.version }}...HEAD
+[Unreleased]: https://github.com/m-mohamed/rehoboam/compare/v{{ release.previous.version | trim_start_matches(pat="v") }}...HEAD
 {% endif -%}
 {% endfor %}
 """
