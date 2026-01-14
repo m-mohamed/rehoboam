@@ -1,0 +1,26 @@
+# release-plz configuration
+# https://release-plz.ieni.dev/docs/config
+
+[workspace]
+# Let cargo-dist handle GitHub releases (it's already configured)
+git_release_enable = false
+
+# Create git tags (triggers cargo-dist)
+git_tag_enable = true
+
+# Publish to crates.io
+publish = true
+
+# Check for API breaking changes
+semver_check = true
+
+# Update changelog using git-cliff
+changelog_update = true
+changelog_config = "cliff.toml"
+
+# PR settings
+pr_draft = false
+pr_labels = ["release"]
+
+# Commit message for release PR
+release_commit_message = "chore: release"

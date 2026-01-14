@@ -128,23 +128,23 @@ Enable tracing for detailed logs:
 RUST_LOG=debug cargo run -- --debug
 ```
 
-## Release Process (Maintainers)
+## Release Process (Automated)
 
-We use cargo-dist for fully automated releases:
+Releases are fully automated. **No manual steps required.**
 
-1. **Update version** in `Cargo.toml`
-2. **Update** `CHANGELOG.md`
-3. **Commit**: `git commit -m "chore: bump to v0.x.y"`
-4. **Tag**: `git tag v0.x.y`
-5. **Push**: `git push && git push --tags`
+```
+Feature PR → Merge to main → release-plz creates Release PR → Merge → Ship
+```
 
-CI automatically:
-- Builds binaries for macOS (Intel + ARM) and Linux (Intel + ARM)
-- Creates GitHub Release with downloadable binaries
-- Updates Homebrew tap (`brew upgrade rehoboam`)
-- Generates shell installer
+**How it works:**
+1. Merge your PR to main
+2. [release-plz](https://release-plz.ieni.dev/) automatically creates a Release PR with:
+   - Version bump (based on conventional commits)
+   - Updated CHANGELOG.md (via git-cliff)
+3. Review and merge the Release PR
+4. [cargo-dist](https://opensource.axo.dev/cargo-dist/) builds binaries and creates GitHub Release
 
-No manual steps required after tagging.
+**For local development:** Always run from source with `cargo run --` to stay current.
 
 ## Common Issues
 
