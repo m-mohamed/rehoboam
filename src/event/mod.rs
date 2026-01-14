@@ -17,8 +17,7 @@ pub enum Event {
         /// The hook event
         event: Box<HookEvent>,
     },
-    /// Sprite status change (scaffolded for connection status UI)
-    #[allow(dead_code)]
+    /// Sprite status change
     SpriteStatus {
         /// Sprite identifier
         sprite_id: String,
@@ -34,16 +33,13 @@ pub enum Event {
     },
 }
 
-/// Sprite status types (scaffolded for connection status UI)
-#[allow(dead_code)]
+/// Sprite status types
 #[derive(Debug, Clone)]
 pub enum SpriteStatusType {
     /// Sprite connected to WebSocket
     Connected,
     /// Sprite disconnected from WebSocket
     Disconnected,
-    /// Sprite was destroyed
-    Destroyed,
 }
 
 /// Source of a hook event
@@ -169,23 +165,15 @@ impl HookEvent {
 /// - `tool_use_id`: Correlates Pre→Post events for latency calculation
 /// - `tool_response`: Tool output (PostToolUse only)
 ///
-/// Event-specific:
-/// - `user_prompt`: The prompt text (UserPromptSubmit)
-/// - `reason`: Why stopping (Stop/SubagentStop/SessionEnd)
-/// - `trigger`: "manual" or "auto" (PreCompact)
-/// - `source`: "startup"/"resume"/"clear" (SessionStart)
-/// - `message`: Notification message (Notification)
-#[allow(dead_code)]
+/// Claude Code hook input structure
+///
+/// Only includes fields we actively use. Serde ignores unknown fields by default.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ClaudeHookInput {
     /// Unique session identifier
     pub session_id: String,
     /// Hook type that triggered this event
     pub hook_event_name: String,
-    /// Path to conversation transcript file
-    pub transcript_path: String,
-    /// Current working directory
-    pub cwd: String,
 
     // Tool events (optional)
     /// Tool name: Bash, Read, Write, Edit, Glob, Grep, etc.
@@ -194,31 +182,19 @@ pub struct ClaudeHookInput {
     /// Tool parameters as JSON object
     #[serde(default)]
     pub tool_input: Option<serde_json::Value>,
-    /// Tool output (PostToolUse only)
-    #[serde(default)]
-    pub tool_response: Option<serde_json::Value>,
     /// Correlates PreToolUse→PostToolUse for latency tracking
     #[serde(default)]
     pub tool_use_id: Option<String>,
 
     // Event-specific fields
-    /// User prompt text (UserPromptSubmit)
-    #[serde(default)]
-    pub user_prompt: Option<String>,
     /// Stop reason (Stop/SubagentStop/SessionEnd)
     #[serde(default)]
     pub reason: Option<String>,
-    /// Session start source: startup, resume, clear (SessionStart)
-    #[serde(default)]
-    pub source: Option<String>,
-    /// Compact trigger: manual, auto (PreCompact)
-    #[serde(default)]
-    pub trigger: Option<String>,
     /// Notification message (Notification)
     #[serde(default)]
     pub message: Option<String>,
 
-    // v0.9.0 Subagent fields
+    // Subagent fields
     /// Subagent session ID (SubagentStart/SubagentStop)
     #[serde(default)]
     pub subagent_id: Option<String>,

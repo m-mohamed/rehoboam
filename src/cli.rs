@@ -120,26 +120,3 @@ pub fn print_completions(shell: Shell) {
     generate(shell, &mut cmd, "rehoboam", &mut io::stdout());
 }
 
-/// Runtime context derived from CLI arguments
-///
-/// Provides a clean interface for accessing configuration throughout the app.
-#[allow(dead_code)]
-#[derive(Debug, Clone)]
-pub struct Context {
-    /// Unix socket path for IPC
-    pub socket: PathBuf,
-    /// Log level string
-    pub log_level: String,
-    /// Debug mode enabled
-    pub debug: bool,
-}
-
-impl From<&Cli> for Context {
-    fn from(cli: &Cli) -> Self {
-        Self {
-            socket: cli.socket.clone(),
-            log_level: cli.log_level.clone(),
-            debug: cli.debug,
-        }
-    }
-}

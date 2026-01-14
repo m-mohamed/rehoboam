@@ -279,7 +279,6 @@ impl AppState {
                         id: subagent_id.clone(),
                         description: description.clone(),
                         status: "running".to_string(),
-                        start_time: event.timestamp,
                         duration_ms: None,
                     });
                     tracing::info!(
@@ -729,27 +728,7 @@ impl AppState {
             .collect()
     }
 
-    // v0.9.0 Loop Mode Methods (scaffolded - TUI loop toggle not yet wired)
-
-    /// Enable loop mode on an agent
-    ///
-    /// Called when spawning an agent in loop mode or enabling loop on existing agent.
-    #[allow(dead_code)]
-    pub fn enable_loop_mode(&mut self, pane_id: &str, max_iterations: u32, stop_word: &str) {
-        if let Some(agent) = self.agents.get_mut(pane_id) {
-            agent.loop_mode = LoopMode::Active;
-            agent.loop_iteration = 0;
-            agent.loop_max = max_iterations;
-            agent.loop_stop_word = stop_word.to_string();
-            agent.loop_last_reasons.clear();
-            tracing::info!(
-                pane_id = %pane_id,
-                max = max_iterations,
-                stop_word = %stop_word,
-                "Loop mode enabled"
-            );
-        }
-    }
+    // v0.9.0 Loop Mode Methods
 
     /// Register a pending loop config for a newly spawned agent
     ///
@@ -821,13 +800,7 @@ impl AppState {
         self.selected_agent().map(|a| a.pane_id.clone())
     }
 
-    // v0.10.0 Sprite Methods (some scaffolded for future UI features)
-
-    /// Check if an agent is a sprite agent
-    #[allow(dead_code)]
-    pub fn is_sprite_agent(&self, pane_id: &str) -> bool {
-        self.sprite_agent_ids.contains(pane_id)
-    }
+    // v0.10.0 Sprite Methods
 
     /// Get list of selected sprite agent IDs
     pub fn selected_sprite_agents(&self) -> Vec<String> {
@@ -841,12 +814,6 @@ impl AppState {
     /// Get count of sprite agents
     pub fn sprite_agent_count(&self) -> usize {
         self.sprite_agent_ids.len()
-    }
-
-    /// Get all sprite agents
-    #[allow(dead_code)]
-    pub fn sprite_agents(&self) -> impl Iterator<Item = &Agent> {
-        self.agents.values().filter(|a| a.is_sprite)
     }
 
     /// Mark a sprite as connected
@@ -1069,25 +1036,6 @@ mod tests {
         let _ = state.process_event(make_event("Stop", "idle", "%0", "test"));
         assert_eq!(state.status_counts[1], 0); // Working now 0
         assert_eq!(state.status_counts[3], 1); // Idle now 1
-    }
-
-    #[test]
-    fn test_loop_mode_stop_word_detection() {
-        let mut state = AppState::new();
-
-        // Create an agent
-        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
-
-        // Enable loop mode with stop word
-        state.enable_loop_mode("%0", 10, "COMPLETE");
-
-        // Send Stop with stop word in reason
-        let mut stop_event = make_event("Stop", "idle", "%0", "test");
-        stop_event.reason = Some("Task COMPLETE - all done".to_string());
-        let _ = state.process_event(stop_event);
-
-        let agent = state.agents.get("%0").unwrap();
-        assert!(matches!(agent.loop_mode, LoopMode::Complete));
     }
 
     #[test]

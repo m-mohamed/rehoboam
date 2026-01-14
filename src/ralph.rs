@@ -297,9 +297,8 @@ Git commits are created between iterations for easy rollback.
     Ok(prompt_file.to_string_lossy().to_string())
 }
 
-/// Add a guardrail/sign to guardrails.md
-#[allow(dead_code)]
-pub fn add_guardrail(ralph_dir: &Path, sign: &str, trigger: &str, instruction: &str) -> Result<()> {
+/// Add a guardrail/sign to guardrails.md (internal use)
+fn add_guardrail(ralph_dir: &Path, sign: &str, trigger: &str, instruction: &str) -> Result<()> {
     let state = load_state(ralph_dir)?;
     let guardrails_path = ralph_dir.join("guardrails.md");
 
@@ -324,58 +323,8 @@ pub fn add_guardrail(ralph_dir: &Path, sign: &str, trigger: &str, instruction: &
     Ok(())
 }
 
-/// Log an error to errors.log
-#[allow(dead_code)]
-pub fn log_error(ralph_dir: &Path, error: &str) -> Result<()> {
-    let state = load_state(ralph_dir)?;
-    let errors_path = ralph_dir.join("errors.log");
-
-    let entry = format!(
-        "[Iteration {}] [{}] {}\n",
-        state.iteration,
-        Utc::now().format("%Y-%m-%d %H:%M:%S"),
-        error
-    );
-
-    let mut content = fs::read_to_string(&errors_path).unwrap_or_default();
-    content.push_str(&entry);
-    fs::write(errors_path, content)?;
-
-    warn!("Logged error: {}", error);
-    Ok(())
-}
-
-/// Check if a Ralph loop is active in a directory
-#[allow(dead_code)]
-pub fn is_ralph_active(project_dir: &Path) -> bool {
-    let ralph_dir = project_dir.join(".ralph");
-    let state_path = ralph_dir.join("state.json");
-    state_path.exists()
-}
-
-/// Get the Ralph directory for a project
-#[allow(dead_code)]
-pub fn get_ralph_dir(project_dir: &Path) -> PathBuf {
-    project_dir.join(".ralph")
-}
-
-/// Clean up Ralph directory (for cancellation or completion)
-#[allow(dead_code)]
-pub fn cleanup_ralph_dir(ralph_dir: &Path) -> Result<()> {
-    if ralph_dir.exists() {
-        // Don't delete - rename to .ralph.done for history
-        let done_dir = ralph_dir.with_extension("done");
-        if done_dir.exists() {
-            fs::remove_dir_all(&done_dir)?;
-        }
-        fs::rename(ralph_dir, &done_dir)?;
-        info!("Ralph loop archived to {:?}", done_dir);
-    }
-    Ok(())
-}
-
 // =============================================================================
-// NEW: Git Checkpoints
+// Git Checkpoints
 // =============================================================================
 
 /// Create a git checkpoint after an iteration completes
@@ -689,16 +638,6 @@ pub fn get_recent_progress_summary(ralph_dir: &Path, count: usize) -> Result<Str
     }
 
     Ok(summary)
-}
-
-/// Append to guardrails without full sign format (for simple additions)
-#[allow(dead_code)]
-pub fn append_guardrail(ralph_dir: &Path, content: &str) -> Result<()> {
-    let guardrails_path = ralph_dir.join("guardrails.md");
-    let mut existing = fs::read_to_string(&guardrails_path).unwrap_or_default();
-    existing.push_str(content);
-    fs::write(guardrails_path, existing)?;
-    Ok(())
 }
 
 #[cfg(test)]

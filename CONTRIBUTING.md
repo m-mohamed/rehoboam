@@ -125,6 +125,19 @@ fix: prevent panic on empty agent list
 Check bounds before indexing into agents vector.
 ```
 
+## Branch Naming
+
+Use descriptive branch names with these prefixes:
+
+| Prefix | Purpose | Example |
+|--------|---------|---------|
+| `feat/` | New features | `feat/loop-mode` |
+| `fix/` | Bug fixes | `fix/panic-empty-list` |
+| `chore/` | Maintenance | `chore/update-deps` |
+| `docs/` | Documentation | `docs/api-reference` |
+| `ci/` | CI/CD changes | `ci/add-msrv-check` |
+| `perf/` | Performance | `perf/reduce-allocations` |
+
 ## Pull Request Process
 
 1. **Branch from main**: Create a feature branch
@@ -138,7 +151,9 @@ Check bounds before indexing into agents vector.
 
 4. **Push and open PR**: Include a clear description of changes
 
-5. **Address feedback**: Respond to review comments
+5. **AI Code Review**: Mention `@greptile` in a PR comment to trigger an AI-assisted code review
+
+6. **Address feedback**: Respond to review comments
 
 ## Rust Best Practices
 
@@ -165,6 +180,42 @@ Check bounds before indexing into agents vector.
 - Document public APIs with `///` doc comments
 - Include examples in doc comments for complex functions
 - Keep comments focused on *why*, not *what*
+
+## Releases and Versioning
+
+We follow [Semantic Versioning](https://semver.org/):
+
+- **MAJOR** (`1.0.0`): Breaking changes
+- **MINOR** (`0.2.0`): New features, backwards compatible
+- **PATCH** (`0.1.1`): Bug fixes, backwards compatible
+
+### Release Process
+
+1. **Update version** in `Cargo.toml`
+2. **Update CHANGELOG.md** with release notes
+3. **Create a PR** with version bump
+4. **Merge to main** after review
+5. **Tag the release**:
+   ```bash
+   git tag v0.x.y
+   git push origin v0.x.y
+   ```
+6. **CI publishes** binaries via cargo-dist
+
+### Changelog Format
+
+```markdown
+## [0.2.0] - 2025-01-15
+
+### Added
+- Loop mode for running agents repeatedly
+
+### Changed
+- Improved status detection
+
+### Fixed
+- Panic on empty agent list
+```
 
 ## Getting Help
 

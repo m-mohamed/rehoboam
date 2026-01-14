@@ -2,10 +2,6 @@
 //!
 //! Provides methods to send input to Claude Code running inside sprites.
 //! This mirrors TmuxController but operates on remote sprites.
-//!
-//! Scaffolded for sprite command integration (not yet wired into main).
-
-#![allow(dead_code)]
 
 use color_eyre::eyre::{eyre, Result};
 use sprites::Sprite;
@@ -16,11 +12,9 @@ pub struct SpriteController;
 
 impl SpriteController {
     /// Send raw input to a sprite's running process
-    pub async fn send_input(sprite: &Sprite, input: &str) -> Result<()> {
+    async fn send_input(sprite: &Sprite, input: &str) -> Result<()> {
         debug!("Sending input to sprite: {:?}", input);
 
-        // We need to write to the running Claude Code process's stdin
-        // This requires an active spawn() session - for now we use a command approach
         let output = sprite
             .command("bash")
             .arg("-c")
@@ -55,7 +49,6 @@ impl SpriteController {
     pub async fn kill(sprite: &Sprite) -> Result<()> {
         info!("Sending Ctrl+C to sprite");
 
-        // Find and kill the Claude process
         let output = sprite
             .command("pkill")
             .arg("-INT")
@@ -65,26 +58,7 @@ impl SpriteController {
             .await
             .map_err(|e| eyre!("Failed to send kill signal: {}", e))?;
 
-        // pkill returns non-zero if no processes matched, which is fine
         debug!("Kill signal sent, exit code: {}", output.status);
         Ok(())
-    }
-
-    /// Send Enter key
-    pub async fn send_enter(sprite: &Sprite) -> Result<()> {
-        Self::send_input(sprite, "\n").await
-    }
-
-    /// Check if Claude is still running in the sprite
-    pub async fn is_claude_running(sprite: &Sprite) -> Result<bool> {
-        let output = sprite
-            .command("pgrep")
-            .arg("-f")
-            .arg("claude")
-            .output()
-            .await
-            .map_err(|e| eyre!("Failed to check claude process: {}", e))?;
-
-        Ok(output.success())
     }
 }

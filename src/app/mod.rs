@@ -168,7 +168,7 @@ impl App {
                         tracing::info!("Sprite connected: {}", sprite_id);
                         self.state.sprite_connected(&sprite_id);
                     }
-                    SpriteStatusType::Disconnected | SpriteStatusType::Destroyed => {
+                    SpriteStatusType::Disconnected => {
                         tracing::info!("Sprite disconnected: {}", sprite_id);
                         self.state.sprite_disconnected(&sprite_id);
                     }

@@ -382,10 +382,6 @@ async fn main() -> Result<()> {
                         tracing::info!(sprite_id = %sprite_id, reason = %reason, "Sprite disconnected");
                         (sprite_id, event::SpriteStatusType::Disconnected)
                     }
-                    ConnectionStatus::HeartbeatMissed { sprite_id } => {
-                        tracing::warn!(sprite_id = %sprite_id, "Sprite heartbeat missed");
-                        continue; // Don't send as event yet
-                    }
                 };
 
                 if let Err(e) = status_event_tx
