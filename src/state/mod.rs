@@ -174,15 +174,19 @@ impl AppState {
         // Update agent state
         agent.project = event.project.clone();
 
-        // Priority-aware status update: don't let Working override blocking Attention states
+        // Priority-aware status update: don't let background Working override blocking Attention
         let new_status = Status::from_str(&event.status, event.attention_type.as_deref());
         let should_update = match (&agent.status, &new_status) {
             // Current status is blocking Attention (Permission or Input)
-            // Don't let Working or lower-priority Attention override it
-            (Status::Attention(current_attn), Status::Working)
-                if matches!(current_attn, AttentionType::Permission | AttentionType::Input) =>
-            {
-                false
+            (
+                Status::Attention(AttentionType::Permission | AttentionType::Input),
+                Status::Working,
+            ) => {
+                // Allow transitions that indicate user approved/responded:
+                // - PostToolUse: Tool finished (permission was approved)
+                // - UserPromptSubmit: User sent a message
+                // Block background noise: SubagentStart, SubagentStop, PreToolUse
+                matches!(event.event.as_str(), "PostToolUse" | "UserPromptSubmit")
             }
             // Current is Attention, new is also Attention - use priority
             (Status::Attention(current_attn), Status::Attention(new_attn)) => {
@@ -595,7 +599,9 @@ impl AppState {
                     );
                 }
 
-                if elapsed > WAITING_TIMEOUT_SECS && agent.current_tool.is_none() && !agent.in_response
+                if elapsed > WAITING_TIMEOUT_SECS
+                    && agent.current_tool.is_none()
+                    && !agent.in_response
                 {
                     waiting_transitions.push(pane_id.clone());
                 }
@@ -652,14 +658,12 @@ impl AppState {
             columns[col].push(agent);
         }
         // Sort Attention column by AttentionType priority, then by project name
-        columns[0].sort_by(|a, b| {
-            match (&a.status, &b.status) {
-                (Status::Attention(a_type), Status::Attention(b_type)) => {
-                    a_type.priority().cmp(&b_type.priority())
-                        .then_with(|| a.project.cmp(&b.project))
-                }
-                _ => a.project.cmp(&b.project),
-            }
+        columns[0].sort_by(|a, b| match (&a.status, &b.status) {
+            (Status::Attention(a_type), Status::Attention(b_type)) => a_type
+                .priority()
+                .cmp(&b_type.priority())
+                .then_with(|| a.project.cmp(&b.project)),
+            _ => a.project.cmp(&b.project),
         });
         // Sort other columns by project name for consistent ordering
         for col in &mut columns[1..] {

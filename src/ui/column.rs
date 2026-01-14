@@ -14,11 +14,7 @@ use ratatui::{
 };
 
 /// Column definitions with titles and emoji icons
-pub const COLUMNS: [(&str, &str); 3] = [
-    ("ATTENTION", "🔔"),
-    ("WORKING", "🤖"),
-    ("COMPACT", "🔄"),
-];
+pub const COLUMNS: [(&str, &str); 3] = [("ATTENTION", "🔔"), ("WORKING", "🤖"), ("COMPACT", "🔄")];
 
 /// Render a status column with agent cards
 ///
