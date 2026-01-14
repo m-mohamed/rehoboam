@@ -18,14 +18,11 @@ use color_eyre::eyre::{bail, Result, WrapErr};
 
 /// Type of prompt detected in pane output via reconciliation
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[allow(dead_code)] // Used by reconciler in later commits
 pub enum PromptType {
     /// Permission request: tool needs approval ([y/n], approve, etc.)
     Permission,
     /// Input request: Claude asking a question
     Input,
-    /// Command prompt: shell is ready, Claude stopped
-    CommandPrompt,
 }
 
 /// Controller for tmux operations
@@ -194,7 +191,6 @@ impl TmuxController {
     /// - `Ok(true)` if pane exists and is alive
     /// - `Ok(false)` if pane is dead (pane_dead flag set)
     /// - `Err(_)` if pane doesn't exist or tmux error
-    #[allow(dead_code)] // Used by reconciler in later commits
     pub fn is_pane_alive(pane_id: &str) -> Result<bool> {
         let output = Command::new("tmux")
             .args(["display-message", "-t", pane_id, "-p", "#{pane_dead}"])
@@ -224,7 +220,6 @@ impl TmuxController {
     ///
     /// # Returns
     /// The captured lines as a string
-    #[allow(dead_code)] // Used by reconciler in later commits
     pub fn capture_pane_tail(pane_id: &str, lines: usize) -> Result<String> {
         let start_line = format!("-{}", lines);
         let output = Command::new("tmux")
@@ -254,7 +249,6 @@ impl TmuxController {
     /// - `Some(PromptType::Permission)` if permission prompt detected
     /// - `Some(PromptType::Input)` if input prompt detected
     /// - `None` if no prompt or still working (spinner visible)
-    #[allow(dead_code)] // Used by reconciler in later commits
     pub fn match_prompt_patterns(output: &str) -> Option<PromptType> {
         // Check for spinner/working indicators first (negative patterns)
         // If spinner is visible, Claude is still working - don't match
@@ -306,24 +300,10 @@ impl TmuxController {
             }
         }
 
-        // Shell prompt detection (Claude stopped, shell ready)
-        // Very conservative - only match clear shell prompts
-        for line in recent_lines.iter().take(2) {
-            let trimmed = line.trim_start(); // Only trim leading whitespace, preserve trailing
-                                             // Common shell prompts: "$ ", "> ", "% ", "❯ "
-                                             // Also check without trailing space for EOL cases
-            if trimmed.ends_with("$ ")
-                || trimmed.ends_with("> ")
-                || trimmed.ends_with("% ")
-                || trimmed.ends_with("❯ ")
-                || trimmed == "$"
-                || trimmed == ">"
-                || trimmed == "%"
-                || trimmed == "❯"
-            {
-                return Some(PromptType::CommandPrompt);
-            }
-        }
+        // Note: We don't detect shell prompts ("$", ">") because Claude Code
+        // has its own UI and doesn't show shell prompts when waiting.
+        // Shell prompts would only appear if Claude crashed and returned to shell,
+        // which would be caught by pane health checks instead.
 
         None
     }
@@ -493,24 +473,6 @@ mod tests {
         assert_eq!(
             TmuxController::match_prompt_patterns(output),
             Some(PromptType::Input)
-        );
-    }
-
-    #[test]
-    fn test_match_command_prompt_dollar() {
-        let output = "Command completed successfully\n$ ";
-        assert_eq!(
-            TmuxController::match_prompt_patterns(output),
-            Some(PromptType::CommandPrompt)
-        );
-    }
-
-    #[test]
-    fn test_match_command_prompt_chevron() {
-        let output = "Done!\n❯ ";
-        assert_eq!(
-            TmuxController::match_prompt_patterns(output),
-            Some(PromptType::CommandPrompt)
         );
     }
 
