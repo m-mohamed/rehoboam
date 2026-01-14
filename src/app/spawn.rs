@@ -8,8 +8,8 @@ use sprites::SpritesClient;
 use std::path::PathBuf;
 
 /// Number of fields in spawn dialog
-/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=sprite, 8=network
-pub const SPAWN_FIELD_COUNT: usize = 9;
+/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=sprite, 8=network, 9=ram, 10=cpus, 11=clone_dest
+pub const SPAWN_FIELD_COUNT: usize = 12;
 
 /// State for the spawn dialog
 #[derive(Debug, Clone)]
@@ -40,8 +40,54 @@ pub struct SpawnState {
     pub use_sprite: bool,
     /// Network policy for sprite (only applies when use_sprite is true)
     pub network_preset: NetworkPreset,
+    /// RAM allocation in MB (default: 2048)
+    /// Applies to sprite VMs; shown for local spawns for consistency
+    pub ram_mb: String,
+    /// Number of CPUs (default: 2)
+    /// Applies to sprite VMs; shown for local spawns for consistency
+    pub cpus: String,
+    /// Clone destination for GitHub repos (local mode only)
+    /// When project_path is a GitHub URL, this is where to clone it
+    pub clone_destination: String,
     /// Validation error to display in the dialog
     pub validation_error: Option<String>,
+}
+
+/// Check if a string looks like a GitHub repository reference
+///
+/// Returns true for:
+/// - `owner/repo` (only if path doesn't exist locally)
+/// - `https://github.com/owner/repo`
+/// - `github.com/owner/repo`
+/// - `git@github.com:owner/repo.git`
+pub fn is_github_url(s: &str) -> bool {
+    let s = s.trim();
+    if s.is_empty() {
+        return false;
+    }
+
+    // Check for explicit GitHub URLs - these are unambiguous
+    if s.contains("github.com") {
+        return true;
+    }
+
+    // Check for owner/repo format (must have exactly one slash, no spaces)
+    // But first ensure it's not a local path that exists
+    if !s.contains(' ') && !s.starts_with('/') && !s.starts_with('.') {
+        let parts: Vec<&str> = s.split('/').collect();
+        if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+            // Could be owner/repo OR a local path like foo/bar
+            // Check if it exists locally - if so, it's a local path
+            let expanded = expand_tilde(s);
+            if std::path::Path::new(&expanded).exists() {
+                return false; // Local path takes precedence
+            }
+            // Doesn't exist locally, assume it's a GitHub repo
+            return true;
+        }
+    }
+
+    false
 }
 
 impl Default for SpawnState {
@@ -64,6 +110,9 @@ impl Default for SpawnState {
             loop_stop_word: "COMPLETE".to_string(),
             use_sprite: false,
             network_preset: NetworkPreset::ClaudeOnly,
+            ram_mb: "2048".to_string(),
+            cpus: "2".to_string(),
+            clone_destination: String::new(),
             validation_error: None,
         }
     }
@@ -72,7 +121,17 @@ impl Default for SpawnState {
 /// Validate spawn dialog inputs before spawning
 ///
 /// Returns Ok(()) if all inputs are valid, Err(message) otherwise.
-pub fn validate_spawn(state: &SpawnState) -> Result<(), String> {
+///
+/// `has_sprites_client` should be `true` if a sprites token is configured.
+/// This prevents the "Use Sprite VM" toggle from silently falling back to local spawning.
+pub fn validate_spawn(state: &SpawnState, has_sprites_client: bool) -> Result<(), String> {
+    // Check sprites token availability when sprite mode is enabled
+    if state.use_sprite && !has_sprites_client {
+        return Err(
+            "Sprite mode requires SPRITES_TOKEN. Set env var or use --sprites-token".to_string(),
+        );
+    }
+
     // Check project path (required for local mode)
     if !state.use_sprite && state.project_path.is_empty() {
         return Err("Local Directory is required".to_string());
@@ -83,8 +142,22 @@ pub fn validate_spawn(state: &SpawnState) -> Result<(), String> {
         return Err("GitHub Repo or Local Directory required".to_string());
     }
 
-    // Validate local path exists (only for local mode)
-    if !state.use_sprite && !state.project_path.is_empty() {
+    // For local mode: check if project_path is a GitHub URL
+    if !state.use_sprite && is_github_url(&state.project_path) {
+        // GitHub URL in local mode - require clone destination
+        if state.clone_destination.is_empty() {
+            return Err("Clone destination required for GitHub repos".to_string());
+        }
+        // Validate clone destination path
+        let dest = expand_tilde(&state.clone_destination);
+        if std::path::Path::new(&dest).exists() {
+            return Err(format!(
+                "Clone destination already exists: {}",
+                state.clone_destination
+            ));
+        }
+    } else if !state.use_sprite && !state.project_path.is_empty() {
+        // Regular local path - validate it exists
         let path = expand_tilde(&state.project_path);
         if !std::path::Path::new(&path).exists() {
             return Err(format!("Directory not found: {}", state.project_path));
@@ -119,6 +192,7 @@ pub fn validate_spawn(state: &SpawnState) -> Result<(), String> {
 /// Spawn a new agent (local tmux or remote sprite)
 ///
 /// This handles the full spawning flow including:
+/// - GitHub clone (if project_path is a GitHub URL in local mode)
 /// - Git worktree creation (if enabled)
 /// - Ralph loop initialization (if enabled)
 /// - Sprite creation with GitHub clone (if sprite mode)
@@ -137,27 +211,49 @@ pub fn spawn_agent(
         return Some("⚠ No project path or GitHub repo specified".to_string());
     }
 
-    let project_path = &spawn_state.project_path;
-    let prompt = &spawn_state.prompt;
-    let use_worktree = spawn_state.use_worktree;
-    let branch_name = &spawn_state.branch_name;
-
     // Branch: Sprite spawning vs tmux spawning
     if spawn_state.use_sprite {
         if let Some(client) = sprites_client {
             spawn_sprite_agent(spawn_state, client);
             return None;
         }
-        tracing::warn!(
+        // This should be caught by validate_spawn(), but guard against it anyway
+        tracing::error!(
             "Sprite mode requested but no sprites token configured. \
-             Set SPRITES_TOKEN or use --sprites-token. Falling back to tmux."
+             This should have been caught by validation."
         );
-        // Fall through to tmux spawning
+        return Some("⚠ Sprite mode requires SPRITES_TOKEN".to_string());
     }
+
+    // Check if we need to clone a GitHub repo for local spawning
+    let project_path = if is_github_url(&spawn_state.project_path) {
+        let dest = expand_tilde(&spawn_state.clone_destination);
+        let dest_path = std::path::Path::new(&dest);
+
+        tracing::info!(
+            repo = %spawn_state.project_path,
+            destination = %dest,
+            "Cloning GitHub repository for local spawn..."
+        );
+
+        match crate::git::clone_repo(&spawn_state.project_path, dest_path) {
+            Ok(path) => path.to_string_lossy().to_string(),
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to clone repository");
+                return Some(format!("⚠ Clone failed: {}", e));
+            }
+        }
+    } else {
+        spawn_state.project_path.clone()
+    };
+
+    let prompt = &spawn_state.prompt;
+    let use_worktree = spawn_state.use_worktree;
+    let branch_name = &spawn_state.branch_name;
 
     // Local tmux spawning
     spawn_tmux_agent(
-        project_path,
+        &project_path,
         prompt,
         use_worktree,
         branch_name,
@@ -253,27 +349,36 @@ fn spawn_sprite_agent(spawn_state: &SpawnState, client: &SpritesClient) {
                     }
                 }
 
-                // Build Claude command
+                // Build Claude command - run inside tmux for input control
+                // This allows us to use tmux send-keys for sprite input
+                let tmux_session = format!("claude-{}", sprite_name);
                 let claude_cmd = if prompt.is_empty() {
                     "claude".to_string()
                 } else {
                     format!("claude '{}'", prompt.replace('\'', "'\\''"))
                 };
 
+                // Create tmux session with Claude running inside
+                let tmux_cmd = format!(
+                    "tmux new-session -d -s '{}' -c '{}' '{}' 2>/dev/null || tmux send-keys -t '{}' '' 2>/dev/null",
+                    tmux_session, work_dir, claude_cmd, tmux_session
+                );
+
                 match sprite
                     .command("bash")
                     .arg("-c")
-                    .arg(&claude_cmd)
-                    .current_dir(&work_dir)
+                    .arg(&tmux_cmd)
                     .spawn()
                     .await
                 {
                     Ok(_) => {
                         tracing::info!(
                             sprite_name = %sprite_name,
+                            tmux_session = %tmux_session,
                             work_dir = %work_dir,
                             loop_enabled = loop_enabled,
-                            "Claude Code started in sprite"
+                            "Claude Code started in sprite (tmux session: {})",
+                            tmux_session
                         );
                         if loop_enabled {
                             tracing::debug!(

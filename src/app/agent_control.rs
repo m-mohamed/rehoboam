@@ -184,7 +184,8 @@ pub fn bulk_kill(state: &mut AppState, sprites_client: Option<&SpritesClient>) {
 /// Send custom input to selected agent
 ///
 /// Uses buffered send for multi-line or long input.
-pub fn send_custom_input(state: &AppState, input: &str) {
+/// For sprite agents, uses async `SpriteController::send_input`.
+pub fn send_custom_input(state: &AppState, sprites_client: Option<&SpritesClient>, input: &str) {
     if input.is_empty() {
         return;
     }
@@ -204,12 +205,23 @@ pub fn send_custom_input(state: &AppState, input: &str) {
     );
 
     if agent.is_sprite {
-        // Sprite agents: input would go through SpriteController (async)
-        tracing::info!(
-            pane_id = %pane_id,
-            "Sprite input queued (async via SpriteController)"
-        );
-        // TODO: Wire async sprite input through event system
+        // Sprite agents: send via SpriteController async
+        let Some(client) = sprites_client else {
+            tracing::warn!(
+                pane_id = %pane_id,
+                "Cannot send sprite input: sprites client not configured"
+            );
+            return;
+        };
+
+        let sprite = client.sprite(pane_id);
+        let input = input.to_string();
+
+        tokio::spawn(async move {
+            if let Err(e) = SpriteController::send_input(&sprite, &input).await {
+                tracing::error!(error = %e, "Failed to send sprite custom input");
+            }
+        });
     } else if pane_id.starts_with('%') {
         // Tmux panes: send directly
         // Use buffered send for multi-line or long input, simple send for short

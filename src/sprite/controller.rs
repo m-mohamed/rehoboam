@@ -11,25 +11,41 @@ use tracing::{debug, info};
 pub struct SpriteController;
 
 impl SpriteController {
-    /// Send raw input to a sprite's running process
-    async fn send_input(sprite: &Sprite, input: &str) -> Result<()> {
-        debug!("Sending input to sprite: {:?}", input);
+    /// Send raw input to a sprite's running Claude process via tmux
+    ///
+    /// Claude runs inside a tmux session named `claude-{sprite_name}`.
+    /// This uses `tmux send-keys` to inject input to the running process.
+    pub async fn send_input(sprite: &Sprite, input: &str) -> Result<()> {
+        let tmux_session = format!("claude-{}", sprite.name());
+        debug!(
+            "Sending input to sprite {} (tmux session: {}): {:?}",
+            sprite.name(),
+            tmux_session,
+            input
+        );
 
+        // Use tmux send-keys to inject input to the Claude session
+        // -l flag sends literal keys (no special interpretation)
         let output = sprite
-            .command("bash")
-            .arg("-c")
-            .arg(format!(
-                "echo -n '{}' > /tmp/claude_input && cat /tmp/claude_input",
-                input.replace('\'', "'\\''")
-            ))
+            .command("tmux")
+            .arg("send-keys")
+            .arg("-t")
+            .arg(&tmux_session)
+            .arg("-l")
+            .arg(input)
             .output()
             .await
-            .map_err(|e| eyre!("Failed to send input: {}", e))?;
+            .map_err(|e| eyre!("Failed to send input via tmux: {}", e))?;
 
         if !output.success() {
-            return Err(eyre!("Input send failed: {}", output.stderr_str()));
+            return Err(eyre!("tmux send-keys failed: {}", output.stderr_str()));
         }
 
+        info!(
+            "Input sent to sprite {} via tmux session {}",
+            sprite.name(),
+            tmux_session
+        );
         Ok(())
     }
 

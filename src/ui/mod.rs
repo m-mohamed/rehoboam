@@ -1070,22 +1070,29 @@ fn render_input_dialog(f: &mut Frame, app: &App) {
 }
 
 fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
+    use crate::app::spawn::is_github_url;
+
     let area = centered_rect(70, 80, f.area());
 
-    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, sprite toggle, network policy, error, instructions
+    // Check if we need to show clone destination field
+    let show_clone_dest = !spawn_state.use_sprite && is_github_url(&spawn_state.project_path);
+
+    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, sprite toggle, network policy, resources, clone_dest (conditional), error, instructions
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Project path (0)
-            Constraint::Length(3), // Prompt (1)
-            Constraint::Length(3), // Branch name (2)
-            Constraint::Length(3), // Worktree toggle (3)
-            Constraint::Length(3), // Loop mode toggle (4)
-            Constraint::Length(3), // Loop options (5, 6)
-            Constraint::Length(3), // Sprite toggle (7)
-            Constraint::Length(3), // Network policy (8)
-            Constraint::Length(2), // Error message (9)
-            Constraint::Length(2), // Instructions (10)
+            Constraint::Length(3),                                   // Project path (0)
+            Constraint::Length(3),                                   // Prompt (1)
+            Constraint::Length(3),                                   // Branch name (2)
+            Constraint::Length(3),                                   // Worktree toggle (3)
+            Constraint::Length(3),                                   // Loop mode toggle (4)
+            Constraint::Length(3),                                   // Loop options (5, 6)
+            Constraint::Length(3),                                   // Sprite toggle (7)
+            Constraint::Length(3),                                   // Network policy (8)
+            Constraint::Length(3), // Resources: RAM (9), CPUs (10)
+            Constraint::Length(if show_clone_dest { 3 } else { 0 }), // Clone destination (11) - conditional
+            Constraint::Length(2),                                   // Error message
+            Constraint::Length(2),                                   // Instructions
         ])
         .margin(1)
         .split(area);
@@ -1296,6 +1303,71 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 }),
         );
 
+    // Resources row (9 = RAM, 10 = CPUs) - split horizontally
+    let resources_area = chunks[8];
+    let resources_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+        .split(resources_area);
+
+    // RAM field (9)
+    let ram_cursor = if spawn_state.active_field == 9 {
+        "▏"
+    } else {
+        ""
+    };
+    let ram_widget = Paragraph::new(format!("{}{} MB", spawn_state.ram_mb, ram_cursor))
+        .style(field_style(spawn_state.active_field == 9))
+        .block(
+            Block::default()
+                .title(" RAM ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 9)),
+        );
+
+    // CPUs field (10)
+    let cpus_cursor = if spawn_state.active_field == 10 {
+        "▏"
+    } else {
+        ""
+    };
+    let cpus_widget = Paragraph::new(format!("{}{} cores", spawn_state.cpus, cpus_cursor))
+        .style(field_style(spawn_state.active_field == 10))
+        .block(
+            Block::default()
+                .title(" CPUs ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 10)),
+        );
+
+    // Clone destination field (11) - only shown when project_path is a GitHub URL in local mode
+    let clone_dest_cursor = if spawn_state.active_field == 11 {
+        "▏"
+    } else {
+        ""
+    };
+    let clone_dest_placeholder = "e.g. ~/projects/my-clone or /tmp/my-repo";
+    let clone_dest_display =
+        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 11 {
+            clone_dest_placeholder.to_string()
+        } else {
+            format!("{}{}", spawn_state.clone_destination, clone_dest_cursor)
+        };
+    let clone_dest_style =
+        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 11 {
+            Style::default().fg(Color::DarkGray)
+        } else {
+            field_style(spawn_state.active_field == 11)
+        };
+    let clone_dest_widget = Paragraph::new(clone_dest_display)
+        .style(clone_dest_style)
+        .block(
+            Block::default()
+                .title(" Clone Destination (where to clone the repo) ")
+                .borders(Borders::ALL)
+                .border_style(border_style(spawn_state.active_field == 11)),
+        );
+
     // Validation error display
     let error_widget = if let Some(ref error) = spawn_state.validation_error {
         Paragraph::new(format!("⚠ {}", error))
@@ -1338,8 +1410,13 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     f.render_widget(stop_widget, loop_options_chunks[1]);
     f.render_widget(sprite_widget, chunks[6]);
     f.render_widget(network_widget, chunks[7]);
-    f.render_widget(error_widget, chunks[8]);
-    f.render_widget(instructions, chunks[9]);
+    f.render_widget(ram_widget, resources_chunks[0]);
+    f.render_widget(cpus_widget, resources_chunks[1]);
+    if show_clone_dest {
+        f.render_widget(clone_dest_widget, chunks[9]);
+    }
+    f.render_widget(error_widget, chunks[10]);
+    f.render_widget(instructions, chunks[11]);
 }
 
 // Helper functions
