@@ -18,7 +18,7 @@ cargo run -- init
 
 ## Prerequisites
 
-- **Rust 1.85+** (stable)
+- **Rust (stable)** (stable)
 - **tmux** (for local agent spawning and testing)
 - **Git**
 
