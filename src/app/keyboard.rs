@@ -30,9 +30,20 @@ impl App {
     /// Handle keyboard input in Normal mode
     fn handle_key_normal(&mut self, key: crossterm::event::KeyEvent) {
         match key.code {
-            // Quit
-            KeyCode::Char('q') | KeyCode::Esc => {
+            // Quit (but Esc first closes overlays like help)
+            KeyCode::Char('q') => {
                 self.should_quit = true;
+            }
+            KeyCode::Esc => {
+                if self.show_help {
+                    self.show_help = false;
+                } else if self.show_dashboard {
+                    self.show_dashboard = false;
+                } else if self.show_diff {
+                    self.show_diff = false;
+                } else {
+                    self.should_quit = true;
+                }
             }
             // Column navigation (horizontal)
             KeyCode::Char('h') | KeyCode::Left => {
