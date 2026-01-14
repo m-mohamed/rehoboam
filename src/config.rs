@@ -90,11 +90,11 @@ fn default_reconcile_enabled() -> bool {
 }
 
 fn default_reconcile_interval() -> u64 {
-    5
+    3 // Check every 3 seconds for responsiveness
 }
 
 fn default_uncertain_threshold() -> i64 {
-    30
+    5 // Agent is uncertain after 5 seconds of no events (was 30s, too slow)
 }
 
 /// Sprites-specific configuration

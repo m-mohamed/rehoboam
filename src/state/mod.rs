@@ -72,7 +72,7 @@ impl Default for AppState {
 }
 
 /// Map status to column index
-fn status_to_column(status: &Status) -> usize {
+pub fn status_to_column(status: &Status) -> usize {
     match status {
         Status::Attention(_) => 0,
         Status::Working => 1,

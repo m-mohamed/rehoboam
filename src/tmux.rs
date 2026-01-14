@@ -106,9 +106,17 @@ impl TmuxController {
     /// * `pane_id` - Tmux pane identifier
     /// * `content` - Multi-line text to send
     pub fn send_buffered(pane_id: &str, content: &str) -> Result<()> {
-        // Load content into tmux buffer via stdin
+        // Use a unique named buffer to prevent race conditions with concurrent calls
+        // Format: rehoboam-<pid>-<pane_id> to ensure uniqueness per process and pane
+        let buffer_name = format!(
+            "rehoboam-{}-{}",
+            std::process::id(),
+            pane_id.replace('%', "")
+        );
+
+        // Load content into named tmux buffer via stdin
         let mut child = Command::new("tmux")
-            .args(["load-buffer", "-"])
+            .args(["load-buffer", "-b", &buffer_name, "-"])
             .stdin(Stdio::piped())
             .spawn()
             .wrap_err("Failed to spawn tmux load-buffer")?;
@@ -126,9 +134,9 @@ impl TmuxController {
             bail!("tmux load-buffer failed");
         }
 
-        // Paste buffer to target pane
+        // Paste named buffer to target pane, -d deletes buffer after paste
         let status = Command::new("tmux")
-            .args(["paste-buffer", "-t", pane_id])
+            .args(["paste-buffer", "-t", pane_id, "-b", &buffer_name, "-d"])
             .status()
             .wrap_err("Failed to execute tmux paste-buffer")?;
 
@@ -177,7 +185,14 @@ impl TmuxController {
             );
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        // Try proper UTF-8 conversion, fall back to lossy with warning
+        match String::from_utf8(output.stdout.clone()) {
+            Ok(s) => Ok(s),
+            Err(_) => {
+                tracing::warn!(pane_id = %pane_id, "Non-UTF-8 output from pane, using lossy conversion");
+                Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+            }
+        }
     }
 
     /// Check if a tmux pane exists and is alive
@@ -234,7 +249,14 @@ impl TmuxController {
             );
         }
 
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        // Try proper UTF-8 conversion, fall back to lossy with warning
+        match String::from_utf8(output.stdout.clone()) {
+            Ok(s) => Ok(s),
+            Err(_) => {
+                tracing::warn!(pane_id = %pane_id, "Non-UTF-8 output from pane tail, using lossy conversion");
+                Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+            }
+        }
     }
 
     /// Pattern match captured pane output for permission/input prompts
@@ -275,6 +297,8 @@ impl TmuxController {
             "(y/n)",
             "[Y/N]",
             "(Y/N)",
+            "(yes/no)",
+            "[yes/no]",
             "Allow this",
             "allow this",
             "Allow once",
@@ -283,6 +307,8 @@ impl TmuxController {
             "Approve",
             "Do you want to",
             "Deny",
+            "Press y to",
+            "Press n to",
         ];
 
         // Check for permission prompt
@@ -368,8 +394,10 @@ impl TmuxController {
     /// # Returns
     /// The pane ID of the newly created pane
     pub fn respawn_claude(cwd: &str, prompt_file: &str) -> Result<String> {
-        // Create a new pane with claude command, piping prompt file to stdin
-        let cmd = format!("cat '{}' | claude", prompt_file);
+        // Escape the prompt file path for safe shell usage
+        // Replace single quotes with '\'' (end quote, escaped quote, start quote)
+        let escaped_path = prompt_file.replace('\'', "'\\''");
+        let cmd = format!("cat '{}' | claude", escaped_path);
 
         let output = Command::new("tmux")
             .args([

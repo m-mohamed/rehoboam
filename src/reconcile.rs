@@ -5,21 +5,15 @@
 //! 2. Detecting dead/crashed panes
 //! 3. Repairing orphaned state fields that block timeout transitions
 //!
-//! Runs every RECONCILE_INTERVAL_SECS (5s) and only checks agents
-//! in "uncertain states" (Working with no events for > UNCERTAIN_THRESHOLD_SECS).
+//! Runs every `interval_secs` (default 3s) and only checks agents
+//! in "uncertain states" (Working with no events for > `uncertain_threshold_secs`).
 
 use std::time::Instant;
 
-use crate::config::MAX_EVENTS;
+use crate::config::{ReconciliationConfig, MAX_EVENTS};
 use crate::event::{EventSource, HookEvent};
-use crate::state::{AppState, AttentionType, Status};
+use crate::state::{status_to_column, AppState, AttentionType, Status};
 use crate::tmux::{PromptType, TmuxController};
-
-/// Seconds between reconciliation runs
-pub const RECONCILE_INTERVAL_SECS: u64 = 5;
-
-/// Agent is "uncertain" if no events for this many seconds while Working
-pub const UNCERTAIN_THRESHOLD_SECS: i64 = 30;
 
 /// Clear orphaned current_tool after this many seconds
 pub const ORPHANED_TOOL_TIMEOUT_SECS: i64 = 120;
@@ -36,6 +30,10 @@ pub struct Reconciler {
     last_run: Instant,
     /// Whether reconciliation is enabled
     enabled: bool,
+    /// Seconds between reconciliation runs
+    interval_secs: u64,
+    /// Agent is "uncertain" if no events for this many seconds
+    uncertain_threshold_secs: i64,
 }
 
 impl Default for Reconciler {
@@ -43,22 +41,26 @@ impl Default for Reconciler {
         Self {
             last_run: Instant::now(),
             enabled: true,
+            interval_secs: 3,
+            uncertain_threshold_secs: 5,
         }
     }
 }
 
 impl Reconciler {
-    /// Create a new reconciler
-    pub fn new(enabled: bool) -> Self {
+    /// Create a new reconciler from config
+    pub fn new(config: &ReconciliationConfig) -> Self {
         Self {
             last_run: Instant::now(),
-            enabled,
+            enabled: config.enabled,
+            interval_secs: config.interval_secs,
+            uncertain_threshold_secs: config.uncertain_threshold_secs,
         }
     }
 
     /// Check if reconciliation should run
     pub fn should_run(&self) -> bool {
-        self.enabled && self.last_run.elapsed().as_secs() >= RECONCILE_INTERVAL_SECS
+        self.enabled && self.last_run.elapsed().as_secs() >= self.interval_secs
     }
 
     /// Run reconciliation on all agents
@@ -75,6 +77,7 @@ impl Reconciler {
         let mut modified = false;
 
         // Collect pane_ids to check (can't iterate mutably while modifying)
+        let threshold = self.uncertain_threshold_secs;
         let uncertain_agents: Vec<String> = state
             .agents
             .iter()
@@ -82,7 +85,7 @@ impl Reconciler {
                 // Only check tmux panes (start with %)
                 pane_id.starts_with('%') &&
                 // Only check uncertain agents (Working with stale events)
-                Self::is_uncertain(agent, now)
+                Self::is_uncertain(agent, now, threshold)
             })
             .map(|(id, _)| id.clone())
             .collect();
@@ -102,10 +105,10 @@ impl Reconciler {
     }
 
     /// Check if agent is in an uncertain state
-    fn is_uncertain(agent: &crate::state::Agent, now: i64) -> bool {
+    fn is_uncertain(agent: &crate::state::Agent, now: i64, threshold_secs: i64) -> bool {
         let elapsed = now - agent.last_update;
 
-        matches!(agent.status, Status::Working) && elapsed > UNCERTAIN_THRESHOLD_SECS
+        matches!(agent.status, Status::Working) && elapsed > threshold_secs
     }
 
     /// Reconcile a single agent's state
@@ -303,15 +306,6 @@ fn current_timestamp() -> i64 {
         .unwrap_or(0)
 }
 
-/// Convert status to column index (mirrors state::status_to_column)
-fn status_to_column(status: &Status) -> usize {
-    match status {
-        Status::Attention(_) => 0,
-        Status::Working => 1,
-        Status::Compacting => 2,
-    }
-}
-
 /// Create a synthetic event for reconciler actions (appears in Event Log debug panel)
 fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str) -> HookEvent {
     HookEvent {
@@ -346,22 +340,32 @@ mod tests {
     use super::*;
     use crate::state::Agent;
 
+    const TEST_THRESHOLD: i64 = 5; // 5 second threshold for tests
+
     #[test]
     fn test_is_uncertain_working_stale() {
         let mut agent = Agent::new("%0".to_string(), "test".to_string());
         agent.status = Status::Working;
-        agent.last_update = current_timestamp() - 40; // 40s ago
+        agent.last_update = current_timestamp() - 10; // 10s ago, > threshold
 
-        assert!(Reconciler::is_uncertain(&agent, current_timestamp()));
+        assert!(Reconciler::is_uncertain(
+            &agent,
+            current_timestamp(),
+            TEST_THRESHOLD
+        ));
     }
 
     #[test]
     fn test_is_uncertain_working_fresh() {
         let mut agent = Agent::new("%0".to_string(), "test".to_string());
         agent.status = Status::Working;
-        agent.last_update = current_timestamp() - 10; // 10s ago
+        agent.last_update = current_timestamp() - 2; // 2s ago, < threshold
 
-        assert!(!Reconciler::is_uncertain(&agent, current_timestamp()));
+        assert!(!Reconciler::is_uncertain(
+            &agent,
+            current_timestamp(),
+            TEST_THRESHOLD
+        ));
     }
 
     #[test]
@@ -371,7 +375,11 @@ mod tests {
         agent.last_update = current_timestamp() - 100; // 100s ago
 
         // Attention status should not be uncertain, only Working
-        assert!(!Reconciler::is_uncertain(&agent, current_timestamp()));
+        assert!(!Reconciler::is_uncertain(
+            &agent,
+            current_timestamp(),
+            TEST_THRESHOLD
+        ));
     }
 
     #[test]
@@ -383,7 +391,12 @@ mod tests {
 
     #[test]
     fn test_should_run_disabled() {
-        let reconciler = Reconciler::new(false);
+        let config = ReconciliationConfig {
+            enabled: false,
+            interval_secs: 3,
+            uncertain_threshold_secs: 5,
+        };
+        let reconciler = Reconciler::new(&config);
         // Should never run when disabled
         assert!(!reconciler.should_run());
     }

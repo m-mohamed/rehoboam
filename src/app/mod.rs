@@ -133,7 +133,7 @@ impl App {
             show_dashboard: false,
             search_query: String::new(),
             session_start: std::time::Instant::now(),
-            reconciler: Reconciler::new(reconciliation_config.enabled),
+            reconciler: Reconciler::new(reconciliation_config),
         }
     }
 
