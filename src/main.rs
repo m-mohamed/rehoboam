@@ -44,6 +44,7 @@ mod git;
 mod init;
 mod notify;
 mod ralph;
+mod reconcile;
 mod sprite;
 mod state;
 mod tmux;
@@ -478,11 +479,12 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Load configuration from file (used for feature flags logging)
-    let _config = config::RehoboamConfig::load();
+    // Load configuration from file
+    let config = config::RehoboamConfig::load();
     tracing::info!(
-        "Loaded config: sprites.enabled = {}",
-        _config.sprites.enabled
+        "Loaded config: sprites.enabled = {}, reconciliation.enabled = {}",
+        config.sprites.enabled,
+        config.reconciliation.enabled
     );
 
     // Create SpritesClient if token is provided
@@ -499,6 +501,7 @@ async fn main() -> Result<()> {
         cli.tick_rate,
         cli.frame_rate,
         sprites_client,
+        &config,
     )
     .await;
 
@@ -528,6 +531,7 @@ async fn run_tui(
     tick_rate: f64,
     frame_rate: f64,
     sprites_client: Option<sprites::SpritesClient>,
+    config: &config::RehoboamConfig,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio_util::sync::CancellationToken;
@@ -548,8 +552,13 @@ async fn run_tui(
     // RAII guard ensures terminal is restored on panic or early return
     let _guard = tui::TerminalGuard;
 
-    // Create app state with sprites client and event channel
-    let mut app = App::new(debug_mode, sprites_client, Some(event_tx.clone()));
+    // Create app state with sprites client, event channel, and reconciliation config
+    let mut app = App::new(
+        debug_mode,
+        sprites_client,
+        Some(event_tx.clone()),
+        &config.reconciliation,
+    );
 
     // Create cancellation token for graceful shutdown
     let cancel = CancellationToken::new();

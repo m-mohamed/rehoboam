@@ -11,7 +11,9 @@ pub mod spawn;
 
 pub use spawn::SpawnState;
 
+use crate::config::ReconciliationConfig;
 use crate::event::{Event, EventSource, SpriteStatusType};
+use crate::reconcile::Reconciler;
 use crate::sprite::CheckpointRecord;
 use crate::state::AppState;
 use sprites::SpritesClient;
@@ -93,6 +95,8 @@ pub struct App {
     pub search_query: String,
     /// Session start time for dashboard
     pub session_start: std::time::Instant,
+    /// Tmux reconciler for detecting stuck agents
+    reconciler: Reconciler,
 }
 
 impl App {
@@ -100,6 +104,7 @@ impl App {
         debug_mode: bool,
         sprites_client: Option<SpritesClient>,
         event_tx: Option<mpsc::Sender<Event>>,
+        reconciliation_config: &ReconciliationConfig,
     ) -> Self {
         Self {
             state: AppState::new(),
@@ -128,6 +133,7 @@ impl App {
             show_dashboard: false,
             search_query: String::new(),
             session_start: std::time::Instant::now(),
+            reconciler: Reconciler::new(reconciliation_config),
         }
     }
 
@@ -200,6 +206,13 @@ impl App {
     pub fn tick(&mut self) {
         // Process timeout-based state transitions
         self.state.tick();
+
+        // Run tmux reconciliation (throttled to every 5s internally)
+        // Detects stuck agents by checking pane output for permission prompts
+        if self.reconciler.should_run() {
+            let modified = self.reconciler.run(&mut self.state);
+            self.needs_render = self.needs_render || modified;
+        }
 
         // Capture pane output periodically in split view
         if self.view_mode == ViewMode::Split {

@@ -21,6 +21,10 @@ pub struct RehoboamConfig {
     /// Timeout configuration
     #[serde(default)]
     pub timeouts: TimeoutConfig,
+
+    /// Reconciliation configuration
+    #[serde(default)]
+    pub reconciliation: ReconciliationConfig,
 }
 
 /// Timeout configuration for state transitions
@@ -50,6 +54,47 @@ fn default_idle_timeout() -> i64 {
 
 fn default_stale_timeout() -> i64 {
     300
+}
+
+/// Configuration for tmux-based reconciliation
+///
+/// Reconciliation supplements unreliable Claude Code hooks by polling
+/// tmux panes to detect permission prompts and repair stuck states.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReconciliationConfig {
+    /// Enable tmux reconciliation (default: true)
+    #[serde(default = "default_reconcile_enabled")]
+    pub enabled: bool,
+
+    /// Seconds between reconciliation runs (default: 5)
+    #[serde(default = "default_reconcile_interval")]
+    pub interval_secs: u64,
+
+    /// Agent is "uncertain" if no events for this many seconds (default: 30)
+    #[serde(default = "default_uncertain_threshold")]
+    pub uncertain_threshold_secs: i64,
+}
+
+impl Default for ReconciliationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_reconcile_enabled(),
+            interval_secs: default_reconcile_interval(),
+            uncertain_threshold_secs: default_uncertain_threshold(),
+        }
+    }
+}
+
+fn default_reconcile_enabled() -> bool {
+    true
+}
+
+fn default_reconcile_interval() -> u64 {
+    3 // Check every 3 seconds for responsiveness
+}
+
+fn default_uncertain_threshold() -> i64 {
+    5 // Agent is uncertain after 5 seconds of no events (was 30s, too slow)
 }
 
 /// Sprites-specific configuration
