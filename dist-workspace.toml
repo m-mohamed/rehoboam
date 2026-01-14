@@ -8,16 +8,14 @@ cargo-dist-version = "0.30.3"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = ["shell", "homebrew"]
-# Whether to publish prereleases to package managers
-publish-prereleases = false
-# Publish to homebrew tap
-tap = "m-mohamed/homebrew-rehoboam"
+installers = ["shell"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu"]
-# Include shell completions
+# Extra static files to include in each App (path relative to this Cargo.toml's dir)
 include = ["completions/rehoboam.bash", "completions/_rehoboam", "completions/rehoboam.fish"]
-# Publish jobs to run
-publish-jobs = ["homebrew"]
 # Allow CI file customizations (we check if release exists before creating)
 allow-dirty = ["ci"]
+# Path that installers should place binaries in
+install-path = "CARGO_HOME"
+# Whether to install an updater program
+install-updater = false
