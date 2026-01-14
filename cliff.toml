@@ -1,10 +1,6 @@
 # git-cliff configuration
 # https://git-cliff.org/docs/configuration
 
-[remote.github]
-owner = "m-mohamed"
-repo = "rehoboam"
-
 [changelog]
 # Changelog header
 header = """
@@ -36,12 +32,12 @@ footer = """
 {% for release in releases -%}
 {% if release.version -%}
 {% if release.previous.version -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/compare/{{ release.previous.version }}...{{ release.version }}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/m-mohamed/rehoboam/compare/{{ release.previous.version }}...{{ release.version }}
 {% else -%}
-[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/releases/tag/{{ release.version }}
+[{{ release.version | trim_start_matches(pat="v") }}]: https://github.com/m-mohamed/rehoboam/releases/tag/{{ release.version }}
 {% endif -%}
 {% else -%}
-[Unreleased]: https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/compare/{{ release.previous.version }}...HEAD
+[Unreleased]: https://github.com/m-mohamed/rehoboam/compare/{{ release.previous.version }}...HEAD
 {% endif -%}
 {% endfor %}
 """
