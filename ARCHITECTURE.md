@@ -15,20 +15,43 @@ src/
 ├── main.rs           Entry point, CLI parsing, hook command, TUI event loop
 ├── cli.rs            Clap argument definitions
 ├── config.rs         Constants (timeouts, limits, colors)
-├── app.rs            Application state wrapper, keyboard handling
+├── tui.rs            Terminal setup/restore (ratatui)
 ├── init.rs           Hook installation to .claude/settings.json
 ├── notify.rs         Desktop notification support (-N flag)
+│
+├── app/              Application state machine (refactored from app.rs)
+│   ├── mod.rs        App struct, handle_event(), tick(), view modes
+│   ├── keyboard.rs   Key bindings (vim-style h/j/k/l navigation)
+│   ├── spawn.rs      Agent spawning (tmux panes, sprites)
+│   ├── operations.rs Git operations (commit, push, diff view)
+│   ├── agent_control.rs  Approve/reject/kill actions (single + bulk)
+│   └── navigation.rs Jump to pane, search, capture output
+│
+├── state/
+│   ├── mod.rs        AppState, process_event(), agents_by_column()
+│   └── agent.rs      Agent struct, Status enum, LoopMode
+│
 ├── event/
 │   ├── mod.rs        HookEvent struct, ClaudeHookInput parsing, derive_status()
 │   ├── socket.rs     Unix socket listener (tokio), connection handling
 │   └── input.rs      Keyboard event stream
-├── state/
-│   ├── mod.rs        AppState, process_event(), agents_by_column()
-│   └── agent.rs      Agent struct, Status enum, tool latency tracking
-└── ui/
-    ├── mod.rs        Main render function, layout
-    ├── column.rs     Status column rendering
-    └── card.rs       Agent card rendering
+│
+├── ui/
+│   ├── mod.rs        Main render function, layout
+│   ├── columns.rs    Kanban column layout
+│   ├── cards.rs      Agent card rendering
+│   └── ...           Split view, overlay, footer components
+│
+├── tmux.rs           Tmux pane control (send keys, capture output)
+├── git.rs            Git operations (checkpoint, push, diff)
+├── ralph.rs          Loop mode logic (Ralph autonomous iterations)
+│
+└── sprite/           Remote agent support (experimental)
+    ├── mod.rs        Module exports
+    ├── config.rs     Network presets
+    ├── controller.rs Sprite input controller
+    ├── forwarder.rs  WebSocket event forwarder
+    └── manager.rs    Checkpoint records
 ```
 
 ## Data Flow
@@ -95,8 +118,35 @@ The `derive_status()` function maps hook events to TUI status:
 - **UI is read-only**: Never writes to socket or modifies external state
 - **State is single source of truth**: All rendering reads from AppState
 - **Events processed in order**: mpsc channel preserves FIFO ordering
-- **Bounded memory**: Max 500 agents (LRU eviction), 60 sparkline points, 50 event log entries
+- **Bounded memory**: Max 50 agents (LRU eviction), 60 sparkline points, 50 event log entries
 - **Non-blocking hooks**: 500ms timeout ensures Claude Code never waits
+- **Agent identity**: Agents keyed by pane_id (tmux: `%N`, sprite: `sp_xxx`)
+
+## Loop Mode (Ralph)
+
+Ralph enables autonomous agent loops for long-running tasks:
+
+```
+Agent spawned with loop mode
+        │
+        ▼
+Claude Code runs → Stop event
+        │
+        ▼
+AppState checks stop conditions:
+  - Stop word found in reason? → Complete
+  - Max iterations reached? → Complete
+  - 5 identical Stop reasons? → Stalled
+  - Otherwise → Send Enter to continue
+        │
+        ▼
+Agent resumes, iteration counter increments
+```
+
+Key files:
+- `ralph.rs` - Iteration tracking, state persistence, stop word detection
+- `state/agent.rs` - `LoopMode` enum (None, Active, Stalled, Complete)
+- `app/spawn.rs` - Loop config registration on spawn
 
 ## Design Decisions
 

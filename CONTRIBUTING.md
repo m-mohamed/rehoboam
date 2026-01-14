@@ -2,6 +2,10 @@
 
 Thanks for your interest in contributing! This document outlines the process and standards for contributing to Rehoboam.
 
+**Quick links:**
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Codebase map and design decisions
+- [DEVELOPMENT.md](DEVELOPMENT.md) - Local development setup
+
 ## Prerequisites
 
 - Rust 1.70+ (stable)
@@ -24,6 +28,35 @@ cargo test
 # Run with debug logging
 cargo run -- --debug
 ```
+
+## Developing with Claude Code
+
+Rehoboam is built by Claude Code users, for Claude Code users. We encourage using Claude Code to contribute.
+
+### The Feedback Loop
+
+When developing Rehoboam with Claude Code, you can watch yourself work in real-time:
+
+1. **Terminal 1** - Run Rehoboam:
+   ```bash
+   cargo run -- --debug
+   ```
+
+2. **Terminal 2** - Start Claude Code:
+   ```bash
+   claude
+   ```
+
+3. Your agent appears in the dashboard as you develop
+4. Test approve/reject (`y`/`n`), spawn (`s`), and other features live
+
+### Claude Code Hooks
+
+Rehoboam receives events via hooks. After `rehoboam init`:
+- Your `.claude/settings.json` has hooks configured
+- Every Claude Code action sends events to Rehoboam
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the full development workflow.
 
 ## Code Quality Standards
 
@@ -191,16 +224,24 @@ We follow [Semantic Versioning](https://semver.org/):
 
 ### Release Process
 
+Releases are fully automated via [cargo-dist](https://opensource.axo.dev/cargo-dist/). Push a tag and everything deploys.
+
 1. **Update version** in `Cargo.toml`
 2. **Update CHANGELOG.md** with release notes
-3. **Create a PR** with version bump
-4. **Merge to main** after review
-5. **Tag the release**:
+3. **Commit and tag**:
    ```bash
+   git commit -m "chore: bump to v0.x.y"
    git tag v0.x.y
-   git push origin v0.x.y
+   git push && git push --tags
    ```
-6. **CI publishes** binaries via cargo-dist
+
+CI automatically:
+- Builds binaries for 4 platforms (macOS Intel/ARM, Linux Intel/ARM)
+- Creates GitHub Release with downloadable binaries
+- Updates Homebrew tap (`brew upgrade rehoboam`)
+- Generates shell installer script
+
+No manual steps required after tagging.
 
 ### Changelog Format
 
