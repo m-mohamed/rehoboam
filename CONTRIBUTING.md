@@ -6,6 +6,12 @@ Thanks for your interest in contributing! This document outlines the process and
 - [ARCHITECTURE.md](ARCHITECTURE.md) - Codebase map and design decisions
 - [DEVELOPMENT.md](DEVELOPMENT.md) - Local development setup
 
+**Standards we follow:**
+- [Conventional Commits](https://www.conventionalcommits.org/) - Commit message format
+- [Semantic Versioning](https://semver.org/) - Version numbering
+- [Keep a Changelog](https://keepachangelog.com/) - Changelog format
+- [CLIG](https://clig.dev/) - CLI design guidelines
+
 ## Prerequisites
 
 - Rust 1.70+ (stable)
