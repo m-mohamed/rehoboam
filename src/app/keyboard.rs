@@ -101,7 +101,10 @@ impl App {
             // Toggle subagent tree panel
             KeyCode::Char('T') => {
                 self.show_subagents = !self.show_subagents;
-                tracing::debug!(show_subagents = self.show_subagents, "Toggled subagent panel");
+                tracing::debug!(
+                    show_subagents = self.show_subagents,
+                    "Toggled subagent panel"
+                );
             }
 
             // Scroll output (in split view)
@@ -134,7 +137,11 @@ impl App {
                 tracing::info!(
                     auto_accept = self.auto_accept,
                     "Auto-accept mode {}",
-                    if self.auto_accept { "enabled" } else { "disabled" }
+                    if self.auto_accept {
+                        "enabled"
+                    } else {
+                        "disabled"
+                    }
                 );
             }
 
@@ -233,10 +240,9 @@ impl App {
                     (self.spawn_state.active_field + 1) % spawn::SPAWN_FIELD_COUNT;
             }
             KeyCode::BackTab | KeyCode::Up => {
-                self.spawn_state.active_field = (self.spawn_state.active_field
-                    + spawn::SPAWN_FIELD_COUNT
-                    - 1)
-                    % spawn::SPAWN_FIELD_COUNT;
+                self.spawn_state.active_field =
+                    (self.spawn_state.active_field + spawn::SPAWN_FIELD_COUNT - 1)
+                        % spawn::SPAWN_FIELD_COUNT;
             }
             KeyCode::Enter => {
                 // Toggle fields (3 = worktree, 4 = loop mode, 7 = sprite)
@@ -244,25 +250,23 @@ impl App {
                     3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                     4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
                     7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
-                    _ => {
-                        match spawn::validate_spawn(&self.spawn_state) {
-                            Ok(()) => {
-                                self.spawn_state.validation_error = None;
-                                if let Some(err) = spawn::spawn_agent(
-                                    &self.spawn_state,
-                                    self.sprites_client.as_ref(),
-                                    &mut self.state,
-                                ) {
-                                    self.show_status(&err);
-                                }
-                                self.input_mode = InputMode::Normal;
-                                self.spawn_state = spawn::SpawnState::default();
+                    _ => match spawn::validate_spawn(&self.spawn_state) {
+                        Ok(()) => {
+                            self.spawn_state.validation_error = None;
+                            if let Some(err) = spawn::spawn_agent(
+                                &self.spawn_state,
+                                self.sprites_client.as_ref(),
+                                &mut self.state,
+                            ) {
+                                self.show_status(&err);
                             }
-                            Err(msg) => {
-                                self.spawn_state.validation_error = Some(msg);
-                            }
+                            self.input_mode = InputMode::Normal;
+                            self.spawn_state = spawn::SpawnState::default();
                         }
-                    }
+                        Err(msg) => {
+                            self.spawn_state.validation_error = Some(msg);
+                        }
+                    },
                 }
             }
             KeyCode::Char(' ') => match self.spawn_state.active_field {

@@ -146,7 +146,11 @@ pub fn bulk_send_signal(
     // Handle sprite agents
     if !sprite_agents.is_empty() {
         if let Some(client) = sprites_client {
-            tracing::info!(count = sprite_agents.len(), "Bulk {} sprite agents", action_name);
+            tracing::info!(
+                count = sprite_agents.len(),
+                "Bulk {} sprite agents",
+                action_name
+            );
             for sprite_id in sprite_agents {
                 send_sprite_signal(Some(client), &sprite_id, tmux_signal, action_name);
             }

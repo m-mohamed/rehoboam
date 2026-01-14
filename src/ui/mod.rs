@@ -472,10 +472,7 @@ fn render_subagent_tree(f: &mut Frame, area: Rect, app: &App) {
                 lines.push(Line::from(vec![
                     Span::styled("│  ", Style::default().fg(colors::BORDER)),
                     Span::styled(
-                        truncate(
-                            &subagent.description,
-                            area.width.saturating_sub(6) as usize,
-                        ),
+                        truncate(&subagent.description, area.width.saturating_sub(6) as usize),
                         Style::default().fg(colors::IDLE),
                     ),
                 ]));
@@ -621,9 +618,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     // Context-aware help based on selection state
     let help = if selection_count > 0 {
         // Multi-select mode
-        format!(
-            "[{selection_count} selected]  Y/N:bulk approve  K:kill all  x:clear  Space:toggle"
-        )
+        format!("[{selection_count} selected]  Y/N:bulk approve  K:kill all  x:clear  Space:toggle")
     } else if let Some(agent) = app.state.selected_agent() {
         // Single agent selected - show relevant commands
         use crate::state::LoopMode;
@@ -829,9 +824,7 @@ fn render_dashboard(f: &mut Frame, app: &App) {
             session_str, total, local_count, sprite_count
         ),
         String::new(),
-        format!(
-            "  ┌─ Status ──────────────┐  ┌─ Loop Progress ─────────────┐"
-        ),
+        format!("  ┌─ Status ──────────────┐  ┌─ Loop Progress ─────────────┐"),
         format!(
             "  │ 🔔 Attention:   {:>3}   │  │ Total iterations:   {:>5}   │",
             attention, total_iterations
@@ -1156,14 +1149,12 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         field_style(spawn_state.active_field == 0)
     };
-    let project_widget = Paragraph::new(display_text)
-        .style(text_style)
-        .block(
-            Block::default()
-                .title(field_title)
-                .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 0)),
-        );
+    let project_widget = Paragraph::new(display_text).style(text_style).block(
+        Block::default()
+            .title(field_title)
+            .borders(Borders::ALL)
+            .border_style(border_style(spawn_state.active_field == 0)),
+    );
 
     // Prompt field (1)
     let prompt_cursor = if spawn_state.active_field == 1 {
@@ -1182,14 +1173,12 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         field_style(spawn_state.active_field == 1)
     };
-    let prompt_widget = Paragraph::new(prompt_display)
-        .style(prompt_style)
-        .block(
-            Block::default()
-                .title(" Prompt (optional) ")
-                .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 1)),
-        );
+    let prompt_widget = Paragraph::new(prompt_display).style(prompt_style).block(
+        Block::default()
+            .title(" Prompt (optional) ")
+            .borders(Borders::ALL)
+            .border_style(border_style(spawn_state.active_field == 1)),
+    );
 
     // Branch name field (2)
     let branch_cursor = if spawn_state.active_field == 2 {
@@ -1319,11 +1308,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     // Validation error display
     let error_widget = if let Some(ref error) = spawn_state.validation_error {
         Paragraph::new(format!("⚠ {}", error))
-            .style(
-                Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
             .alignment(Alignment::Center)
     } else {
         Paragraph::new("")
@@ -1336,7 +1321,11 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         "[Tab] Navigate  [Space] Toggle  [Enter] Spawn  [Esc] Cancel"
     };
     let instructions = Paragraph::new(instructions_text)
-        .style(Style::default().fg(colors::IDLE).add_modifier(Modifier::DIM))
+        .style(
+            Style::default()
+                .fg(colors::IDLE)
+                .add_modifier(Modifier::DIM),
+        )
         .alignment(Alignment::Center);
 
     // Main dialog block

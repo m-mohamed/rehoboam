@@ -190,7 +190,6 @@ impl RehoboamConfig {
             }
         }
     }
-
 }
 
 /// Tokyo Night color palette

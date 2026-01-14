@@ -375,7 +375,12 @@ impl AppState {
                             );
                         }
                     }
-                    let _ = ralph::log_session_transition(ralph_dir, "working", "stalled", Some(reason_str));
+                    let _ = ralph::log_session_transition(
+                        ralph_dir,
+                        "working",
+                        "stalled",
+                        Some(reason_str),
+                    );
                 }
 
                 tracing::warn!(
@@ -424,7 +429,12 @@ impl AppState {
                                 // Track error pattern for potential auto-guardrail
                                 let error_msg = format!("Spawn failed: {}", e);
                                 let _ = ralph::track_error_pattern(&ralph_dir, &error_msg);
-                                let _ = ralph::log_session_transition(&ralph_dir, "respawning", "error", Some(&error_msg));
+                                let _ = ralph::log_session_transition(
+                                    &ralph_dir,
+                                    "respawning",
+                                    "error",
+                                    Some(&error_msg),
+                                );
 
                                 tracing::error!(
                                     pane_id = %pane_id,
@@ -856,7 +866,8 @@ fn spawn_fresh_ralph_session(
     use color_eyre::eyre::WrapErr;
 
     // Log session transition: iteration ending
-    let _ = ralph::log_session_transition(ralph_dir, "working", "stopping", Some("iteration ending"));
+    let _ =
+        ralph::log_session_transition(ralph_dir, "working", "stopping", Some("iteration ending"));
 
     // Get iteration duration before incrementing
     let duration = ralph::get_iteration_duration(ralph_dir);
@@ -883,7 +894,12 @@ fn spawn_fresh_ralph_session(
 
         // Create final git checkpoint
         let _ = ralph::create_git_checkpoint(ralph_dir);
-        let _ = ralph::log_session_transition(ralph_dir, "stopping", "complete", Some(&completion_reason));
+        let _ = ralph::log_session_transition(
+            ralph_dir,
+            "stopping",
+            "complete",
+            Some(&completion_reason),
+        );
 
         agent.loop_mode = LoopMode::Complete;
         tracing::info!(
@@ -894,7 +910,10 @@ fn spawn_fresh_ralph_session(
         );
         notify::send(
             "Ralph Complete",
-            &format!("{}: {} iterations ({})", agent.project, new_iteration, completion_reason),
+            &format!(
+                "{}: {} iterations ({})",
+                agent.project, new_iteration, completion_reason
+            ),
             Some("Glass"),
         );
         return Ok(pane_id.to_string());
@@ -941,7 +960,12 @@ fn spawn_fresh_ralph_session(
         .unwrap_or_else(|| ".".to_string());
 
     // Log session transition: respawning
-    let _ = ralph::log_session_transition(ralph_dir, "stopping", "respawning", Some(&format!("iteration {}", new_iteration + 1)));
+    let _ = ralph::log_session_transition(
+        ralph_dir,
+        "stopping",
+        "respawning",
+        Some(&format!("iteration {}", new_iteration + 1)),
+    );
 
     // 7. Send Ctrl+C to ensure clean shutdown, then kill pane
     let _ = TmuxController::send_interrupt(pane_id);

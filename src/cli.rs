@@ -119,4 +119,3 @@ pub fn print_completions(shell: Shell) {
     let mut cmd = Cli::command();
     generate(shell, &mut cmd, "rehoboam", &mut io::stdout());
 }
-

@@ -333,7 +333,9 @@ fn add_guardrail(ralph_dir: &Path, sign: &str, trigger: &str, instruction: &str)
 /// Returns the commit hash if successful.
 pub fn create_git_checkpoint(ralph_dir: &Path) -> Result<Option<String>> {
     let state = load_state(ralph_dir)?;
-    let project_dir = ralph_dir.parent().ok_or_else(|| eyre!("Invalid ralph dir"))?;
+    let project_dir = ralph_dir
+        .parent()
+        .ok_or_else(|| eyre!("Invalid ralph dir"))?;
 
     // Check if we're in a git repo
     let git_dir = project_dir.join(".git");
@@ -598,9 +600,7 @@ pub fn log_session_transition(
     // Trim to max entries (keep last N lines)
     let lines: Vec<&str> = content.lines().collect();
     if lines.len() >= MAX_SESSION_HISTORY {
-        content = lines[lines.len() - MAX_SESSION_HISTORY + 1..]
-            .join("\n")
-            + "\n";
+        content = lines[lines.len() - MAX_SESSION_HISTORY + 1..].join("\n") + "\n";
     }
 
     content.push_str(&entry);
@@ -758,11 +758,7 @@ mod tests {
         assert_eq!(reason, "stop_word");
 
         // Promise tag also triggers completion (takes precedence)
-        fs::write(
-            ralph_dir.join("progress.md"),
-            "<promise>COMPLETE</promise>",
-        )
-        .unwrap();
+        fs::write(ralph_dir.join("progress.md"), "<promise>COMPLETE</promise>").unwrap();
         let (complete, reason) = check_completion(&ralph_dir, "DONE").unwrap();
         assert!(complete);
         assert_eq!(reason, "promise_tag");
