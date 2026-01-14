@@ -176,25 +176,35 @@ impl AppState {
 
         // Priority-aware status update: don't let background Working override blocking Attention
         let new_status = Status::from_str(&event.status, event.attention_type.as_deref());
-        let should_update = match (&agent.status, &new_status) {
-            // Current status is blocking Attention (Permission or Input)
-            (
-                Status::Attention(AttentionType::Permission | AttentionType::Input),
-                Status::Working,
-            ) => {
-                // Allow transitions that indicate user approved/responded:
-                // - PostToolUse: Tool finished (permission was approved)
-                // - UserPromptSubmit: User sent a message
-                // Block background noise: SubagentStart, SubagentStop, PreToolUse
-                matches!(event.event.as_str(), "PostToolUse" | "UserPromptSubmit")
+
+        // Subagent lifecycle events should NOT change parent status
+        // They report the subagent's state, not the parent's state
+        let skip_status_for_subagent =
+            matches!(event.event.as_str(), "SubagentStart" | "SubagentStop");
+
+        let should_update = if skip_status_for_subagent {
+            false
+        } else {
+            match (&agent.status, &new_status) {
+                // Current status is blocking Attention (Permission or Input)
+                (
+                    Status::Attention(AttentionType::Permission | AttentionType::Input),
+                    Status::Working,
+                ) => {
+                    // Allow transitions that indicate user approved/responded:
+                    // - PostToolUse: Tool finished (permission was approved)
+                    // - UserPromptSubmit: User sent a message
+                    // Block background noise: SubagentStart, SubagentStop, PreToolUse
+                    matches!(event.event.as_str(), "PostToolUse" | "UserPromptSubmit")
+                }
+                // Current is Attention, new is also Attention - use priority
+                (Status::Attention(current_attn), Status::Attention(new_attn)) => {
+                    // Only update if new attention has equal or higher priority (lower number)
+                    new_attn.priority() <= current_attn.priority()
+                }
+                // All other cases - allow the update
+                _ => true,
             }
-            // Current is Attention, new is also Attention - use priority
-            (Status::Attention(current_attn), Status::Attention(new_attn)) => {
-                // Only update if new attention has equal or higher priority (lower number)
-                new_attn.priority() <= current_attn.priority()
-            }
-            // All other cases - allow the update
-            _ => true,
         };
 
         if should_update {
@@ -1204,5 +1214,69 @@ mod tests {
         reasons.push_back("same".to_string());
         reasons.push_back("same".to_string());
         assert!(is_stalled(&reasons)); // Last 5 are "same"
+    }
+
+    #[test]
+    fn test_subagent_stop_does_not_override_attention() {
+        let mut state = AppState::new();
+
+        // First create the agent with a working event
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Start AskUserQuestion - should transition to Attention(Input)
+        let mut event = make_event("PreToolUse", "working", "%0", "test");
+        event.tool_name = Some("AskUserQuestion".to_string());
+        let _ = state.process_event(event);
+
+        // Verify in Attention(Input)
+        assert!(
+            matches!(
+                state.agents.get("%0").unwrap().status,
+                Status::Attention(AttentionType::Input)
+            ),
+            "Expected Attention(Input) after AskUserQuestion PreToolUse"
+        );
+
+        // SubagentStop arrives with status "working" - should NOT change status
+        let mut event = make_event("SubagentStop", "working", "%0", "test");
+        event.subagent_id = Some("sub-123".to_string());
+        let _ = state.process_event(event);
+
+        // Should STILL be Attention(Input)
+        assert!(
+            matches!(
+                state.agents.get("%0").unwrap().status,
+                Status::Attention(AttentionType::Input)
+            ),
+            "SubagentStop should not override Attention(Input)"
+        );
+    }
+
+    #[test]
+    fn test_subagent_start_does_not_override_attention() {
+        let mut state = AppState::new();
+
+        // First create the agent with a working event
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Start AskUserQuestion - should transition to Attention(Input)
+        let mut event = make_event("PreToolUse", "working", "%0", "test");
+        event.tool_name = Some("AskUserQuestion".to_string());
+        let _ = state.process_event(event);
+
+        // SubagentStart arrives with status "working" - should NOT change status
+        let mut event = make_event("SubagentStart", "working", "%0", "test");
+        event.subagent_id = Some("sub-456".to_string());
+        event.description = Some("Exploring codebase".to_string());
+        let _ = state.process_event(event);
+
+        // Should STILL be Attention(Input)
+        assert!(
+            matches!(
+                state.agents.get("%0").unwrap().status,
+                Status::Attention(AttentionType::Input)
+            ),
+            "SubagentStart should not override Attention(Input)"
+        );
     }
 }

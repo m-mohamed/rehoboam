@@ -10,6 +10,8 @@
 
 use std::time::Instant;
 
+use crate::config::MAX_EVENTS;
+use crate::event::{EventSource, HookEvent};
 use crate::state::{AppState, AttentionType, Status};
 use crate::tmux::{PromptType, TmuxController};
 
@@ -166,9 +168,11 @@ impl Reconciler {
             return false;
         }
 
+        let project = agent.project.clone();
+
         tracing::info!(
             pane_id = %pane_id,
-            project = %agent.project,
+            project = %project,
             old = ?old_status,
             new = ?new_status,
             "Reconciler: transitioning agent"
@@ -187,6 +191,12 @@ impl Reconciler {
         // Clear orphaned flags
         agent.in_response = false;
         agent.current_tool = None;
+
+        // Add to event log for debug panel visibility
+        push_event(
+            state,
+            synthetic_event(pane_id, event, "attention", &project),
+        );
 
         true
     }
@@ -212,9 +222,12 @@ impl Reconciler {
             return false;
         }
 
+        let project = agent.project.clone();
+        let event_name = format!("Reconciler:{prompt_type:?}");
+
         tracing::info!(
             pane_id = %pane_id,
-            project = %agent.project,
+            project = %project,
             old = ?old_status,
             new = ?new_status,
             prompt = ?prompt_type,
@@ -228,12 +241,18 @@ impl Reconciler {
         state.status_counts[new_col] += 1;
 
         agent.status = new_status;
-        agent.last_event = format!("Reconciler:{prompt_type:?}");
+        agent.last_event = event_name.clone();
         agent.last_update = current_timestamp();
 
         // Clear orphaned flags
         agent.in_response = false;
         agent.current_tool = None;
+
+        // Add to event log for debug panel visibility
+        push_event(
+            state,
+            synthetic_event(pane_id, &event_name, "attention", &project),
+        );
 
         true
     }
@@ -290,6 +309,35 @@ fn status_to_column(status: &Status) -> usize {
         Status::Attention(_) => 0,
         Status::Working => 1,
         Status::Compacting => 2,
+    }
+}
+
+/// Create a synthetic event for reconciler actions (appears in Event Log debug panel)
+fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str) -> HookEvent {
+    HookEvent {
+        event: event_name.to_string(),
+        status: status.to_string(),
+        attention_type: None,
+        pane_id: pane_id.to_string(),
+        project: project.to_string(),
+        timestamp: current_timestamp(),
+        session_id: None,
+        tool_name: None,
+        tool_input: None,
+        tool_use_id: None,
+        reason: None,
+        subagent_id: None,
+        description: None,
+        subagent_duration_ms: None,
+        source: EventSource::Local,
+    }
+}
+
+/// Add event to state's event log (for debug panel visibility)
+fn push_event(state: &mut AppState, event: HookEvent) {
+    state.events.push_front(event);
+    if state.events.len() > MAX_EVENTS {
+        state.events.pop_back();
     }
 }
 
