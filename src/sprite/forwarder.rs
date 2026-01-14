@@ -3,12 +3,6 @@
 //! WebSocket server that receives hook events from remote sprites
 //! and forwards them to the main event loop. Includes connection
 //! status tracking and heartbeat monitoring.
-//!
-//! ## Status
-//! - Event forwarding: ACTIVE (spawn_forwarder)
-//! - Connection status UI: SCAFFOLDED (ConnectionStatus, status methods)
-
-#![allow(dead_code)]
 
 use color_eyre::eyre::{eyre, Result};
 use futures_util::{SinkExt, StreamExt};
@@ -28,8 +22,6 @@ pub enum ConnectionStatus {
     Connected { sprite_id: String, addr: SocketAddr },
     /// Sprite disconnected
     Disconnected { sprite_id: String, reason: String },
-    /// Heartbeat timeout (sprite may be stale)
-    HeartbeatMissed { sprite_id: String },
 }
 
 /// Remote hook event from a sprite
@@ -84,30 +76,15 @@ pub struct HookEventForwarder {
 
 /// Connection state for a sprite
 #[derive(Debug, Clone)]
-pub struct ConnectionInfo {
-    /// Remote address
-    pub addr: SocketAddr,
-
-    /// When connected
-    pub connected_at: std::time::Instant,
-
+struct ConnectionInfo {
     /// Last activity timestamp
-    pub last_seen: std::time::Instant,
+    last_seen: std::time::Instant,
 
     /// Number of events received
-    pub event_count: u64,
+    event_count: u64,
 }
 
 impl HookEventForwarder {
-    /// Create a new forwarder
-    pub fn new(event_tx: mpsc::Sender<RemoteHookEvent>) -> Self {
-        Self {
-            event_tx,
-            status_tx: None,
-            connections: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
     /// Create a new forwarder with status channel
     pub fn with_status_channel(
         event_tx: mpsc::Sender<RemoteHookEvent>,
@@ -118,25 +95,6 @@ impl HookEventForwarder {
             status_tx: Some(status_tx),
             connections: Arc::new(RwLock::new(HashMap::new())),
         }
-    }
-
-    /// Send a status update
-    async fn send_status(&self, status: ConnectionStatus) {
-        if let Some(tx) = &self.status_tx {
-            let _ = tx.send(status).await;
-        }
-    }
-
-    /// Get connection info for all sprites
-    pub async fn connection_info(&self) -> HashMap<String, ConnectionInfo> {
-        let conns = self.connections.read().await;
-        conns.clone()
-    }
-
-    /// Get count of active connections
-    pub async fn connection_count(&self) -> usize {
-        let conns = self.connections.read().await;
-        conns.len()
     }
 
     /// Start listening for WebSocket connections
@@ -203,8 +161,6 @@ impl HookEventForwarder {
                                 conns.insert(
                                     event.sprite_id.clone(),
                                     ConnectionInfo {
-                                        addr,
-                                        connected_at: now,
                                         last_seen: now,
                                         event_count: 1,
                                     },
@@ -310,34 +266,6 @@ impl HookEventForwarder {
 
         Ok(())
     }
-
-    /// Check if a sprite is connected
-    pub async fn is_connected(&self, sprite_id: &str) -> bool {
-        let conns = self.connections.read().await;
-        conns.contains_key(sprite_id)
-    }
-
-    /// Get list of connected sprite IDs
-    pub async fn connected_sprites(&self) -> Vec<String> {
-        let conns = self.connections.read().await;
-        conns.keys().cloned().collect()
-    }
-}
-
-/// Start the hook event forwarder in a background task
-pub fn spawn_forwarder(
-    port: u16,
-) -> (mpsc::Receiver<RemoteHookEvent>, tokio::task::JoinHandle<()>) {
-    let (tx, rx) = mpsc::channel(100);
-    let forwarder = HookEventForwarder::new(tx);
-
-    let handle = tokio::spawn(async move {
-        if let Err(e) = forwarder.listen(port).await {
-            error!("Hook event forwarder error: {}", e);
-        }
-    });
-
-    (rx, handle)
 }
 
 /// Start the hook event forwarder with status channel

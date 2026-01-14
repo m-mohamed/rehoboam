@@ -174,10 +174,7 @@ fn spawn_sprite_agent(spawn_state: &SpawnState, client: &SpritesClient) {
     let project_path = spawn_state.project_path.clone();
     let prompt = spawn_state.prompt.clone();
     let loop_enabled = spawn_state.loop_enabled;
-    let max_iter = spawn_state
-        .loop_max_iterations
-        .parse::<u32>()
-        .unwrap_or(50);
+    let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
     let stop_word = spawn_state.loop_stop_word.clone();
 
     tracing::info!(
@@ -365,10 +362,7 @@ fn spawn_tmux_agent(
 
             // Initialize Ralph loop if loop mode is enabled
             let ralph_dir = if spawn_state.loop_enabled && !prompt.is_empty() {
-                let max_iter = spawn_state
-                    .loop_max_iterations
-                    .parse::<u32>()
-                    .unwrap_or(50);
+                let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
                 let config = RalphConfig {
                     max_iterations: max_iter,
                     stop_word: spawn_state.loop_stop_word.clone(),
@@ -398,10 +392,7 @@ fn spawn_tmux_agent(
 
             // Register loop config if loop mode is enabled
             if spawn_state.loop_enabled {
-                let max_iter = spawn_state
-                    .loop_max_iterations
-                    .parse::<u32>()
-                    .unwrap_or(50);
+                let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
                 state.register_loop_config(
                     &pane_id,
                     max_iter,
@@ -473,10 +464,10 @@ fn start_claude_in_pane(pane_id: &str, prompt: &str, ralph_dir: Option<&PathBuf>
 /// Extract repository name from a GitHub URL or path
 ///
 /// Handles:
-/// - "owner/repo" -> "repo"
-/// - "github.com/owner/repo" -> "repo"
-/// - "https://github.com/owner/repo" -> "repo"
-/// - "https://github.com/owner/repo.git" -> "repo"
+/// - `owner/repo` -> `repo`
+/// - `github.com/owner/repo` -> `repo`
+/// - `https://github.com/owner/repo` -> `repo`
+/// - `https://github.com/owner/repo.git` -> `repo`
 pub fn extract_repo_name(input: &str) -> String {
     // Remove protocol prefix if present
     let path = input
@@ -499,10 +490,10 @@ pub fn extract_repo_name(input: &str) -> String {
 /// Normalize GitHub repo input to a format gh CLI can use
 ///
 /// Handles:
-/// - "owner/repo" -> "owner/repo" (already correct)
-/// - "https://github.com/owner/repo" -> "owner/repo"
-/// - "github.com/owner/repo" -> "owner/repo"
-/// - "git@github.com:owner/repo.git" -> "owner/repo" (SSH format)
+/// - `owner/repo` -> `owner/repo` (already correct)
+/// - `https://github.com/owner/repo` -> `owner/repo`
+/// - `github.com/owner/repo` -> `owner/repo`
+/// - `git@github.com:owner/repo.git` -> `owner/repo` (SSH format)
 pub fn normalize_github_repo(input: &str) -> String {
     input
         .trim()
@@ -564,7 +555,10 @@ mod tests {
     fn test_extract_repo_name() {
         assert_eq!(extract_repo_name("owner/repo"), "repo");
         assert_eq!(extract_repo_name("https://github.com/owner/repo"), "repo");
-        assert_eq!(extract_repo_name("https://github.com/owner/repo.git"), "repo");
+        assert_eq!(
+            extract_repo_name("https://github.com/owner/repo.git"),
+            "repo"
+        );
         assert_eq!(extract_repo_name("git@github.com:owner/repo.git"), "repo");
     }
 }

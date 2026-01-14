@@ -122,7 +122,11 @@ impl AppState {
     /// - Status count caching (v1.1 optimization)
     /// - Agent limit with LRU eviction (v1.1 optimization)
     /// - Sprite agent tracking (v0.10.0)
-    pub fn process_event(&mut self, event: HookEvent) {
+    ///
+    /// # Returns
+    /// Returns `true` if the event caused a state change that requires re-render.
+    #[must_use = "check if state changed to trigger re-render"]
+    pub fn process_event(&mut self, event: HookEvent) -> bool {
         let pane_id = event.pane_id.clone();
         let project = event.project.clone();
         let is_new_agent = !self.agents.contains_key(&pane_id);
@@ -275,7 +279,6 @@ impl AppState {
                         id: subagent_id.clone(),
                         description: description.clone(),
                         status: "running".to_string(),
-                        start_time: event.timestamp,
                         duration_ms: None,
                     });
                     tracing::info!(
@@ -372,7 +375,12 @@ impl AppState {
                             );
                         }
                     }
-                    let _ = ralph::log_session_transition(ralph_dir, "working", "stalled", Some(reason_str));
+                    let _ = ralph::log_session_transition(
+                        ralph_dir,
+                        "working",
+                        "stalled",
+                        Some(reason_str),
+                    );
                 }
 
                 tracing::warn!(
@@ -421,7 +429,12 @@ impl AppState {
                                 // Track error pattern for potential auto-guardrail
                                 let error_msg = format!("Spawn failed: {}", e);
                                 let _ = ralph::track_error_pattern(&ralph_dir, &error_msg);
-                                let _ = ralph::log_session_transition(&ralph_dir, "respawning", "error", Some(&error_msg));
+                                let _ = ralph::log_session_transition(
+                                    &ralph_dir,
+                                    "respawning",
+                                    "error",
+                                    Some(&error_msg),
+                                );
 
                                 tracing::error!(
                                     pane_id = %pane_id,
@@ -491,6 +504,8 @@ impl AppState {
         if self.events.len() > MAX_EVENTS {
             self.events.pop_back();
         }
+
+        true // State was modified
     }
 
     /// Evict the oldest idle agent to make room for new ones
@@ -723,27 +738,7 @@ impl AppState {
             .collect()
     }
 
-    // v0.9.0 Loop Mode Methods (scaffolded - TUI loop toggle not yet wired)
-
-    /// Enable loop mode on an agent
-    ///
-    /// Called when spawning an agent in loop mode or enabling loop on existing agent.
-    #[allow(dead_code)]
-    pub fn enable_loop_mode(&mut self, pane_id: &str, max_iterations: u32, stop_word: &str) {
-        if let Some(agent) = self.agents.get_mut(pane_id) {
-            agent.loop_mode = LoopMode::Active;
-            agent.loop_iteration = 0;
-            agent.loop_max = max_iterations;
-            agent.loop_stop_word = stop_word.to_string();
-            agent.loop_last_reasons.clear();
-            tracing::info!(
-                pane_id = %pane_id,
-                max = max_iterations,
-                stop_word = %stop_word,
-                "Loop mode enabled"
-            );
-        }
-    }
+    // v0.9.0 Loop Mode Methods
 
     /// Register a pending loop config for a newly spawned agent
     ///
@@ -815,13 +810,7 @@ impl AppState {
         self.selected_agent().map(|a| a.pane_id.clone())
     }
 
-    // v0.10.0 Sprite Methods (some scaffolded for future UI features)
-
-    /// Check if an agent is a sprite agent
-    #[allow(dead_code)]
-    pub fn is_sprite_agent(&self, pane_id: &str) -> bool {
-        self.sprite_agent_ids.contains(pane_id)
-    }
+    // v0.10.0 Sprite Methods
 
     /// Get list of selected sprite agent IDs
     pub fn selected_sprite_agents(&self) -> Vec<String> {
@@ -835,12 +824,6 @@ impl AppState {
     /// Get count of sprite agents
     pub fn sprite_agent_count(&self) -> usize {
         self.sprite_agent_ids.len()
-    }
-
-    /// Get all sprite agents
-    #[allow(dead_code)]
-    pub fn sprite_agents(&self) -> impl Iterator<Item = &Agent> {
-        self.agents.values().filter(|a| a.is_sprite)
     }
 
     /// Mark a sprite as connected
@@ -883,7 +866,8 @@ fn spawn_fresh_ralph_session(
     use color_eyre::eyre::WrapErr;
 
     // Log session transition: iteration ending
-    let _ = ralph::log_session_transition(ralph_dir, "working", "stopping", Some("iteration ending"));
+    let _ =
+        ralph::log_session_transition(ralph_dir, "working", "stopping", Some("iteration ending"));
 
     // Get iteration duration before incrementing
     let duration = ralph::get_iteration_duration(ralph_dir);
@@ -910,7 +894,12 @@ fn spawn_fresh_ralph_session(
 
         // Create final git checkpoint
         let _ = ralph::create_git_checkpoint(ralph_dir);
-        let _ = ralph::log_session_transition(ralph_dir, "stopping", "complete", Some(&completion_reason));
+        let _ = ralph::log_session_transition(
+            ralph_dir,
+            "stopping",
+            "complete",
+            Some(&completion_reason),
+        );
 
         agent.loop_mode = LoopMode::Complete;
         tracing::info!(
@@ -921,7 +910,10 @@ fn spawn_fresh_ralph_session(
         );
         notify::send(
             "Ralph Complete",
-            &format!("{}: {} iterations ({})", agent.project, new_iteration, completion_reason),
+            &format!(
+                "{}: {} iterations ({})",
+                agent.project, new_iteration, completion_reason
+            ),
             Some("Glass"),
         );
         return Ok(pane_id.to_string());
@@ -968,7 +960,12 @@ fn spawn_fresh_ralph_session(
         .unwrap_or_else(|| ".".to_string());
 
     // Log session transition: respawning
-    let _ = ralph::log_session_transition(ralph_dir, "stopping", "respawning", Some(&format!("iteration {}", new_iteration + 1)));
+    let _ = ralph::log_session_transition(
+        ralph_dir,
+        "stopping",
+        "respawning",
+        Some(&format!("iteration {}", new_iteration + 1)),
+    );
 
     // 7. Send Ctrl+C to ensure clean shutdown, then kill pane
     let _ = TmuxController::send_interrupt(pane_id);
@@ -1039,8 +1036,9 @@ mod tests {
         let mut state = AppState::new();
         let event = make_event("SessionStart", "working", "%0", "test-project");
 
-        state.process_event(event);
+        let changed = state.process_event(event);
 
+        assert!(changed);
         assert_eq!(state.agents.len(), 1);
         assert_eq!(state.status_counts[1], 1); // Working is column 1
         assert!(state.agents.contains_key("%0"));
@@ -1055,32 +1053,13 @@ mod tests {
         let mut state = AppState::new();
 
         // Create an agent in working state
-        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
         assert_eq!(state.status_counts[1], 1); // Working
 
         // Transition to idle
-        state.process_event(make_event("Stop", "idle", "%0", "test"));
+        let _ = state.process_event(make_event("Stop", "idle", "%0", "test"));
         assert_eq!(state.status_counts[1], 0); // Working now 0
         assert_eq!(state.status_counts[3], 1); // Idle now 1
-    }
-
-    #[test]
-    fn test_loop_mode_stop_word_detection() {
-        let mut state = AppState::new();
-
-        // Create an agent
-        state.process_event(make_event("SessionStart", "working", "%0", "test"));
-
-        // Enable loop mode with stop word
-        state.enable_loop_mode("%0", 10, "COMPLETE");
-
-        // Send Stop with stop word in reason
-        let mut stop_event = make_event("Stop", "idle", "%0", "test");
-        stop_event.reason = Some("Task COMPLETE - all done".to_string());
-        state.process_event(stop_event);
-
-        let agent = state.agents.get("%0").unwrap();
-        assert!(matches!(agent.loop_mode, LoopMode::Complete));
     }
 
     #[test]
@@ -1095,7 +1074,7 @@ mod tests {
             // Vary timestamps so we have a clear oldest
             // %0 gets oldest timestamp, each subsequent agent gets newer
             event.timestamp = base_time + (i as i64);
-            state.process_event(event);
+            let _ = state.process_event(event);
         }
 
         assert_eq!(state.agents.len(), MAX_AGENTS);
@@ -1109,7 +1088,7 @@ mod tests {
         }
 
         // Add one more - should evict oldest idle (%0)
-        state.process_event(make_event("SessionStart", "working", "%new", "test"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%new", "test"));
 
         assert_eq!(state.agents.len(), MAX_AGENTS);
         assert!(state.agents.contains_key("%new"));
@@ -1122,11 +1101,11 @@ mod tests {
         let mut state = AppState::new();
 
         // Create an agent
-        state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
         assert_eq!(state.agents.len(), 1);
 
         // End the session
-        state.process_event(make_event("SessionEnd", "idle", "%0", "test"));
+        let _ = state.process_event(make_event("SessionEnd", "idle", "%0", "test"));
         assert_eq!(state.agents.len(), 0);
         assert_eq!(state.status_counts[1], 0); // Working
         assert_eq!(state.status_counts[3], 0); // Idle

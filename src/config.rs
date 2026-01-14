@@ -190,64 +190,6 @@ impl RehoboamConfig {
             }
         }
     }
-
-    /// Save configuration to the default path
-    #[allow(dead_code)]
-    pub fn save(&self) -> Result<(), std::io::Error> {
-        let path = Self::default_path();
-
-        // Create parent directory if needed
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-
-        std::fs::write(&path, content)?;
-        tracing::info!("Saved configuration to {:?}", path);
-        Ok(())
-    }
-
-    /// Generate example configuration file content
-    #[allow(dead_code)]
-    pub fn example() -> String {
-        r#"# Rehoboam Configuration
-# Place this file at ~/.config/rehoboam/config.toml
-
-[timeouts]
-# Seconds before Working -> Idle transition
-idle_timeout_secs = 60
-
-# Seconds before removing stale sessions
-stale_timeout_secs = 300
-
-[sprites]
-# Enable sprite support (remote sandboxed VMs)
-enabled = false
-
-# Default region for new sprites
-default_region = "iad"
-
-# Default resources for new sprites
-default_ram_mb = 2048
-default_cpus = 2
-
-# Network preset: "full", "claude-only", or "restricted"
-network_preset = "full"
-
-# WebSocket port for receiving events from sprites
-ws_port = 9876
-
-[sprites.checkpoints]
-# Enable automatic checkpointing
-auto_checkpoint = false
-
-# Checkpoint interval in minutes
-interval_minutes = 15
-"#
-        .to_string()
-    }
 }
 
 /// Tokyo Night color palette

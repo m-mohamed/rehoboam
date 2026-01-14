@@ -143,8 +143,8 @@ impl App {
             Event::Hook(hook_event) => {
                 // Only process hook events if not frozen
                 if !self.frozen {
-                    self.state.process_event(*hook_event);
-                    self.needs_render = true;
+                    let changed = self.state.process_event(*hook_event);
+                    self.needs_render = self.needs_render || changed;
                 }
             }
             Event::Key(key) => {
@@ -158,8 +158,8 @@ impl App {
                     hook_event.source = EventSource::Sprite {
                         sprite_id: sprite_id.clone(),
                     };
-                    self.state.process_event(hook_event);
-                    self.needs_render = true;
+                    let changed = self.state.process_event(hook_event);
+                    self.needs_render = self.needs_render || changed;
                 }
             }
             Event::SpriteStatus { sprite_id, status } => {
@@ -168,7 +168,7 @@ impl App {
                         tracing::info!("Sprite connected: {}", sprite_id);
                         self.state.sprite_connected(&sprite_id);
                     }
-                    SpriteStatusType::Disconnected | SpriteStatusType::Destroyed => {
+                    SpriteStatusType::Disconnected => {
                         tracing::info!("Sprite disconnected: {}", sprite_id);
                         self.state.sprite_disconnected(&sprite_id);
                     }

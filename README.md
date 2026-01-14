@@ -100,6 +100,14 @@ Claude Code → hooks → Unix socket → Rehoboam TUI
 
 Hooks are configured in `.claude/settings.json`. Run `rehoboam init` to set up.
 
+## Contributing
+
+We welcome contributions! Rehoboam is built by Claude Code users, for Claude Code users.
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) - Contribution guidelines
+- [DEVELOPMENT.md](DEVELOPMENT.md) - Local development setup
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Codebase map and design decisions
+
 ## License
 
 MIT

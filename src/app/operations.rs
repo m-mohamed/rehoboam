@@ -222,10 +222,7 @@ pub fn fetch_checkpoints(
 }
 
 /// Restore sprite to a checkpoint
-pub fn restore_checkpoint(
-    state: &AppState,
-    checkpoint: &CheckpointRecord,
-) {
+pub fn restore_checkpoint(state: &AppState, checkpoint: &CheckpointRecord) {
     let Some(agent) = state.selected_agent() else {
         return;
     };
