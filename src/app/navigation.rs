@@ -19,8 +19,9 @@ pub fn jump_to_selected(state: &AppState) {
 
     let result = if pane_id.starts_with('%') {
         // Tmux pane format: %0, %1, etc.
+        // Use switch-client instead of select-pane to work across sessions
         Command::new("tmux")
-            .args(["select-pane", "-t", pane_id])
+            .args(["switch-client", "-t", pane_id])
             .output()
     } else {
         // WezTerm pane (numeric ID)
