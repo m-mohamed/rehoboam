@@ -59,6 +59,70 @@ pub struct RalphState {
     /// Last git commit hash (for checkpoint tracking)
     #[serde(default)]
     pub last_commit: Option<String>,
+
+    /// Role for the agent (Planner, Worker, or Auto)
+    #[serde(default)]
+    pub role: LoopRole,
+}
+
+// ============================================================================
+// v1.6: Loop Role - Cursor-aligned behavioral patterns
+// ============================================================================
+
+/// Role for a loop agent (Cursor-aligned)
+///
+/// Different roles get different prompts and behaviors:
+/// - Planner: Explores, decomposes tasks, writes to tasks.md
+/// - Worker: Picks task from queue, works in isolation, marks complete
+/// - Auto: Legacy behavior, generic prompt
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum LoopRole {
+    /// Planner: Explores and creates tasks (doesn't implement)
+    Planner,
+    /// Worker: Executes single task in isolation
+    Worker,
+    /// Auto: Legacy behavior with generic prompt
+    #[default]
+    Auto,
+}
+
+impl std::fmt::Display for LoopRole {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            LoopRole::Planner => write!(f, "Planner"),
+            LoopRole::Worker => write!(f, "Worker"),
+            LoopRole::Auto => write!(f, "Auto"),
+        }
+    }
+}
+
+impl LoopRole {
+    /// Cycle to next role
+    pub fn next(self) -> Self {
+        match self {
+            LoopRole::Auto => LoopRole::Planner,
+            LoopRole::Planner => LoopRole::Worker,
+            LoopRole::Worker => LoopRole::Auto,
+        }
+    }
+
+    /// Cycle to previous role
+    pub fn prev(self) -> Self {
+        match self {
+            LoopRole::Auto => LoopRole::Worker,
+            LoopRole::Planner => LoopRole::Auto,
+            LoopRole::Worker => LoopRole::Planner,
+        }
+    }
+
+    /// Get display name for UI
+    pub fn display(&self) -> &'static str {
+        match self {
+            LoopRole::Auto => "Auto (generic)",
+            LoopRole::Planner => "Planner (explores, creates tasks)",
+            LoopRole::Worker => "Worker (executes task in isolation)",
+        }
+    }
 }
 
 /// Configuration for starting a Ralph loop
@@ -67,6 +131,10 @@ pub struct RalphConfig {
     pub max_iterations: u32,
     pub stop_word: String,
     pub pane_id: String,
+    /// v1.6: Loop role (Planner/Worker/Auto)
+    pub role: LoopRole,
+    /// v1.6: Enable coordination.md (opt-in, only for planners)
+    pub enable_coordination: bool,
 }
 
 impl Default for RalphConfig {
@@ -75,6 +143,8 @@ impl Default for RalphConfig {
             max_iterations: 50,
             stop_word: "DONE".to_string(),
             pane_id: String::new(),
+            role: LoopRole::Auto,
+            enable_coordination: false,
         }
     }
 }
@@ -148,14 +218,31 @@ Starting iteration 1...
     // Create empty session_history.log
     fs::write(ralph_dir.join("session_history.log"), "")?;
 
-    // v1.4: Create coordination.md for multi-agent broadcasts
-    let coordination_content = r#"# Coordination
+    // v1.6: Create tasks.md for task queue (Cursor-aligned)
+    let tasks_content = r#"# Task Queue
 
-Cross-agent discoveries and broadcasts. All agents read this at iteration start.
+## Pending
+<!-- Planners add tasks here -->
+
+## In Progress
+<!-- Workers claim tasks here -->
+
+## Completed
+<!-- Completed tasks move here -->
+"#;
+    fs::write(ralph_dir.join("tasks.md"), tasks_content)?;
+
+    // v1.4/v1.6: Create coordination.md only if enabled (opt-in)
+    // Per Cursor: "Workers never coordinate with each other"
+    if config.enable_coordination {
+        let coordination_content = r#"# Coordination
+
+Cross-agent discoveries and broadcasts. Only planners use this.
 
 <!-- Format: [timestamp] [agent_id]: message -->
 "#;
-    fs::write(ralph_dir.join("coordination.md"), coordination_content)?;
+        fs::write(ralph_dir.join("coordination.md"), coordination_content)?;
+    }
 
     // Write state.json
     let state = RalphState {
@@ -168,6 +255,7 @@ Cross-agent discoveries and broadcasts. All agents read this at iteration start.
         iteration_started_at: Some(Utc::now()),
         error_counts: HashMap::new(),
         last_commit: None,
+        role: config.role,
     };
     let state_json = serde_json::to_string_pretty(&state)?;
     fs::write(ralph_dir.join("state.json"), state_json)?;
@@ -192,6 +280,242 @@ pub fn save_state(ralph_dir: &Path, state: &RalphState) -> Result<()> {
     let content = serde_json::to_string_pretty(state)?;
     fs::write(state_path, content)?;
     Ok(())
+}
+
+// ============================================================================
+// v1.6: Task Queue System (Cursor-aligned)
+// ============================================================================
+
+/// A task in the queue
+#[derive(Debug, Clone)]
+pub struct Task {
+    /// Task ID (e.g., "TASK-001")
+    pub id: String,
+    /// Task description
+    pub description: String,
+    /// Worker ID if claimed (e.g., "%42")
+    pub worker: Option<String>,
+}
+
+/// Read all pending tasks from tasks.md
+pub fn read_pending_tasks(ralph_dir: &Path) -> Result<Vec<Task>> {
+    let tasks_path = ralph_dir.join("tasks.md");
+    if !tasks_path.exists() {
+        return Ok(vec![]);
+    }
+
+    let content = fs::read_to_string(&tasks_path)?;
+    let mut tasks = Vec::new();
+    let mut in_pending = false;
+
+    for line in content.lines() {
+        if line.starts_with("## Pending") {
+            in_pending = true;
+            continue;
+        }
+        if line.starts_with("## ") {
+            in_pending = false;
+            continue;
+        }
+
+        if in_pending && line.starts_with("- [ ] ") {
+            if let Some(task) = parse_task_line(line) {
+                tasks.push(task);
+            }
+        }
+    }
+
+    Ok(tasks)
+}
+
+/// Read the next available task from the queue
+pub fn read_next_task(ralph_dir: &Path) -> Result<Option<Task>> {
+    let tasks = read_pending_tasks(ralph_dir)?;
+    Ok(tasks.into_iter().next())
+}
+
+/// Claim a task by moving it from Pending to In Progress
+pub fn claim_task(ralph_dir: &Path, task_id: &str, worker_id: &str) -> Result<()> {
+    let tasks_path = ralph_dir.join("tasks.md");
+    let content = fs::read_to_string(&tasks_path)?;
+
+    let mut new_lines = Vec::new();
+    let mut claimed_task: Option<String> = None;
+    let mut in_pending = false;
+    let mut in_progress_section_exists = false;
+
+    for line in content.lines() {
+        if line.starts_with("## Pending") {
+            in_pending = true;
+            new_lines.push(line.to_string());
+            continue;
+        }
+        if line.starts_with("## In Progress") {
+            in_pending = false;
+            in_progress_section_exists = true;
+            new_lines.push(line.to_string());
+            // Insert claimed task here
+            if let Some(ref task_desc) = claimed_task {
+                new_lines.push(format!("- [~] [{}] {} (worker: {})", task_id, task_desc, worker_id));
+            }
+            continue;
+        }
+        if line.starts_with("## ") {
+            in_pending = false;
+        }
+
+        // Check if this is the task to claim
+        if in_pending && line.contains(&format!("[{}]", task_id)) {
+            // Extract description (everything after the task ID)
+            if let Some(task) = parse_task_line(line) {
+                claimed_task = Some(task.description);
+            }
+            // Skip this line (don't add to new_lines)
+            continue;
+        }
+
+        new_lines.push(line.to_string());
+    }
+
+    // If In Progress section doesn't exist, create it
+    if !in_progress_section_exists && claimed_task.is_some() {
+        // Find where to insert it (after Pending section)
+        let mut insert_idx = None;
+        for (i, line) in new_lines.iter().enumerate() {
+            if line.starts_with("## Completed") {
+                insert_idx = Some(i);
+                break;
+            }
+        }
+        if let Some(idx) = insert_idx {
+            if let Some(ref task_desc) = claimed_task {
+                new_lines.insert(idx, String::new());
+                new_lines.insert(idx + 1, "## In Progress".to_string());
+                new_lines.insert(idx + 2, format!("- [~] [{}] {} (worker: {})", task_id, task_desc, worker_id));
+            }
+        }
+    }
+
+    fs::write(&tasks_path, new_lines.join("\n") + "\n")?;
+    Ok(())
+}
+
+/// Complete a task by moving it from In Progress to Completed
+pub fn complete_task(ralph_dir: &Path, task_id: &str) -> Result<()> {
+    let tasks_path = ralph_dir.join("tasks.md");
+    let content = fs::read_to_string(&tasks_path)?;
+
+    let mut new_lines = Vec::new();
+    let mut completed_task: Option<String> = None;
+    let mut in_progress = false;
+
+    for line in content.lines() {
+        if line.starts_with("## In Progress") {
+            in_progress = true;
+            new_lines.push(line.to_string());
+            continue;
+        }
+        if line.starts_with("## Completed") {
+            in_progress = false;
+            new_lines.push(line.to_string());
+            // Insert completed task here
+            if let Some(ref task_desc) = completed_task {
+                new_lines.push(format!("- [x] [{}] {}", task_id, task_desc));
+            }
+            continue;
+        }
+        if line.starts_with("## ") {
+            in_progress = false;
+        }
+
+        // Check if this is the task to complete
+        if in_progress && line.contains(&format!("[{}]", task_id)) {
+            // Extract description (everything after task ID, before worker annotation)
+            if let Some(task) = parse_in_progress_line(line) {
+                completed_task = Some(task.description);
+            }
+            continue;
+        }
+
+        new_lines.push(line.to_string());
+    }
+
+    fs::write(&tasks_path, new_lines.join("\n") + "\n")?;
+    Ok(())
+}
+
+/// Add a new task to the Pending queue
+pub fn add_task(ralph_dir: &Path, task_id: &str, description: &str) -> Result<()> {
+    let tasks_path = ralph_dir.join("tasks.md");
+    let content = fs::read_to_string(&tasks_path)?;
+
+    let mut new_lines = Vec::new();
+    let mut added = false;
+
+    for line in content.lines() {
+        new_lines.push(line.to_string());
+        // Add after "## Pending" line
+        if line.starts_with("## Pending") && !added {
+            new_lines.push(format!("- [ ] [{}] {}", task_id, description));
+            added = true;
+        }
+    }
+
+    fs::write(&tasks_path, new_lines.join("\n") + "\n")?;
+    Ok(())
+}
+
+/// Parse a pending task line: "- [ ] [TASK-001] description"
+fn parse_task_line(line: &str) -> Option<Task> {
+    let trimmed = line.trim_start_matches("- [ ] ");
+    // Extract [TASK-ID] and description
+    if let Some(start) = trimmed.find('[') {
+        if let Some(end) = trimmed.find(']') {
+            let id = trimmed[start + 1..end].to_string();
+            let description = trimmed[end + 1..].trim().to_string();
+            return Some(Task {
+                id,
+                description,
+                worker: None,
+            });
+        }
+    }
+    None
+}
+
+/// Parse an in-progress task line: "- [~] [TASK-001] description (worker: %42)"
+fn parse_in_progress_line(line: &str) -> Option<Task> {
+    let trimmed = line.trim_start_matches("- [~] ");
+    // Extract [TASK-ID]
+    if let Some(start) = trimmed.find('[') {
+        if let Some(end) = trimmed.find(']') {
+            let id = trimmed[start + 1..end].to_string();
+            let rest = &trimmed[end + 1..];
+            // Extract description (before "(worker:")
+            let description = if let Some(worker_start) = rest.find("(worker:") {
+                rest[..worker_start].trim().to_string()
+            } else {
+                rest.trim().to_string()
+            };
+            // Extract worker ID if present
+            let worker = if let Some(worker_start) = rest.find("(worker:") {
+                let worker_part = &rest[worker_start + 8..];
+                if let Some(worker_end) = worker_part.find(')') {
+                    Some(worker_part[..worker_end].trim().to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            return Some(Task {
+                id,
+                description,
+                worker,
+            });
+        }
+    }
+    None
 }
 
 // ============================================================================
@@ -386,6 +710,121 @@ pub fn check_max_iterations(ralph_dir: &Path) -> Result<bool> {
     Ok(reached)
 }
 
+// ============================================================================
+// v1.6: Role-Specific Prompts (Cursor-aligned)
+// ============================================================================
+
+/// Build a planner-specific prompt
+///
+/// Planners explore, decompose tasks, and write to tasks.md.
+/// They do NOT implement anything themselves.
+fn build_planner_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
+    let anchor = fs::read_to_string(ralph_dir.join("anchor.md")).unwrap_or_default();
+    let progress = fs::read_to_string(ralph_dir.join("progress.md")).unwrap_or_default();
+    let tasks = fs::read_to_string(ralph_dir.join("tasks.md")).unwrap_or_default();
+
+    let prompt = format!(
+        r#"# Rehoboam Loop - PLANNER - Iteration {iteration}
+
+You are a PLANNER. Your job is to explore and decompose work into tasks.
+
+## Your Goal
+{anchor}
+
+## Current Tasks Queue
+{tasks}
+
+## Progress So Far
+{progress}
+
+## Rules for Planners
+1. Explore the codebase to understand structure and patterns
+2. Break down the goal into discrete, independent tasks
+3. Each task should be completable by a single worker in ONE iteration
+4. Write tasks to tasks.md in the Pending section using format:
+   `- [ ] [TASK-XXX] Description of the task`
+5. Do NOT implement anything yourself
+6. Do NOT coordinate with workers - they work in isolation
+7. When planning is complete, write "PLANNING COMPLETE" to progress.md
+8. If stuck, add more exploration tasks rather than trying to solve everything
+
+## Task Guidelines
+- Tasks should be atomic and independent
+- Include enough context in the description for a worker to understand
+- Prefix related tasks with common identifiers (e.g., TASK-AUTH-001, TASK-AUTH-002)
+- Order tasks by dependency (simpler tasks first)
+
+Remember: Your job is PLANNING, not IMPLEMENTING. Create clear tasks for workers.
+"#,
+        iteration = state.iteration + 1,
+        anchor = anchor,
+        tasks = tasks,
+        progress = progress,
+    );
+
+    Ok(prompt)
+}
+
+/// Build a worker-specific prompt
+///
+/// Workers pick ONE task from the queue, execute it in isolation,
+/// and mark it complete. They do NOT coordinate with other workers.
+fn build_worker_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
+    let anchor = fs::read_to_string(ralph_dir.join("anchor.md")).unwrap_or_default();
+    let guardrails = fs::read_to_string(ralph_dir.join("guardrails.md")).unwrap_or_default();
+
+    // Get next available task
+    let next_task = read_next_task(ralph_dir)?;
+    let task_section = if let Some(task) = &next_task {
+        format!(
+            "## Your Assigned Task\n**[{}]** {}\n",
+            task.id, task.description
+        )
+    } else {
+        "## Your Assigned Task\nNo tasks available in queue. Check with planner or wait.\n".to_string()
+    };
+
+    let prompt = format!(
+        r#"# Rehoboam Loop - WORKER - Iteration {iteration}
+
+You are a WORKER. Your job is to complete ONE assigned task.
+
+{task_section}
+## Context (for reference only)
+{anchor}
+
+## Guardrails
+{guardrails}
+
+## Rules for Workers
+1. Focus ONLY on your assigned task - ignore other work
+2. Do NOT coordinate with other workers - they handle their own tasks
+3. Do NOT explore unrelated code or add scope
+4. When done, mark your task complete in tasks.md:
+   Change `- [ ] [TASK-XXX]` to `- [x] [TASK-XXX]` in the Completed section
+5. Update progress.md with what you accomplished
+6. If blocked by something outside your task, note it in progress.md and exit
+7. Do NOT try to solve blockers that require other tasks
+8. Write "{stop_word}" when your task is fully complete
+
+## Task Completion Checklist
+- [ ] Task implemented as described
+- [ ] Tests pass (if applicable)
+- [ ] Task marked complete in tasks.md
+- [ ] Progress.md updated with summary
+
+Remember: Complete YOUR task, then exit. Don't do extra work.
+"#,
+        iteration = state.iteration + 1,
+        task_section = task_section,
+        anchor = anchor,
+        guardrails = guardrails,
+        stop_word = state.stop_word,
+    );
+
+    Ok(prompt)
+}
+
 /// Build the iteration prompt that includes state files
 ///
 /// This creates a prompt file that tells Claude:
@@ -393,9 +832,32 @@ pub fn check_max_iterations(ralph_dir: &Path) -> Result<bool> {
 /// - The anchor (task spec)
 /// - Any guardrails
 /// - Progress so far
+///
+/// v1.6: Dispatches to role-specific prompts based on state.role
 pub fn build_iteration_prompt(ralph_dir: &Path) -> Result<String> {
     let state = load_state(ralph_dir)?;
 
+    // v1.6: Dispatch to role-specific prompts
+    let prompt = match state.role {
+        LoopRole::Planner => build_planner_prompt(ralph_dir, &state)?,
+        LoopRole::Worker => build_worker_prompt(ralph_dir, &state)?,
+        LoopRole::Auto => build_auto_prompt(ralph_dir, &state)?,
+    };
+
+    // Write to a temp file for claude stdin piping
+    let prompt_file = ralph_dir.join("_iteration_prompt.md");
+    fs::write(&prompt_file, &prompt)?;
+
+    debug!(
+        "Built {} iteration prompt for iteration {}",
+        state.role,
+        state.iteration + 1
+    );
+    return Ok(prompt_file.to_string_lossy().to_string());
+}
+
+/// Build the legacy "Auto" prompt (backward compatible)
+fn build_auto_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
     let anchor = fs::read_to_string(ralph_dir.join("anchor.md")).unwrap_or_default();
     let guardrails = fs::read_to_string(ralph_dir.join("guardrails.md")).unwrap_or_default();
     let progress = fs::read_to_string(ralph_dir.join("progress.md")).unwrap_or_default();
@@ -470,15 +932,7 @@ Git commits are created between iterations for easy rollback.
         stop_word = state.stop_word,
     );
 
-    // Write to a temp file for claude stdin piping
-    let prompt_file = ralph_dir.join("_iteration_prompt.md");
-    fs::write(&prompt_file, &prompt)?;
-
-    debug!(
-        "Built iteration prompt for iteration {}",
-        state.iteration + 1
-    );
-    Ok(prompt_file.to_string_lossy().to_string())
+    Ok(prompt)
 }
 
 /// Add a guardrail/sign to guardrails.md (internal use)
@@ -970,6 +1424,8 @@ mod tests {
             max_iterations: 10,
             stop_word: "COMPLETE".to_string(),
             pane_id: "%42".to_string(),
+            role: LoopRole::Auto,
+            enable_coordination: false,
         };
 
         let ralph_dir = init_ralph_dir(temp.path(), "Build a REST API", &config).unwrap();
@@ -1199,16 +1655,33 @@ mod tests {
     #[test]
     fn test_coordination_file_created() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
+        // Coordination is opt-in per Cursor guidance
+        let config = RalphConfig {
+            enable_coordination: true,
+            ..Default::default()
+        };
         let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
 
         assert!(ralph_dir.join("coordination.md").exists());
     }
 
     #[test]
-    fn test_broadcast() {
+    fn test_coordination_file_not_created_by_default() {
         let temp = TempDir::new().unwrap();
         let config = RalphConfig::default();
+        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+
+        // Coordination is opt-in, so it shouldn't exist by default
+        assert!(!ralph_dir.join("coordination.md").exists());
+    }
+
+    #[test]
+    fn test_broadcast() {
+        let temp = TempDir::new().unwrap();
+        let config = RalphConfig {
+            enable_coordination: true,
+            ..Default::default()
+        };
         let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
 
         broadcast(&ralph_dir, "worker-1", "Found API schema at /api/v1").unwrap();
@@ -1280,5 +1753,135 @@ mod tests {
         // Should fail for non-existent loop
         let other_temp = TempDir::new().unwrap();
         assert!(join_existing_loop(other_temp.path()).is_err());
+    }
+
+    // v1.6: Task Queue tests
+
+    #[test]
+    fn test_tasks_file_created() {
+        let temp = TempDir::new().unwrap();
+        let config = RalphConfig::default();
+        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+
+        assert!(ralph_dir.join("tasks.md").exists());
+    }
+
+    #[test]
+    fn test_add_and_read_tasks() {
+        let temp = TempDir::new().unwrap();
+        let config = RalphConfig::default();
+        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+
+        // Add tasks (newest first - LIFO order)
+        add_task(&ralph_dir, "TASK-001", "Implement user auth").unwrap();
+        add_task(&ralph_dir, "TASK-002", "Add API validation").unwrap();
+
+        // Read pending tasks - newest task is at top
+        let tasks = read_pending_tasks(&ralph_dir).unwrap();
+        assert_eq!(tasks.len(), 2);
+        // Most recently added task is first
+        assert_eq!(tasks[0].id, "TASK-002");
+        assert_eq!(tasks[0].description, "Add API validation");
+        assert_eq!(tasks[1].id, "TASK-001");
+    }
+
+    #[test]
+    fn test_read_next_task() {
+        let temp = TempDir::new().unwrap();
+        let config = RalphConfig::default();
+        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+
+        // No tasks initially
+        let task = read_next_task(&ralph_dir).unwrap();
+        assert!(task.is_none());
+
+        // Add a task
+        add_task(&ralph_dir, "TASK-001", "First task").unwrap();
+
+        // Should return the first task
+        let task = read_next_task(&ralph_dir).unwrap();
+        assert!(task.is_some());
+        assert_eq!(task.unwrap().id, "TASK-001");
+    }
+
+    #[test]
+    fn test_claim_task() {
+        let temp = TempDir::new().unwrap();
+        let config = RalphConfig::default();
+        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+
+        // Add a task
+        add_task(&ralph_dir, "TASK-001", "Auth endpoint").unwrap();
+
+        // Claim it
+        claim_task(&ralph_dir, "TASK-001", "%42").unwrap();
+
+        // Should no longer be in pending
+        let pending = read_pending_tasks(&ralph_dir).unwrap();
+        assert!(pending.is_empty());
+
+        // Check the file content
+        let content = fs::read_to_string(ralph_dir.join("tasks.md")).unwrap();
+        assert!(content.contains("In Progress"));
+        assert!(content.contains("[TASK-001]"));
+        assert!(content.contains("worker: %42"));
+    }
+
+    #[test]
+    fn test_complete_task() {
+        let temp = TempDir::new().unwrap();
+        let config = RalphConfig::default();
+        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+
+        // Add and claim a task
+        add_task(&ralph_dir, "TASK-001", "Auth endpoint").unwrap();
+        claim_task(&ralph_dir, "TASK-001", "%42").unwrap();
+
+        // Complete it
+        complete_task(&ralph_dir, "TASK-001").unwrap();
+
+        // Check the file content
+        let content = fs::read_to_string(ralph_dir.join("tasks.md")).unwrap();
+        assert!(content.contains("Completed"));
+        assert!(content.contains("[x] [TASK-001]"));
+    }
+
+    #[test]
+    fn test_role_specific_prompts() {
+        let temp = TempDir::new().unwrap();
+
+        // Test Planner role
+        let planner_config = RalphConfig {
+            role: LoopRole::Planner,
+            ..Default::default()
+        };
+        let ralph_dir = init_ralph_dir(temp.path(), "Build API", &planner_config).unwrap();
+        let prompt_file = build_iteration_prompt(&ralph_dir).unwrap();
+        let prompt = fs::read_to_string(&prompt_file).unwrap();
+        assert!(prompt.contains("PLANNER"));
+        assert!(prompt.contains("Do NOT implement anything yourself"));
+
+        // Test Worker role
+        let temp2 = TempDir::new().unwrap();
+        let worker_config = RalphConfig {
+            role: LoopRole::Worker,
+            ..Default::default()
+        };
+        let ralph_dir2 = init_ralph_dir(temp2.path(), "Build API", &worker_config).unwrap();
+        add_task(&ralph_dir2, "TASK-001", "Build auth").unwrap();
+        let prompt_file2 = build_iteration_prompt(&ralph_dir2).unwrap();
+        let prompt2 = fs::read_to_string(&prompt_file2).unwrap();
+        assert!(prompt2.contains("WORKER"));
+        assert!(prompt2.contains("TASK-001"));
+
+        // Test Auto role (backward compatible)
+        let temp3 = TempDir::new().unwrap();
+        let auto_config = RalphConfig::default();
+        let ralph_dir3 = init_ralph_dir(temp3.path(), "Build API", &auto_config).unwrap();
+        let prompt_file3 = build_iteration_prompt(&ralph_dir3).unwrap();
+        let prompt3 = fs::read_to_string(&prompt_file3).unwrap();
+        assert!(prompt3.contains("Rehoboam Loop - Iteration"));
+        assert!(!prompt3.contains("PLANNER"));
+        assert!(!prompt3.contains("WORKER"));
     }
 }

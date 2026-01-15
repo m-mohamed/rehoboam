@@ -1,15 +1,15 @@
 //! Spawn dialog state and agent spawning logic
 
 use crate::git::GitController;
-use crate::ralph::{self, RalphConfig};
+use crate::ralph::{self, LoopRole, RalphConfig};
 use crate::sprite::config::NetworkPreset;
 use crate::tmux::TmuxController;
 use sprites::SpritesClient;
 use std::path::PathBuf;
 
 /// Number of fields in spawn dialog
-/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=sprite, 8=network, 9=ram, 10=cpus, 11=clone_dest
-pub const SPAWN_FIELD_COUNT: usize = 12;
+/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=role, 8=sprite, 9=network, 10=ram, 11=cpus, 12=clone_dest
+pub const SPAWN_FIELD_COUNT: usize = 13;
 
 /// State for the spawn dialog
 #[derive(Debug, Clone)]
@@ -36,6 +36,8 @@ pub struct SpawnState {
     pub loop_max_iterations: String,
     /// Stop word to detect completion (default: "COMPLETE")
     pub loop_stop_word: String,
+    /// Role for the agent in loop mode (Planner, Worker, or Auto)
+    pub loop_role: LoopRole,
     /// Whether to spawn on a remote sprite (cloud VM)
     pub use_sprite: bool,
     /// Network policy for sprite (only applies when use_sprite is true)
@@ -114,6 +116,7 @@ impl Default for SpawnState {
             loop_enabled: false,
             loop_max_iterations: "20".to_string(),
             loop_stop_word: "COMPLETE".to_string(),
+            loop_role: LoopRole::Auto,
             use_sprite: false,
             network_preset: NetworkPreset::ClaudeOnly,
             ram_mb: "2048".to_string(),
@@ -481,6 +484,8 @@ fn spawn_tmux_agent(
                     max_iterations: max_iter,
                     stop_word: spawn_state.loop_stop_word.clone(),
                     pane_id: pane_id.clone(),
+                    role: spawn_state.loop_role,
+                    enable_coordination: false, // Coordination is opt-in per Cursor guidance
                 };
 
                 match ralph::init_ralph_dir(&working_dir, prompt, &config) {

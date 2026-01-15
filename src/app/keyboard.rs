@@ -260,11 +260,11 @@ impl App {
                         % spawn::SPAWN_FIELD_COUNT;
             }
             KeyCode::Enter => {
-                // Toggle fields (3 = worktree, 4 = loop mode, 7 = sprite)
+                // Toggle fields (3 = worktree, 4 = loop mode, 8 = sprite)
                 match self.spawn_state.active_field {
                     3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                     4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                    7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                    8 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                     _ => match spawn::validate_spawn(
                         &self.spawn_state,
                         self.sprites_client.is_some(),
@@ -290,7 +290,7 @@ impl App {
             KeyCode::Char(' ') => match self.spawn_state.active_field {
                 3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                 4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                7 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                8 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                 0 => {
                     if self.spawn_state.use_sprite {
                         self.spawn_state.github_repo.push(' ');
@@ -304,12 +304,18 @@ impl App {
                 _ => {}
             },
             KeyCode::Left => {
-                if self.spawn_state.active_field == 8 {
+                if self.spawn_state.active_field == 7 {
+                    // Cycle role backward
+                    self.spawn_state.loop_role = self.spawn_state.loop_role.prev();
+                } else if self.spawn_state.active_field == 9 {
                     self.spawn_state.network_preset = self.spawn_state.network_preset.prev();
                 }
             }
             KeyCode::Right => {
-                if self.spawn_state.active_field == 8 {
+                if self.spawn_state.active_field == 7 {
+                    // Cycle role forward
+                    self.spawn_state.loop_role = self.spawn_state.loop_role.next();
+                } else if self.spawn_state.active_field == 9 {
                     self.spawn_state.network_preset = self.spawn_state.network_preset.next();
                 }
             }
@@ -333,13 +339,13 @@ impl App {
                 6 => {
                     self.spawn_state.loop_stop_word.pop();
                 }
-                9 => {
+                10 => {
                     self.spawn_state.ram_mb.pop();
                 }
-                10 => {
+                11 => {
                     self.spawn_state.cpus.pop();
                 }
-                11 => {
+                12 => {
                     self.spawn_state.clone_destination.pop();
                 }
                 _ => {}
@@ -368,7 +374,7 @@ impl App {
                         self.spawn_state.loop_enabled = false;
                     }
                 }
-                7 => {
+                8 => {
                     if c == 'y' || c == 'Y' {
                         self.spawn_state.use_sprite = true;
                     } else if c == 'n' || c == 'N' {
@@ -381,17 +387,17 @@ impl App {
                     }
                 }
                 6 => self.spawn_state.loop_stop_word.push(c),
-                9 => {
+                10 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.ram_mb.push(c);
                     }
                 }
-                10 => {
+                11 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.cpus.push(c);
                     }
                 }
-                11 => {
+                12 => {
                     self.spawn_state.clone_destination.push(c);
                 }
                 _ => {}
