@@ -61,14 +61,18 @@ pub fn render_agent_card(
     // Sprite indicator (cloud icon for remote agents)
     let sprite_indicator = if agent.is_sprite { "☁ " } else { "" };
 
+    // v1.2: Role badge (Cursor-inspired Planner/Worker/Reviewer)
+    let role_badge = agent.role_badge();
+
     // Build card content
     let mut content = vec![
-        // Line 1: Project name with sprite indicator
+        // Line 1: Project name with sprite indicator and role badge
         Line::from(format!(
-            "{}{}{}",
+            "{}{}{} {}",
             selection_indicator,
             sprite_indicator,
-            truncate(&agent.project, area.width.saturating_sub(6) as usize)
+            truncate(&agent.project, area.width.saturating_sub(10) as usize),
+            role_badge
         ))
         .style(Style::default().fg(colors::FG).add_modifier(Modifier::BOLD)),
     ];
@@ -99,20 +103,33 @@ pub fn render_agent_card(
         LoopMode::None => {
             // Show subagent info if any, otherwise tool display
             if !agent.subagents.is_empty() {
-                let running = agent
+                let running: Vec<_> = agent
                     .subagents
                     .iter()
                     .filter(|s| s.status == "running")
-                    .count();
-                let total = agent.subagents.len();
-                let display = if running > 0 {
-                    format!(
-                        "{} subagent{}",
-                        running,
-                        if running == 1 { "" } else { "s" }
-                    )
+                    .collect();
+
+                let display = if !running.is_empty() {
+                    // v1.3: Show role breakdown for running subagents
+                    use crate::state::AgentRole;
+                    let planners = running.iter().filter(|s| s.role == AgentRole::Planner).count();
+                    let workers = running.iter().filter(|s| s.role == AgentRole::Worker).count();
+                    let reviewers = running.iter().filter(|s| s.role == AgentRole::Reviewer).count();
+
+                    let mut parts = Vec::new();
+                    if planners > 0 { parts.push(format!("{planners}P")); }
+                    if workers > 0 { parts.push(format!("{workers}W")); }
+                    if reviewers > 0 { parts.push(format!("{reviewers}R")); }
+                    let others = running.len() - planners - workers - reviewers;
+                    if others > 0 { parts.push(format!("{others}")); }
+
+                    if parts.is_empty() {
+                        format!("{} subagent{}", running.len(), if running.len() == 1 { "" } else { "s" })
+                    } else {
+                        format!("⤵ {}", parts.join("/"))
+                    }
                 } else {
-                    format!("{total} done")
+                    format!("{} done", agent.subagents.len())
                 };
                 content.push(Line::from(display).style(Style::default().fg(colors::WORKING)));
             } else {
@@ -125,12 +142,21 @@ pub fn render_agent_card(
 
     // Line 3: Elapsed time (or most recent subagent if any running)
     if !agent.subagents.is_empty() {
-        // Show most recent subagent description
+        // Show most recent subagent description with role badge
         if let Some(subagent) = agent.subagents.iter().rev().find(|s| s.status == "running") {
+            // v1.3: Include role badge in subagent description
+            use crate::state::AgentRole;
+            let role_badge = match subagent.role {
+                AgentRole::Planner => "[P] ",
+                AgentRole::Worker => "[W] ",
+                AgentRole::Reviewer => "[R] ",
+                AgentRole::General => "",
+            };
             content.push(
-                Line::from(truncate(
-                    &subagent.description,
-                    area.width.saturating_sub(4) as usize,
+                Line::from(format!(
+                    "{}{}",
+                    role_badge,
+                    truncate(&subagent.description, area.width.saturating_sub(8) as usize)
                 ))
                 .style(
                     Style::default()

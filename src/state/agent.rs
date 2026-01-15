@@ -12,7 +12,7 @@
 
 use std::collections::VecDeque;
 
-/// Loop mode state for Ralph-style autonomous iteration
+/// Loop mode state for autonomous iteration
 ///
 /// When an agent is spawned in Loop Mode, Rehoboam monitors Stop events
 /// and sends Enter keystrokes to continue the loop until a circuit breaker triggers.
@@ -29,9 +29,30 @@ pub enum LoopMode {
     Complete,
 }
 
+/// Agent role classification based on tool usage patterns
+///
+/// Inspired by Cursor's hierarchical agent model (Planner/Worker/Judge).
+/// Role is inferred from recent tool calls - not explicitly set.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum AgentRole {
+    /// Exploring/planning - frequent Read, Glob, Grep, no edits
+    /// Identified by >80% read-only tools in recent calls
+    Planner,
+    /// Executing tasks - Edit, Write, Bash
+    /// Identified by any mutation tool calls
+    Worker,
+    /// Reviewing/evaluating - Read after Write, test runs
+    /// Identified by Read tools following recent Edit/Write
+    Reviewer,
+    /// Unknown or mixed behavior (default)
+    #[default]
+    General,
+}
+
 /// A subagent spawned by the main agent (via Task tool)
 ///
 /// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
+/// v1.3: Extended with parent tracking for hierarchical visualization.
 #[derive(Debug, Clone)]
 pub struct Subagent {
     /// Subagent session ID (for correlation)
@@ -42,6 +63,14 @@ pub struct Subagent {
     pub status: String,
     /// Duration in milliseconds (set on SubagentStop)
     pub duration_ms: Option<u64>,
+
+    // v1.3: Parent-child relationship tracking
+    /// Parent pane ID (the agent that spawned this subagent)
+    pub parent_pane_id: String,
+    /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.)
+    pub depth: u8,
+    /// Inferred role based on subagent description
+    pub role: AgentRole,
 }
 
 /// Current status of a Claude Code agent
@@ -209,6 +238,18 @@ pub struct Agent {
     // v1.1 Proper Ralph loops
     /// Ralph directory for proper loop mode (fresh sessions)
     pub ralph_dir: Option<std::path::PathBuf>,
+
+    // v1.2 Agent role classification (Cursor-inspired)
+    /// Inferred agent role based on tool usage patterns
+    pub role: AgentRole,
+    /// Recent tool names for role inference (last 10 tools)
+    pub tool_history: VecDeque<String>,
+
+    // v1.4 Judge mode (Cursor-inspired evaluation phase)
+    /// Optional judge prompt for completion evaluation
+    pub judge_prompt: Option<String>,
+    /// Model override for judge (defaults to haiku for speed)
+    pub judge_model: Option<String>,
 }
 
 impl Agent {
@@ -245,6 +286,12 @@ impl Agent {
             working_dir: None,
             // v1.1 Proper Ralph loops
             ralph_dir: None,
+            // v1.2 Agent role classification
+            role: AgentRole::General,
+            tool_history: VecDeque::with_capacity(10),
+            // v1.4 Judge mode
+            judge_prompt: None,
+            judge_model: None,
         }
     }
 
@@ -357,6 +404,105 @@ impl Agent {
             "-".to_string()
         }
     }
+
+    // =========================================================================
+    // v1.2 Role Classification (Cursor-inspired Planner/Worker/Reviewer)
+    // =========================================================================
+
+    /// Read-only tools (used for Planner role detection)
+    const READ_ONLY_TOOLS: &'static [&'static str] = &[
+        "Read", "Glob", "Grep", "WebFetch", "WebSearch", "ListMcpResourcesTool",
+        "ReadMcpResourceTool", "Task", "TodoRead",
+    ];
+
+    /// Mutation tools (used for Worker role detection)
+    const MUTATION_TOOLS: &'static [&'static str] = &[
+        "Edit", "Write", "Bash", "NotebookEdit", "TodoWrite",
+    ];
+
+    /// Record a tool call and update role inference
+    ///
+    /// Called on each PreToolUse event. Maintains a rolling history of the
+    /// last 10 tools and infers agent role from the pattern.
+    pub fn record_tool(&mut self, tool: &str) {
+        // Add to history (max 10)
+        if self.tool_history.len() >= 10 {
+            self.tool_history.pop_front();
+        }
+        self.tool_history.push_back(tool.to_string());
+
+        // Re-infer role
+        self.role = self.infer_role();
+    }
+
+    /// Infer agent role from tool history
+    ///
+    /// Detection heuristics (from Cursor research):
+    /// - Planner: >80% read-only tools, no mutations
+    /// - Worker: Any mutation tool calls
+    /// - Reviewer: Read tools after recent Edit/Write
+    /// - General: Default/mixed behavior
+    fn infer_role(&self) -> AgentRole {
+        if self.tool_history.is_empty() {
+            return AgentRole::General;
+        }
+
+        let total = self.tool_history.len();
+        let read_only_count = self
+            .tool_history
+            .iter()
+            .filter(|t| Self::READ_ONLY_TOOLS.contains(&t.as_str()))
+            .count();
+        let mutation_count = self
+            .tool_history
+            .iter()
+            .filter(|t| Self::MUTATION_TOOLS.contains(&t.as_str()))
+            .count();
+
+        // Check for Reviewer: Recent mutation followed by reads
+        if let Some(last_mutation_idx) = self
+            .tool_history
+            .iter()
+            .rposition(|t| Self::MUTATION_TOOLS.contains(&t.as_str()))
+        {
+            // If mutation was in last 5 tools and followed by reads
+            if last_mutation_idx < total.saturating_sub(1) {
+                let reads_after_mutation = self
+                    .tool_history
+                    .iter()
+                    .skip(last_mutation_idx + 1)
+                    .filter(|t| Self::READ_ONLY_TOOLS.contains(&t.as_str()))
+                    .count();
+                if reads_after_mutation >= 2 {
+                    return AgentRole::Reviewer;
+                }
+            }
+        }
+
+        // Worker: Any mutations present
+        if mutation_count > 0 {
+            return AgentRole::Worker;
+        }
+
+        // Planner: >80% read-only (and at least 3 tools for confidence)
+        if total >= 3 && (read_only_count as f64 / total as f64) >= 0.8 {
+            return AgentRole::Planner;
+        }
+
+        AgentRole::General
+    }
+
+    /// Get role badge for display
+    ///
+    /// Returns a short string for TUI card rendering.
+    pub fn role_badge(&self) -> &'static str {
+        match self.role {
+            AgentRole::Planner => "[P]",
+            AgentRole::Worker => "[W]",
+            AgentRole::Reviewer => "[R]",
+            AgentRole::General => "",
+        }
+    }
 }
 
 /// Truncate tool name for display (max 12 chars)
@@ -374,5 +520,79 @@ fn format_latency(ms: u64) -> String {
         format!("{ms}ms")
     } else {
         format!("{:.1}s", ms as f64 / 1000.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_role_classification_general_default() {
+        let agent = Agent::new("%0".to_string(), "test".to_string());
+        assert_eq!(agent.role, AgentRole::General);
+        assert_eq!(agent.role_badge(), "");
+    }
+
+    #[test]
+    fn test_role_classification_planner() {
+        let mut agent = Agent::new("%0".to_string(), "test".to_string());
+
+        // Record 5 read-only tools (should become Planner at >80%)
+        agent.record_tool("Read");
+        agent.record_tool("Glob");
+        agent.record_tool("Grep");
+        agent.record_tool("Read");
+        agent.record_tool("WebSearch");
+
+        assert_eq!(agent.role, AgentRole::Planner);
+        assert_eq!(agent.role_badge(), "[P]");
+    }
+
+    #[test]
+    fn test_role_classification_worker() {
+        let mut agent = Agent::new("%0".to_string(), "test".to_string());
+
+        // Any mutation tool should make it a Worker
+        agent.record_tool("Read");
+        agent.record_tool("Edit");
+
+        assert_eq!(agent.role, AgentRole::Worker);
+        assert_eq!(agent.role_badge(), "[W]");
+    }
+
+    #[test]
+    fn test_role_classification_reviewer() {
+        let mut agent = Agent::new("%0".to_string(), "test".to_string());
+
+        // Edit followed by 2+ reads = Reviewer
+        agent.record_tool("Edit");
+        agent.record_tool("Read");
+        agent.record_tool("Read");
+        agent.record_tool("Grep");
+
+        assert_eq!(agent.role, AgentRole::Reviewer);
+        assert_eq!(agent.role_badge(), "[R]");
+    }
+
+    #[test]
+    fn test_role_history_rolling_window() {
+        let mut agent = Agent::new("%0".to_string(), "test".to_string());
+
+        // Fill up with 10 reads (Planner)
+        for _ in 0..10 {
+            agent.record_tool("Read");
+        }
+        assert_eq!(agent.role, AgentRole::Planner);
+
+        // Add an Edit - should become Worker (still in history)
+        agent.record_tool("Edit");
+        assert_eq!(agent.role, AgentRole::Worker);
+
+        // Add 10 more reads - Edit should roll out, become Planner again
+        for _ in 0..10 {
+            agent.record_tool("Read");
+        }
+        assert_eq!(agent.role, AgentRole::Planner);
     }
 }
