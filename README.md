@@ -111,3 +111,4 @@ We welcome contributions! Rehoboam is built by Claude Code users, for Claude Cod
 ## License
 
 MIT
+# Test
