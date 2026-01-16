@@ -21,4 +21,3 @@ changelog_config = "cliff.toml"
 # PR settings
 pr_draft = false
 pr_labels = ["release"]
-pr_auto_merge = true

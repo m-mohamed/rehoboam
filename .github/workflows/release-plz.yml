@@ -30,6 +30,7 @@ jobs:
         uses: release-plz/action@v0.5
         with:
           command: release-pr
+          pr_automerge: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
