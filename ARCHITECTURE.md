@@ -37,14 +37,15 @@ src/
 │   └── input.rs      Keyboard event stream
 │
 ├── ui/
-│   ├── mod.rs        Main render function, layout
-│   ├── columns.rs    Kanban column layout
-│   ├── cards.rs      Agent card rendering
-│   └── ...           Split view, overlay, footer components
+│   ├── mod.rs        Main render function, layout, modals
+│   ├── column.rs     Kanban column layout
+│   └── card.rs       Agent card rendering
 │
 ├── tmux.rs           Tmux pane control (send keys, capture output)
 ├── git.rs            Git operations (checkpoint, push, diff)
+├── diff.rs           Enhanced diff parsing (files, hunks, line numbers)
 ├── ralph.rs          Loop mode logic (Ralph autonomous iterations)
+├── reconcile.rs      Tmux reconciliation for stuck agent detection
 │
 └── sprite/           Remote agent support (experimental)
     ├── mod.rs        Module exports
@@ -147,6 +148,49 @@ Key files:
 - `ralph.rs` - Iteration tracking, state persistence, stop word detection
 - `state/agent.rs` - `LoopMode` enum (None, Active, Stalled, Complete)
 - `app/spawn.rs` - Loop config registration on spawn
+
+## UI Views & Modes
+
+### View Modes
+
+Three primary layouts, cycled with `v`:
+
+| Mode | Description |
+|------|-------------|
+| **Kanban** | 3 columns: Attention, Working, Compacting |
+| **Project** | Agents grouped by project name |
+| **Split** | Agent list + live terminal output |
+
+### Input Modes
+
+```rust
+pub enum InputMode {
+    Normal,  // Default navigation
+    Input,   // Custom input to agent (c)
+    Spawn,   // Agent spawning dialog (s)
+    Search,  // Agent search (/)
+}
+```
+
+### Modal Overlays
+
+Six modal dialogs that overlay the main view:
+
+| Modal | Toggle | Purpose |
+|-------|--------|---------|
+| Help | `?` / `H` | Keybinding reference |
+| Dashboard | `d` | Progress statistics |
+| Diff | `D` | Git diff viewer with file navigation |
+| Checkpoint Timeline | `t` | Sprite checkpoint restore |
+| Input Dialog | `c` | Custom input to agent |
+| Spawn Dialog | `s` | New agent configuration |
+
+### Keybinding Philosophy
+
+- **Lowercase** = common, safe actions
+- **Uppercase** = dangerous, bulk, or toggle actions
+- **Vim-style** = hjkl navigation
+- **Context-aware** = same key can differ by mode (documented in help)
 
 ## Design Decisions
 

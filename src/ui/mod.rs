@@ -706,50 +706,53 @@ fn render_help(f: &mut Frame) {
     let area = centered_rect(55, 75, f.area());
 
     let help_text = r"
-  Quick Start
-  Agents appear when Claude Code runs in hooked projects.
-  Columns: Attention (needs you) → Working → Compacting
-
   Navigation
   h/l         Move between columns
   j/k         Move between cards
-  Enter       Jump to agent's terminal pane
+  Enter       Jump to agent's terminal
+  /           Search agents by name
 
-  Single Agent
-  y/n         Approve/reject permission request
-  c           Send custom input to agent
-  s           Spawn new agent (opens dialog)
+  Agent Actions
+  y/n         Approve/reject permission
+  c           Send custom input
+  s           Spawn new agent
 
-  Loop Mode (Ralph)
-  X           Cancel loop on selected agent
-  R           Restart loop on selected agent
+  Views
+  v           Cycle: Kanban → Project → Split
+  T           Toggle subagent panel (split view)
+  PgUp/PgDn   Scroll output (split view)
+  d           Dashboard overview
+  f           Freeze display
+  ?, H        This help
 
-  Git Operations
-  D           Show git diff for agent's project
-  g           Git commit (stage all + commit)
-  p           Git push to remote
+  Git
+  D           Open diff viewer
+  g           Git commit
+  p           Git push
 
-  Sprites (Remote VMs)
-  t           Show checkpoint timeline
-  K           Kill & permanently destroy sprite
+  Loop Mode
+  X           Cancel loop
+  R           Restart loop
 
   Bulk Operations
-  Space       Toggle card selection
-  Y/N         Bulk approve/reject all selected
-  K           Kill all selected agents
+  Space       Toggle selection
+  Y/N         Bulk approve/reject
+  K           Kill selected agents
   x           Clear selection
 
-  Display
-  P           Cycle views: Kanban → Project → Split
-  T           Toggle subagent panel (split view)
-  PgUp/PgDn   Scroll live output (split view)
-  d           Dashboard (progress overview)
-  /           Search agents by name
-  A           Toggle auto-accept mode (careful!)
-  f           Freeze display updates
-  D           Git diff for selected project
-  ?, H        This help
-  q, Esc      Quit
+  Sprites
+  t           Checkpoint timeline
+
+  Diff Viewer (when open)
+  j/k         Scroll
+  n/p         Next/prev file
+  o/O         Collapse hunk/all
+  g           Commit
+  G           Push
+  q/Esc       Close
+
+  A           Auto-accept (use caution)
+  q, Esc      Quit (Esc closes modals first)
 ";
 
     let help = Paragraph::new(help_text)

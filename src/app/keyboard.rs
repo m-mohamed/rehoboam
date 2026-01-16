@@ -99,7 +99,7 @@ impl App {
             }
 
             // === View mode toggle ===
-            KeyCode::Char('P') => {
+            KeyCode::Char('v') => {
                 self.view_mode = match self.view_mode {
                     ViewMode::Kanban => ViewMode::Project,
                     ViewMode::Project => ViewMode::Split,
@@ -565,7 +565,7 @@ impl App {
             }
 
             // Git push from diff view
-            KeyCode::Char('P') => {
+            KeyCode::Char('G') => {
                 operations::git_push_selected(&self.state);
                 self.show_status("Pushed changes");
             }
