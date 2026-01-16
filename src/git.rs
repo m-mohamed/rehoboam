@@ -278,6 +278,58 @@ impl GitController {
         tracing::info!(repo = %self.repo_path.display(), "Pushed to remote");
         Ok(())
     }
+
+    /// Get the current HEAD commit hash
+    ///
+    /// Returns the short commit hash (7 chars) of HEAD.
+    pub fn head_commit(&self) -> Result<String> {
+        if !self.is_git_repo() {
+            bail!("Not a git repository: {}", self.repo_path.display());
+        }
+
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["rev-parse", "--short", "HEAD"])
+            .output()
+            .wrap_err("Failed to execute git rev-parse")?;
+
+        if !output.status.success() {
+            bail!(
+                "git rev-parse failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+    /// Get diff since a specific commit
+    ///
+    /// Returns the diff from the given commit to HEAD (working tree).
+    /// Includes both staged and unstaged changes.
+    ///
+    /// # Arguments
+    /// * `commit` - Commit hash to diff from
+    pub fn diff_since(&self, commit: &str) -> Result<String> {
+        if !self.is_git_repo() {
+            bail!("Not a git repository: {}", self.repo_path.display());
+        }
+
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["diff", "--color=never", commit])
+            .output()
+            .wrap_err("Failed to execute git diff")?;
+
+        if !output.status.success() {
+            bail!(
+                "git diff failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ mod column;
 
 use crate::app::{App, InputMode, SpawnState, ViewMode};
 use crate::config::colors;
+use crate::diff::LineKind;
 use crate::state::{Status, NUM_COLUMNS};
 use column::render_status_column;
 use ratatui::{
@@ -879,7 +880,7 @@ fn render_dashboard(f: &mut Frame, app: &App) {
 }
 
 fn render_diff_modal(f: &mut Frame, app: &App) {
-    let area = centered_rect(80, 80, f.area());
+    let area = centered_rect(85, 85, f.area());
 
     // Get project name for title
     let title = if let Some(agent) = app.state.selected_agent() {
@@ -888,40 +889,63 @@ fn render_diff_modal(f: &mut Frame, app: &App) {
         " Git Diff ".to_string()
     };
 
-    // Style diff output with colors
-    let lines: Vec<Line> = app
-        .diff_content
-        .lines()
-        .map(|line| {
-            let style = if line.starts_with('+') && !line.starts_with("+++") {
-                Style::default().fg(Color::Green)
-            } else if line.starts_with('-') && !line.starts_with("---") {
-                Style::default().fg(Color::Red)
-            } else if line.starts_with("@@") {
-                Style::default().fg(Color::Cyan)
-            } else if line.starts_with("diff ") || line.starts_with("index ") {
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::DIM)
-            } else {
-                Style::default().fg(colors::FG)
-            };
-            Line::styled(line, style)
-        })
-        .collect();
-
-    let content = if lines.is_empty() {
-        Paragraph::new("No uncommitted changes")
-            .style(Style::default().fg(colors::FG).add_modifier(Modifier::DIM))
-            .alignment(Alignment::Center)
+    // Build enhanced diff content with parsed data
+    let lines: Vec<Line> = if let Some(ref parsed) = app.parsed_diff {
+        if parsed.is_empty() {
+            vec![Line::styled(
+                "No uncommitted changes",
+                Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
+            )]
+        } else {
+            build_enhanced_diff_lines(parsed, app)
+        }
     } else {
-        Paragraph::new(lines)
+        // Fallback to raw diff content
+        app.diff_content
+            .lines()
+            .map(|line| {
+                let style = if line.starts_with('+') && !line.starts_with("+++") {
+                    Style::default().fg(Color::Green)
+                } else if line.starts_with('-') && !line.starts_with("---") {
+                    Style::default().fg(Color::Red)
+                } else if line.starts_with("@@") {
+                    Style::default().fg(Color::Cyan)
+                } else if line.starts_with("diff ") || line.starts_with("index ") {
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::DIM)
+                } else {
+                    Style::default().fg(colors::FG)
+                };
+                Line::styled(line, style)
+            })
+            .collect()
+    };
+
+    // Apply scroll offset
+    let scroll_offset = app.diff_scroll as usize;
+    let visible_lines: Vec<Line> = lines.into_iter().skip(scroll_offset).collect();
+
+    let content = Paragraph::new(visible_lines);
+
+    // Build summary string
+    let summary = if let Some(ref parsed) = app.parsed_diff {
+        if !parsed.is_empty() {
+            format!(
+                " {} │ [j/k] scroll  [n/p] file  [o] toggle  [g] commit  [q] close ",
+                parsed.summary_string()
+            )
+        } else {
+            " [D/q] Close ".to_string()
+        }
+    } else {
+        " [D/q] Close  [g] Commit  [P] Push ".to_string()
     };
 
     let diff_widget = content.block(
         Block::default()
             .title(title)
-            .title_bottom(" [D] Close  [g] Commit  [p] Push ")
+            .title_bottom(summary)
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors::HIGHLIGHT))
             .border_type(ratatui::widgets::BorderType::Double)
@@ -930,6 +954,112 @@ fn render_diff_modal(f: &mut Frame, app: &App) {
 
     f.render_widget(ratatui::widgets::Clear, area);
     f.render_widget(diff_widget, area);
+}
+
+/// Build enhanced diff lines with file sections and line numbers
+fn build_enhanced_diff_lines(parsed: &crate::diff::ParsedDiff, app: &App) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+
+    // Summary header
+    lines.push(Line::styled(
+        format!(
+            "  {} files changed, +{} -{}",
+            parsed.summary.files_changed, parsed.summary.insertions, parsed.summary.deletions
+        ),
+        Style::default()
+            .fg(Color::Cyan)
+            .add_modifier(Modifier::BOLD),
+    ));
+    lines.push(Line::from(""));
+
+    // Render each file
+    for (file_idx, file) in parsed.files.iter().enumerate() {
+        let is_selected = file_idx == app.diff_selected_file;
+
+        // File header with collapse indicator
+        let file_collapsed = file
+            .hunks
+            .iter()
+            .enumerate()
+            .all(|(hunk_idx, _)| app.diff_collapsed_hunks.contains(&(file_idx, hunk_idx)));
+
+        let collapse_indicator = if file_collapsed { "▶" } else { "▼" };
+        let selection_marker = if is_selected { "►" } else { " " };
+
+        let file_header = format!(
+            "{} {} {} (+{} -{})",
+            selection_marker, collapse_indicator, file.path, file.insertions, file.deletions
+        );
+
+        let header_style = if is_selected {
+            Style::default()
+                .fg(colors::HIGHLIGHT)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        };
+
+        lines.push(Line::styled(file_header, header_style));
+
+        // Skip hunks if collapsed
+        if file_collapsed {
+            lines.push(Line::styled(
+                "    [collapsed]",
+                Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
+            ));
+            lines.push(Line::from(""));
+            continue;
+        }
+
+        // Render hunks
+        for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
+            let hunk_collapsed = app.diff_collapsed_hunks.contains(&(file_idx, hunk_idx));
+
+            // Hunk header
+            lines.push(Line::styled(
+                format!("   {}", hunk.header),
+                Style::default().fg(Color::Cyan),
+            ));
+
+            if hunk_collapsed {
+                lines.push(Line::styled(
+                    "      [collapsed]",
+                    Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
+                ));
+                continue;
+            }
+
+            // Render hunk lines with line numbers
+            for diff_line in &hunk.lines {
+                let (prefix, style) = match diff_line.kind {
+                    LineKind::Context => (" ", Style::default().fg(colors::FG)),
+                    LineKind::Addition => ("+", Style::default().fg(Color::Green)),
+                    LineKind::Deletion => ("-", Style::default().fg(Color::Red)),
+                };
+
+                // Format line numbers
+                let old_no = diff_line
+                    .old_line_no
+                    .map(|n| format!("{:4}", n))
+                    .unwrap_or_else(|| "    ".to_string());
+                let new_no = diff_line
+                    .new_line_no
+                    .map(|n| format!("{:4}", n))
+                    .unwrap_or_else(|| "    ".to_string());
+
+                let line_text =
+                    format!("   {} │{} │{}{}", old_no, new_no, prefix, diff_line.content);
+
+                lines.push(Line::styled(line_text, style));
+            }
+        }
+
+        lines.push(Line::from(""));
+    }
+
+    lines
 }
 
 fn render_checkpoint_timeline(f: &mut Frame, app: &App) {
@@ -1077,7 +1207,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     // Check if we need to show clone destination field
     let show_clone_dest = !spawn_state.use_sprite && is_github_url(&spawn_state.project_path);
 
-    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options, sprite toggle, network policy, resources, clone_dest (conditional), error, instructions
+    // Split into fields: project, prompt, branch, worktree toggle, loop toggle, loop options (inc. role), sprite toggle, network policy, resources, clone_dest (conditional), error, instructions
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -1086,11 +1216,11 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             Constraint::Length(3),                                   // Branch name (2)
             Constraint::Length(3),                                   // Worktree toggle (3)
             Constraint::Length(3),                                   // Loop mode toggle (4)
-            Constraint::Length(3),                                   // Loop options (5, 6)
-            Constraint::Length(3),                                   // Sprite toggle (7)
-            Constraint::Length(3),                                   // Network policy (8)
-            Constraint::Length(3), // Resources: RAM (9), CPUs (10)
-            Constraint::Length(if show_clone_dest { 3 } else { 0 }), // Clone destination (11) - conditional
+            Constraint::Length(3), // Loop options (5=max_iter, 6=stop_word, 7=role)
+            Constraint::Length(3), // Sprite toggle (8)
+            Constraint::Length(3), // Network policy (9)
+            Constraint::Length(3), // Resources: RAM (10), CPUs (11)
+            Constraint::Length(if show_clone_dest { 3 } else { 0 }), // Clone destination (12) - conditional
             Constraint::Length(2),                                   // Error message
             Constraint::Length(2),                                   // Instructions
         ])
@@ -1225,11 +1355,15 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .border_style(border_style(spawn_state.active_field == 4)),
         );
 
-    // Loop options (5 = max iterations, 6 = stop word) - show side by side
+    // Loop options (5 = max iterations, 6 = stop word, 7 = role) - show side by side
     let loop_options_area = chunks[5];
     let loop_options_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+        .constraints([
+            Constraint::Percentage(25), // Max iterations
+            Constraint::Percentage(30), // Stop word
+            Constraint::Percentage(45), // Role selector
+        ])
         .split(loop_options_area);
 
     // Max iterations field (5)
@@ -1265,19 +1399,45 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .border_style(border_style(spawn_state.active_field == 6)),
         );
 
-    // Sprite toggle (7)
+    // Role selector (7) - Cursor-aligned behavioral patterns
+    let role_display = if spawn_state.loop_enabled {
+        spawn_state.loop_role.display()
+    } else {
+        "(enable Loop mode)"
+    };
+    let role_widget = Paragraph::new(format!("<  {}  >", role_display))
+        .style(if spawn_state.loop_enabled {
+            field_style(spawn_state.active_field == 7)
+        } else {
+            Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
+        })
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .title(" Role (←/→) ")
+                .borders(Borders::ALL)
+                .border_style(if spawn_state.loop_enabled {
+                    border_style(spawn_state.active_field == 7)
+                } else {
+                    Style::default()
+                        .fg(colors::BORDER)
+                        .add_modifier(Modifier::DIM)
+                }),
+        );
+
+    // Sprite toggle (8)
     let sprite_checkbox = if spawn_state.use_sprite { "[x]" } else { "[ ]" };
     let sprite_text = format!("{sprite_checkbox} Run on remote Sprite (cloud VM)");
     let sprite_widget = Paragraph::new(sprite_text)
-        .style(field_style(spawn_state.active_field == 7))
+        .style(field_style(spawn_state.active_field == 8))
         .block(
             Block::default()
                 .title(" Sprite Mode ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 7)),
+                .border_style(border_style(spawn_state.active_field == 8)),
         );
 
-    // Network policy selector (8) - only visible when sprite mode is enabled
+    // Network policy selector (9) - only visible when sprite mode is enabled
     let network_display = if spawn_state.use_sprite {
         spawn_state.network_preset.display()
     } else {
@@ -1285,7 +1445,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     };
     let network_widget = Paragraph::new(format!("<  {network_display}  >"))
         .style(if spawn_state.use_sprite {
-            field_style(spawn_state.active_field == 8)
+            field_style(spawn_state.active_field == 9)
         } else {
             Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
         })
@@ -1295,7 +1455,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .title(" Network Policy (←/→ to change) ")
                 .borders(Borders::ALL)
                 .border_style(if spawn_state.use_sprite {
-                    border_style(spawn_state.active_field == 8)
+                    border_style(spawn_state.active_field == 9)
                 } else {
                     Style::default()
                         .fg(colors::BORDER)
@@ -1303,61 +1463,61 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 }),
         );
 
-    // Resources row (9 = RAM, 10 = CPUs) - split horizontally
+    // Resources row (10 = RAM, 11 = CPUs) - split horizontally
     let resources_area = chunks[8];
     let resources_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(resources_area);
 
-    // RAM field (9)
-    let ram_cursor = if spawn_state.active_field == 9 {
+    // RAM field (10)
+    let ram_cursor = if spawn_state.active_field == 10 {
         "▏"
     } else {
         ""
     };
     let ram_widget = Paragraph::new(format!("{}{} MB", spawn_state.ram_mb, ram_cursor))
-        .style(field_style(spawn_state.active_field == 9))
+        .style(field_style(spawn_state.active_field == 10))
         .block(
             Block::default()
                 .title(" RAM ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 9)),
+                .border_style(border_style(spawn_state.active_field == 10)),
         );
 
-    // CPUs field (10)
-    let cpus_cursor = if spawn_state.active_field == 10 {
+    // CPUs field (11)
+    let cpus_cursor = if spawn_state.active_field == 11 {
         "▏"
     } else {
         ""
     };
     let cpus_widget = Paragraph::new(format!("{}{} cores", spawn_state.cpus, cpus_cursor))
-        .style(field_style(spawn_state.active_field == 10))
+        .style(field_style(spawn_state.active_field == 11))
         .block(
             Block::default()
                 .title(" CPUs ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 10)),
+                .border_style(border_style(spawn_state.active_field == 11)),
         );
 
-    // Clone destination field (11) - only shown when project_path is a GitHub URL in local mode
-    let clone_dest_cursor = if spawn_state.active_field == 11 {
+    // Clone destination field (12) - only shown when project_path is a GitHub URL in local mode
+    let clone_dest_cursor = if spawn_state.active_field == 12 {
         "▏"
     } else {
         ""
     };
     let clone_dest_placeholder = "e.g. ~/projects/my-clone or /tmp/my-repo";
     let clone_dest_display =
-        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 11 {
+        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 12 {
             clone_dest_placeholder.to_string()
         } else {
             format!("{}{}", spawn_state.clone_destination, clone_dest_cursor)
         };
     let clone_dest_style =
-        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 11 {
+        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 12 {
             Style::default().fg(Color::DarkGray)
         } else {
-            field_style(spawn_state.active_field == 11)
+            field_style(spawn_state.active_field == 12)
         };
     let clone_dest_widget = Paragraph::new(clone_dest_display)
         .style(clone_dest_style)
@@ -1365,7 +1525,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             Block::default()
                 .title(" Clone Destination (where to clone the repo) ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 11)),
+                .border_style(border_style(spawn_state.active_field == 12)),
         );
 
     // Validation error display
@@ -1408,6 +1568,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     f.render_widget(loop_widget, chunks[4]);
     f.render_widget(iter_widget, loop_options_chunks[0]);
     f.render_widget(stop_widget, loop_options_chunks[1]);
+    f.render_widget(role_widget, loop_options_chunks[2]);
     f.render_widget(sprite_widget, chunks[6]);
     f.render_widget(network_widget, chunks[7]);
     f.render_widget(ram_widget, resources_chunks[0]);

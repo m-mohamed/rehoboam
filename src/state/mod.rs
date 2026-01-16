@@ -1,6 +1,6 @@
 mod agent;
 
-pub use agent::{Agent, AttentionType, LoopMode, Status, Subagent};
+pub use agent::{Agent, AgentRole, AttentionType, LoopMode, Status, Subagent};
 
 use crate::config::{MAX_AGENTS, MAX_EVENTS, MAX_SPARKLINE_POINTS};
 use crate::event::{EventSource, HookEvent};
@@ -23,6 +23,7 @@ pub const NUM_COLUMNS: usize = 3;
 
 /// Loop configuration for pending spawn
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct LoopConfig {
     /// Maximum iterations before stopping
     pub max_iterations: u32,
@@ -30,6 +31,26 @@ pub struct LoopConfig {
     pub stop_word: String,
     /// Path to .ralph/ directory for proper Ralph loops (fresh sessions)
     pub ralph_dir: Option<std::path::PathBuf>,
+
+    // v1.4: Judge mode (Cursor-inspired evaluation phase)
+    /// Optional judge prompt for completion evaluation
+    /// When set, spawns an ephemeral judge session after each Stop
+    /// to evaluate whether the task is complete.
+    pub judge_prompt: Option<String>,
+    /// Model override for judge (defaults to haiku for speed)
+    pub judge_model: Option<String>,
+}
+
+/// v1.4: Judge decision after evaluating loop progress
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
+pub enum JudgeDecision {
+    /// Continue to next iteration
+    Continue,
+    /// Task is complete, stop the loop
+    Complete,
+    /// Task is stalled, needs intervention
+    Stalled,
 }
 
 /// Application state
@@ -103,6 +124,75 @@ fn is_stalled(reasons: &VecDeque<String>) -> bool {
     } else {
         false
     }
+}
+
+/// v1.3: Infer agent role from subagent description keywords
+///
+/// Uses keyword matching to classify subagent tasks:
+/// - Planner: explore, search, find, research, investigate, understand
+/// - Worker: implement, fix, edit, write, create, build, update
+/// - Reviewer: review, test, verify, check, validate
+fn infer_role_from_description(description: &str) -> AgentRole {
+    let desc_lower = description.to_lowercase();
+
+    // Planner keywords (exploration/research)
+    let planner_keywords = [
+        "explore",
+        "search",
+        "find",
+        "research",
+        "investigate",
+        "understand",
+        "analyze",
+        "discover",
+        "locate",
+        "identify",
+        "scan",
+        "examine",
+    ];
+
+    // Worker keywords (implementation/mutation)
+    let worker_keywords = [
+        "implement",
+        "fix",
+        "edit",
+        "write",
+        "create",
+        "build",
+        "update",
+        "add",
+        "modify",
+        "change",
+        "refactor",
+        "delete",
+        "remove",
+    ];
+
+    // Reviewer keywords (verification)
+    let reviewer_keywords = [
+        "review", "test", "verify", "check", "validate", "ensure", "confirm", "audit", "inspect",
+    ];
+
+    // Check in order of specificity
+    if worker_keywords.iter().any(|kw| desc_lower.contains(kw)) {
+        return AgentRole::Worker;
+    }
+    if reviewer_keywords.iter().any(|kw| desc_lower.contains(kw)) {
+        return AgentRole::Reviewer;
+    }
+    if planner_keywords.iter().any(|kw| desc_lower.contains(kw)) {
+        return AgentRole::Planner;
+    }
+
+    AgentRole::General
+}
+
+/// Extract file_path from tool_input JSON
+///
+/// Tool input for Edit/Write tools contains a "file_path" field.
+/// Example: {"file_path": "/path/to/file.rs", "content": "..."}
+fn extract_file_path(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("file_path")?.as_str().map(String::from)
 }
 
 impl AppState {
@@ -277,11 +367,29 @@ impl AppState {
             agent.session_id = Some(sid.clone());
         }
 
-        // Track tool latency (v1.0)
+        // Track tool latency (v1.0) and role classification (v1.2)
         match event.event.as_str() {
             "PreToolUse" => {
                 if let Some(tool) = &event.tool_name {
                     agent.start_tool(tool, event.tool_use_id.as_deref(), event.timestamp);
+
+                    // v1.2: Track tool for role inference
+                    agent.record_tool(tool);
+
+                    // v2.0: Track modified files from Edit/Write tool_input
+                    if matches!(tool.as_str(), "Edit" | "Write") {
+                        if let Some(file_path) = extract_file_path(&event.tool_input) {
+                            agent
+                                .modified_files
+                                .insert(std::path::PathBuf::from(file_path));
+                            tracing::debug!(
+                                pane_id = %pane_id,
+                                tool = %tool,
+                                file = ?agent.modified_files.len(),
+                                "Tracking modified file"
+                            );
+                        }
+                    }
 
                     // AskUserQuestion immediately needs user input - transition now
                     // (PostToolUse won't fire until user responds)
@@ -313,23 +421,32 @@ impl AppState {
                     );
                 }
             }
-            // v0.9.0: Subagent tracking
+            // v0.9.0: Subagent tracking (v1.3: enhanced with parent tracking)
             "SubagentStart" => {
                 if let Some(subagent_id) = &event.subagent_id {
                     let description = event
                         .description
                         .clone()
                         .unwrap_or_else(|| "subagent".to_string());
+
+                    // v1.3: Infer role from description keywords
+                    let role = infer_role_from_description(&description);
+
                     agent.subagents.push(Subagent {
                         id: subagent_id.clone(),
                         description: description.clone(),
                         status: "running".to_string(),
                         duration_ms: None,
+                        // v1.3: Parent-child tracking
+                        parent_pane_id: pane_id.clone(),
+                        depth: 0, // Direct child of this agent
+                        role,
                     });
                     tracing::info!(
                         pane_id = %pane_id,
                         subagent_id = %subagent_id,
                         description = %description,
+                        role = ?role,
                         "Subagent started"
                     );
                 }
@@ -440,6 +557,66 @@ impl AppState {
                     Some("Basso"),
                 );
             } else {
+                // v1.4: Judge mode - evaluate before continuing
+                let should_continue = if agent.judge_prompt.is_some() {
+                    if let Some(ref ralph_dir) = agent.ralph_dir {
+                        match ralph::judge_completion(ralph_dir) {
+                            Ok((decision, confidence, explanation)) => match decision {
+                                ralph::JudgeDecision::Complete => {
+                                    agent.loop_mode = LoopMode::Complete;
+                                    tracing::info!(
+                                        pane_id = %pane_id,
+                                        confidence = confidence,
+                                        explanation = %explanation,
+                                        "Judge: task complete"
+                                    );
+                                    false
+                                }
+                                ralph::JudgeDecision::Stalled => {
+                                    agent.loop_mode = LoopMode::Stalled;
+                                    tracing::warn!(
+                                        pane_id = %pane_id,
+                                        confidence = confidence,
+                                        explanation = %explanation,
+                                        "Judge: task stalled"
+                                    );
+                                    notify::send(
+                                        "Judge: Stalled",
+                                        &format!("{}: {}", agent.project, explanation),
+                                        Some("Basso"),
+                                    );
+                                    false
+                                }
+                                ralph::JudgeDecision::Continue => {
+                                    tracing::debug!(
+                                        pane_id = %pane_id,
+                                        confidence = confidence,
+                                        "Judge: continue"
+                                    );
+                                    true
+                                }
+                            },
+                            Err(e) => {
+                                tracing::warn!(
+                                    pane_id = %pane_id,
+                                    error = %e,
+                                    "Judge evaluation failed, defaulting to continue"
+                                );
+                                true
+                            }
+                        }
+                    } else {
+                        true // No ralph_dir, continue
+                    }
+                } else {
+                    true // No judge configured, continue
+                };
+
+                if !should_continue {
+                    // Judge decided to stop, don't continue loop
+                    return false;
+                }
+
                 // Continue loop
                 // Check agent type to determine how to continue
                 if agent.is_sprite {
@@ -518,6 +695,22 @@ impl AppState {
         // Set start_time on first event or session start
         if agent.start_time == 0 || event.event == "SessionStart" {
             agent.start_time = event.timestamp;
+
+            // v2.0: Reset session-specific tracking on session start
+            if event.event == "SessionStart" {
+                agent.modified_files.clear();
+
+                // Capture session start commit for session-scoped diffs
+                if let Some(ref working_dir) = agent.working_dir {
+                    let git = crate::git::GitController::new(working_dir.clone());
+                    agent.session_start_commit = git.head_commit().ok();
+                    tracing::debug!(
+                        pane_id = %pane_id,
+                        commit = ?agent.session_start_commit,
+                        "Captured session start commit"
+                    );
+                }
+            }
         }
 
         // Add activity point for sparkline
@@ -801,12 +994,15 @@ impl AppState {
     ///
     /// When the agent sends its first hook event, the config will be applied.
     /// If `ralph_dir` is Some, the agent will use proper Ralph mode (fresh sessions).
+    /// If `judge_prompt` is Some, uses judge evaluation instead of stop-word matching.
     pub fn register_loop_config(
         &mut self,
         pane_id: &str,
         max_iterations: u32,
         stop_word: &str,
         ralph_dir: Option<std::path::PathBuf>,
+        judge_prompt: Option<String>,
+        judge_model: Option<String>,
     ) {
         self.pending_loop_configs.insert(
             pane_id.to_string(),
@@ -814,6 +1010,8 @@ impl AppState {
                 max_iterations,
                 stop_word: stop_word.to_string(),
                 ralph_dir: ralph_dir.clone(),
+                judge_prompt,
+                judge_model,
             },
         );
         tracing::info!(
@@ -1278,5 +1476,78 @@ mod tests {
             ),
             "SubagentStart should not override Attention(Input)"
         );
+    }
+
+    // v1.3: Tests for parent-child tracking and role inference from description
+
+    #[test]
+    fn test_subagent_role_from_description_planner() {
+        assert_eq!(
+            super::infer_role_from_description("Explore codebase structure"),
+            AgentRole::Planner
+        );
+        assert_eq!(
+            super::infer_role_from_description("Research API patterns"),
+            AgentRole::Planner
+        );
+        assert_eq!(
+            super::infer_role_from_description("Search for error handlers"),
+            AgentRole::Planner
+        );
+    }
+
+    #[test]
+    fn test_subagent_role_from_description_worker() {
+        assert_eq!(
+            super::infer_role_from_description("Implement the login feature"),
+            AgentRole::Worker
+        );
+        assert_eq!(
+            super::infer_role_from_description("Fix the bug in auth"),
+            AgentRole::Worker
+        );
+        assert_eq!(
+            super::infer_role_from_description("Write tests for API"),
+            AgentRole::Worker
+        );
+    }
+
+    #[test]
+    fn test_subagent_role_from_description_reviewer() {
+        // Note: Worker keywords take priority, so avoid "change", "update" etc.
+        assert_eq!(
+            super::infer_role_from_description("Review the pull request"),
+            AgentRole::Reviewer
+        );
+        assert_eq!(
+            super::infer_role_from_description("Test the results"),
+            AgentRole::Reviewer
+        );
+        assert_eq!(
+            super::infer_role_from_description("Verify all passes"),
+            AgentRole::Reviewer
+        );
+    }
+
+    #[test]
+    fn test_subagent_parent_tracking() {
+        let mut state = AppState::new();
+
+        // Create parent agent
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Spawn subagent
+        let mut event = make_event("SubagentStart", "working", "%0", "test");
+        event.subagent_id = Some("sub-123".to_string());
+        event.description = Some("Explore the codebase".to_string());
+        let _ = state.process_event(event);
+
+        // Verify subagent was tracked with parent info
+        let agent = state.agents.get("%0").unwrap();
+        assert_eq!(agent.subagents.len(), 1);
+        let subagent = &agent.subagents[0];
+        assert_eq!(subagent.parent_pane_id, "%0");
+        assert_eq!(subagent.depth, 0);
+        assert_eq!(subagent.role, AgentRole::Planner); // "Explore" -> Planner
     }
 }
