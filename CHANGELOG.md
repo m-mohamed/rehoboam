@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.5] - 2026-01-16
+
+### Fixed
+
+- Use PAT token to trigger cargo-dist on tag creation
+[0.9.5]: https://github.com/m-mohamed/rehoboam/compare/v0.9.4...v0.9.5
+
+
 ## [0.9.4] - 2026-01-16
 
 ### Changed
