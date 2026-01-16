@@ -29,6 +29,12 @@ impl App {
 
     /// Handle keyboard input in Normal mode
     fn handle_key_normal(&mut self, key: crossterm::event::KeyEvent) {
+        // If diff modal is open, route to diff handler
+        if self.show_diff {
+            self.handle_key_diff(key);
+            return;
+        }
+
         match key.code {
             // Quit (but Esc first closes overlays like help)
             KeyCode::Char('q') => {
@@ -39,8 +45,6 @@ impl App {
                     self.show_help = false;
                 } else if self.show_dashboard {
                     self.show_dashboard = false;
-                } else if self.show_diff {
-                    self.show_diff = false;
                 } else {
                     self.should_quit = true;
                 }
@@ -460,9 +464,103 @@ impl App {
             return;
         }
 
-        if let Some(content) = operations::get_diff_content(&self.state) {
-            self.diff_content = content;
+        if let Some((raw, parsed)) = operations::get_diff_content(&self.state) {
+            self.diff_content = raw;
+            self.parsed_diff = Some(parsed);
+            self.diff_scroll = 0;
+            self.diff_selected_file = 0;
+            self.diff_collapsed_hunks.clear();
             self.show_diff = true;
+        }
+    }
+
+    /// Handle keyboard input in diff modal
+    fn handle_key_diff(&mut self, key: crossterm::event::KeyEvent) {
+        let file_count = self
+            .parsed_diff
+            .as_ref()
+            .map(|d| d.files.len())
+            .unwrap_or(0);
+
+        match key.code {
+            // Close diff
+            KeyCode::Esc | KeyCode::Char('D') | KeyCode::Char('q') => {
+                self.show_diff = false;
+            }
+
+            // Scroll up/down
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.diff_scroll = self.diff_scroll.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.diff_scroll = self.diff_scroll.saturating_sub(1);
+            }
+
+            // Page up/down
+            KeyCode::PageDown | KeyCode::Char('d') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                self.diff_scroll = self.diff_scroll.saturating_add(20);
+            }
+            KeyCode::PageUp | KeyCode::Char('u') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+                self.diff_scroll = self.diff_scroll.saturating_sub(20);
+            }
+
+            // Next/previous file
+            KeyCode::Char('n') | KeyCode::Tab => {
+                if file_count > 0 {
+                    self.diff_selected_file = (self.diff_selected_file + 1) % file_count;
+                }
+            }
+            KeyCode::Char('p') | KeyCode::BackTab => {
+                if file_count > 0 {
+                    self.diff_selected_file =
+                        (self.diff_selected_file + file_count - 1) % file_count;
+                }
+            }
+
+            // Toggle hunk collapse
+            KeyCode::Char('o') => {
+                // Toggle collapse for current hunk at scroll position
+                // For simplicity, we toggle based on file + first hunk
+                let key = (self.diff_selected_file, 0);
+                if self.diff_collapsed_hunks.contains(&key) {
+                    self.diff_collapsed_hunks.remove(&key);
+                } else {
+                    self.diff_collapsed_hunks.insert(key);
+                }
+            }
+
+            // Collapse/expand all hunks in current file
+            KeyCode::Char('O') => {
+                if let Some(diff) = &self.parsed_diff {
+                    if let Some(file) = diff.files.get(self.diff_selected_file) {
+                        let all_collapsed = (0..file.hunks.len())
+                            .all(|i| self.diff_collapsed_hunks.contains(&(self.diff_selected_file, i)));
+
+                        for i in 0..file.hunks.len() {
+                            let key = (self.diff_selected_file, i);
+                            if all_collapsed {
+                                self.diff_collapsed_hunks.remove(&key);
+                            } else {
+                                self.diff_collapsed_hunks.insert(key);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Git commit from diff view
+            KeyCode::Char('g') => {
+                operations::git_commit_selected(&self.state);
+                self.show_status("Committed changes");
+            }
+
+            // Git push from diff view
+            KeyCode::Char('P') => {
+                operations::git_push_selected(&self.state);
+                self.show_status("Pushed changes");
+            }
+
+            _ => {}
         }
     }
 

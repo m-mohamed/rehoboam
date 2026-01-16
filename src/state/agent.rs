@@ -10,7 +10,8 @@
 //! - Stop word detected in reason
 //! - Stall detected (5+ identical stop reasons)
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
+use std::path::PathBuf;
 
 /// Loop mode state for autonomous iteration
 ///
@@ -252,6 +253,12 @@ pub struct Agent {
     pub judge_prompt: Option<String>,
     /// Model override for judge (defaults to haiku for speed)
     pub judge_model: Option<String>,
+
+    // v2.0 Per-agent file tracking (Phase 7)
+    /// Files modified by this agent (tracked from Edit/Write tool_input)
+    pub modified_files: HashSet<PathBuf>,
+    /// Git commit hash at session start (for session-scoped diffs)
+    pub session_start_commit: Option<String>,
 }
 
 impl Agent {
@@ -294,6 +301,9 @@ impl Agent {
             // v1.4 Judge mode
             judge_prompt: None,
             judge_model: None,
+            // v2.0 Per-agent file tracking
+            modified_files: HashSet::new(),
+            session_start_commit: None,
         }
     }
 

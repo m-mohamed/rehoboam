@@ -187,6 +187,14 @@ fn infer_role_from_description(description: &str) -> AgentRole {
     AgentRole::General
 }
 
+/// Extract file_path from tool_input JSON
+///
+/// Tool input for Edit/Write tools contains a "file_path" field.
+/// Example: {"file_path": "/path/to/file.rs", "content": "..."}
+fn extract_file_path(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("file_path")?.as_str().map(String::from)
+}
+
 impl AppState {
     pub fn new() -> Self {
         Self::default()
@@ -367,6 +375,19 @@ impl AppState {
 
                     // v1.2: Track tool for role inference
                     agent.record_tool(tool);
+
+                    // v2.0: Track modified files from Edit/Write tool_input
+                    if matches!(tool.as_str(), "Edit" | "Write") {
+                        if let Some(file_path) = extract_file_path(&event.tool_input) {
+                            agent.modified_files.insert(std::path::PathBuf::from(file_path));
+                            tracing::debug!(
+                                pane_id = %pane_id,
+                                tool = %tool,
+                                file = ?agent.modified_files.len(),
+                                "Tracking modified file"
+                            );
+                        }
+                    }
 
                     // AskUserQuestion immediately needs user input - transition now
                     // (PostToolUse won't fire until user responds)
@@ -672,6 +693,22 @@ impl AppState {
         // Set start_time on first event or session start
         if agent.start_time == 0 || event.event == "SessionStart" {
             agent.start_time = event.timestamp;
+
+            // v2.0: Reset session-specific tracking on session start
+            if event.event == "SessionStart" {
+                agent.modified_files.clear();
+
+                // Capture session start commit for session-scoped diffs
+                if let Some(ref working_dir) = agent.working_dir {
+                    let git = crate::git::GitController::new(working_dir.clone());
+                    agent.session_start_commit = git.head_commit().ok();
+                    tracing::debug!(
+                        pane_id = %pane_id,
+                        commit = ?agent.session_start_commit,
+                        "Captured session start commit"
+                    );
+                }
+            }
         }
 
         // Add activity point for sparkline

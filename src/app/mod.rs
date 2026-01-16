@@ -12,10 +12,12 @@ pub mod spawn;
 pub use spawn::SpawnState;
 
 use crate::config::ReconciliationConfig;
+use crate::diff::ParsedDiff;
 use crate::event::{Event, EventSource, SpriteStatusType};
 use crate::reconcile::Reconciler;
 use crate::sprite::CheckpointRecord;
 use crate::state::AppState;
+use std::collections::HashSet;
 use sprites::SpritesClient;
 use tokio::sync::mpsc;
 
@@ -71,8 +73,16 @@ pub struct App {
     pub event_tx: Option<mpsc::Sender<Event>>,
     /// Show diff modal
     pub show_diff: bool,
-    /// Diff content to display
+    /// Raw diff content (for backwards compatibility)
     pub diff_content: String,
+    /// Parsed diff with structured data (for enhanced modal)
+    pub parsed_diff: Option<ParsedDiff>,
+    /// Vertical scroll position in diff view
+    pub diff_scroll: u16,
+    /// Currently selected file index in diff
+    pub diff_selected_file: usize,
+    /// Set of collapsed hunks: (file_idx, hunk_idx)
+    pub diff_collapsed_hunks: HashSet<(usize, usize)>,
     /// Show checkpoint timeline modal
     pub show_checkpoint_timeline: bool,
     /// Checkpoint history for timeline display
@@ -122,6 +132,10 @@ impl App {
             event_tx,
             show_diff: false,
             diff_content: String::new(),
+            parsed_diff: None,
+            diff_scroll: 0,
+            diff_selected_file: 0,
+            diff_collapsed_hunks: HashSet::new(),
             show_checkpoint_timeline: false,
             checkpoint_timeline: Vec::new(),
             selected_checkpoint: 0,

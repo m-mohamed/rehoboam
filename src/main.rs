@@ -38,6 +38,7 @@
 mod app;
 mod cli;
 mod config;
+mod diff;
 mod errors;
 mod event;
 mod git;

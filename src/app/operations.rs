@@ -1,5 +1,6 @@
 //! Git operations and checkpoint management
 
+use crate::diff::{parse_diff, ParsedDiff};
 use crate::event::Event;
 use crate::git::GitController;
 use crate::sprite::CheckpointRecord;
@@ -114,15 +115,30 @@ pub fn git_push_selected(state: &AppState) {
 
 /// Get diff content for selected agent
 ///
-/// Returns None if diff should not be shown, Some(content) otherwise.
-pub fn get_diff_content(state: &AppState) -> Option<String> {
+/// Returns None if diff should not be shown, Some((raw, parsed)) otherwise.
+/// Uses session-scoped diff if session_start_commit is available (shows only
+/// changes made during this session), otherwise shows full diff.
+pub fn get_diff_content(state: &AppState) -> Option<(String, ParsedDiff)> {
     let agent = state.selected_agent()?;
 
     let working_dir = agent.working_dir.as_ref()?;
 
     let git = GitController::new(working_dir.clone());
 
-    match git.diff_full() {
+    // Try session-scoped diff first (v2.0)
+    let diff_result = if let Some(ref commit) = agent.session_start_commit {
+        tracing::debug!(
+            pane_id = %agent.pane_id,
+            commit = %commit,
+            "Using session-scoped diff since commit"
+        );
+        git.diff_since(commit)
+    } else {
+        // Fallback to full diff
+        git.diff_full()
+    };
+
+    match diff_result {
         Ok(diff) => {
             if diff.is_empty() {
                 tracing::info!(
@@ -130,14 +146,16 @@ pub fn get_diff_content(state: &AppState) -> Option<String> {
                     project = %agent.project,
                     "No changes to display"
                 );
-                Some("No uncommitted changes.".to_string())
+                Some(("No uncommitted changes.".to_string(), ParsedDiff::empty()))
             } else {
                 tracing::debug!(
                     pane_id = %agent.pane_id,
                     project = %agent.project,
+                    files_modified = agent.modified_files.len(),
                     "Showing diff view"
                 );
-                Some(diff)
+                let parsed = parse_diff(&diff);
+                Some((diff, parsed))
             }
         }
         Err(e) => {
