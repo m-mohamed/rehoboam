@@ -957,10 +957,7 @@ fn render_diff_modal(f: &mut Frame, app: &App) {
 }
 
 /// Build enhanced diff lines with file sections and line numbers
-fn build_enhanced_diff_lines(
-    parsed: &crate::diff::ParsedDiff,
-    app: &App,
-) -> Vec<Line<'static>> {
+fn build_enhanced_diff_lines(parsed: &crate::diff::ParsedDiff, app: &App) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Summary header
@@ -980,9 +977,11 @@ fn build_enhanced_diff_lines(
         let is_selected = file_idx == app.diff_selected_file;
 
         // File header with collapse indicator
-        let file_collapsed = file.hunks.iter().enumerate().all(|(hunk_idx, _)| {
-            app.diff_collapsed_hunks.contains(&(file_idx, hunk_idx))
-        });
+        let file_collapsed = file
+            .hunks
+            .iter()
+            .enumerate()
+            .all(|(hunk_idx, _)| app.diff_collapsed_hunks.contains(&(file_idx, hunk_idx)));
 
         let collapse_indicator = if file_collapsed { "▶" } else { "▼" };
         let selection_marker = if is_selected { "►" } else { " " };
@@ -1050,10 +1049,8 @@ fn build_enhanced_diff_lines(
                     .map(|n| format!("{:4}", n))
                     .unwrap_or_else(|| "    ".to_string());
 
-                let line_text = format!(
-                    "   {} │{} │{}{}",
-                    old_no, new_no, prefix, diff_line.content
-                );
+                let line_text =
+                    format!("   {} │{} │{}{}", old_no, new_no, prefix, diff_line.content);
 
                 lines.push(Line::styled(line_text, style));
             }

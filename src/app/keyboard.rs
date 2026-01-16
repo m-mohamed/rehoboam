@@ -497,10 +497,18 @@ impl App {
             }
 
             // Page up/down
-            KeyCode::PageDown | KeyCode::Char('d') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+            KeyCode::PageDown | KeyCode::Char('d')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
                 self.diff_scroll = self.diff_scroll.saturating_add(20);
             }
-            KeyCode::PageUp | KeyCode::Char('u') if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
+            KeyCode::PageUp | KeyCode::Char('u')
+                if key
+                    .modifiers
+                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
+            {
                 self.diff_scroll = self.diff_scroll.saturating_sub(20);
             }
 
@@ -533,8 +541,10 @@ impl App {
             KeyCode::Char('O') => {
                 if let Some(diff) = &self.parsed_diff {
                     if let Some(file) = diff.files.get(self.diff_selected_file) {
-                        let all_collapsed = (0..file.hunks.len())
-                            .all(|i| self.diff_collapsed_hunks.contains(&(self.diff_selected_file, i)));
+                        let all_collapsed = (0..file.hunks.len()).all(|i| {
+                            self.diff_collapsed_hunks
+                                .contains(&(self.diff_selected_file, i))
+                        });
 
                         for i in 0..file.hunks.len() {
                             let key = (self.diff_selected_file, i);

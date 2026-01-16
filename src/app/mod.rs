@@ -17,8 +17,8 @@ use crate::event::{Event, EventSource, SpriteStatusType};
 use crate::reconcile::Reconciler;
 use crate::sprite::CheckpointRecord;
 use crate::state::AppState;
-use std::collections::HashSet;
 use sprites::SpritesClient;
+use std::collections::HashSet;
 use tokio::sync::mpsc;
 
 /// Input mode for the application

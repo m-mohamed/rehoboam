@@ -635,18 +635,24 @@ pub fn update_worker_status(ralph_dir: &Path, worker_id: &str, status: &str) -> 
 
     let content = fs::read_to_string(&worker_file)?;
 
-    // Replace status line
-    let updated = content
-        .lines()
-        .map(|line| {
-            if line.starts_with("## Status") {
-                format!("## Status\n{}", status)
-            } else {
-                line.to_string()
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+    // Replace status line (skip the old status value on the next line)
+    let mut updated_lines = Vec::new();
+    let mut skip_next = false;
+
+    for line in content.lines() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if line.starts_with("## Status") {
+            updated_lines.push("## Status".to_string());
+            updated_lines.push(status.to_string());
+            skip_next = true;
+        } else {
+            updated_lines.push(line.to_string());
+        }
+    }
+    let updated = updated_lines.join("\n");
 
     fs::write(&worker_file, updated)?;
     Ok(())

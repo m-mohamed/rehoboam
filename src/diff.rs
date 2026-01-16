@@ -285,9 +285,7 @@ fn extract_path_from_diff_header(line: &str) -> String {
         }
     }
     // Last resort: return everything after "diff --git "
-    line.strip_prefix("diff --git ")
-        .unwrap_or(line)
-        .to_string()
+    line.strip_prefix("diff --git ").unwrap_or(line).to_string()
 }
 
 /// Parse hunk header "@@ -old_start,old_count +new_start,new_count @@"

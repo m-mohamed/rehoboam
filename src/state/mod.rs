@@ -379,7 +379,9 @@ impl AppState {
                     // v2.0: Track modified files from Edit/Write tool_input
                     if matches!(tool.as_str(), "Edit" | "Write") {
                         if let Some(file_path) = extract_file_path(&event.tool_input) {
-                            agent.modified_files.insert(std::path::PathBuf::from(file_path));
+                            agent
+                                .modified_files
+                                .insert(std::path::PathBuf::from(file_path));
                             tracing::debug!(
                                 pane_id = %pane_id,
                                 tool = %tool,
