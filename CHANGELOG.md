@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-01-16
+
+### Added
+
+- Scaling Agents - Hierarchical Role System ([#17](https://github.com/m-mohamed/rehoboam/pull/17))
+[0.9.3]: https://github.com/m-mohamed/rehoboam/compare/v0.9.2...v0.9.3
+
+
 ## [0.9.2] - 2026-01-14
 
 ### Added
