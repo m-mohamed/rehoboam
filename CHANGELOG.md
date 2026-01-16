@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.6] - 2026-01-16
+
+### Added
+
+- Test release pipeline with real change
+[0.9.6]: https://github.com/m-mohamed/rehoboam/compare/v0.9.5...v0.9.6
+
+
 ## [0.9.5] - 2026-01-16
 
 ### Fixed
