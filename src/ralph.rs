@@ -11,6 +11,9 @@
 //! - activity.log: Timing/metrics per iteration
 //! - session_history.log: State transitions for debugging
 //! - state.json: Iteration counter, config
+//!
+//! Note: Some functions are public APIs for future integration and may appear unused.
+#![allow(dead_code)]
 
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::{eyre, Result};
@@ -356,7 +359,10 @@ pub fn claim_task(ralph_dir: &Path, task_id: &str, worker_id: &str) -> Result<()
             new_lines.push(line.to_string());
             // Insert claimed task here
             if let Some(ref task_desc) = claimed_task {
-                new_lines.push(format!("- [~] [{}] {} (worker: {})", task_id, task_desc, worker_id));
+                new_lines.push(format!(
+                    "- [~] [{}] {} (worker: {})",
+                    task_id, task_desc, worker_id
+                ));
             }
             continue;
         }
@@ -391,7 +397,10 @@ pub fn claim_task(ralph_dir: &Path, task_id: &str, worker_id: &str) -> Result<()
             if let Some(ref task_desc) = claimed_task {
                 new_lines.insert(idx, String::new());
                 new_lines.insert(idx + 1, "## In Progress".to_string());
-                new_lines.insert(idx + 2, format!("- [~] [{}] {} (worker: {})", task_id, task_desc, worker_id));
+                new_lines.insert(
+                    idx + 2,
+                    format!("- [~] [{}] {} (worker: {})", task_id, task_desc, worker_id),
+                );
             }
         }
     }
@@ -498,16 +507,12 @@ fn parse_in_progress_line(line: &str) -> Option<Task> {
                 rest.trim().to_string()
             };
             // Extract worker ID if present
-            let worker = if let Some(worker_start) = rest.find("(worker:") {
+            let worker = rest.find("(worker:").and_then(|worker_start| {
                 let worker_part = &rest[worker_start + 8..];
-                if let Some(worker_end) = worker_part.find(')') {
-                    Some(worker_part[..worker_end].trim().to_string())
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
+                worker_part
+                    .find(')')
+                    .map(|worker_end| worker_part[..worker_end].trim().to_string())
+            });
             return Some(Task {
                 id,
                 description,
@@ -658,7 +663,7 @@ pub fn list_workers(ralph_dir: &Path) -> Result<Vec<String>> {
     let mut workers = Vec::new();
     for entry in fs::read_dir(&workers_dir)? {
         let entry = entry?;
-        if entry.path().extension().map_or(false, |e| e == "md") {
+        if entry.path().extension().is_some_and(|e| e == "md") {
             if let Some(stem) = entry.path().file_stem() {
                 workers.push(stem.to_string_lossy().to_string());
             }
@@ -781,7 +786,8 @@ fn build_worker_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
             task.id, task.description
         )
     } else {
-        "## Your Assigned Task\nNo tasks available in queue. Check with planner or wait.\n".to_string()
+        "## Your Assigned Task\nNo tasks available in queue. Check with planner or wait.\n"
+            .to_string()
     };
 
     let prompt = format!(
@@ -853,7 +859,7 @@ pub fn build_iteration_prompt(ralph_dir: &Path) -> Result<String> {
         state.role,
         state.iteration + 1
     );
-    return Ok(prompt_file.to_string_lossy().to_string());
+    Ok(prompt_file.to_string_lossy().to_string())
 }
 
 /// Build the legacy "Auto" prompt (backward compatible)
@@ -888,7 +894,11 @@ fn build_auto_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
     } else {
         format!(
             "## Active Workers\n{}\n\n",
-            workers.iter().map(|w| format!("- {}", w)).collect::<Vec<_>>().join("\n")
+            workers
+                .iter()
+                .map(|w| format!("- {}", w))
+                .collect::<Vec<_>>()
+                .join("\n")
         )
     };
 

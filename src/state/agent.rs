@@ -54,6 +54,7 @@ pub enum AgentRole {
 /// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
 /// v1.3: Extended with parent tracking for hierarchical visualization.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Subagent {
     /// Subagent session ID (for correlation)
     pub id: String,
@@ -174,6 +175,7 @@ impl AttentionType {
 /// Measures time between PreToolUse and PostToolUse events using `tool_use_id`
 /// correlation. Provides real-time insight into tool execution times.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Agent {
     /// WezTerm pane ID (unique identifier for this agent)
     pub pane_id: String,
@@ -411,14 +413,20 @@ impl Agent {
 
     /// Read-only tools (used for Planner role detection)
     const READ_ONLY_TOOLS: &'static [&'static str] = &[
-        "Read", "Glob", "Grep", "WebFetch", "WebSearch", "ListMcpResourcesTool",
-        "ReadMcpResourceTool", "Task", "TodoRead",
+        "Read",
+        "Glob",
+        "Grep",
+        "WebFetch",
+        "WebSearch",
+        "ListMcpResourcesTool",
+        "ReadMcpResourceTool",
+        "Task",
+        "TodoRead",
     ];
 
     /// Mutation tools (used for Worker role detection)
-    const MUTATION_TOOLS: &'static [&'static str] = &[
-        "Edit", "Write", "Bash", "NotebookEdit", "TodoWrite",
-    ];
+    const MUTATION_TOOLS: &'static [&'static str] =
+        &["Edit", "Write", "Bash", "NotebookEdit", "TodoWrite"];
 
     /// Record a tool call and update role inference
     ///

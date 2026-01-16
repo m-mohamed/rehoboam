@@ -1086,9 +1086,9 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             Constraint::Length(3),                                   // Branch name (2)
             Constraint::Length(3),                                   // Worktree toggle (3)
             Constraint::Length(3),                                   // Loop mode toggle (4)
-            Constraint::Length(3),                                   // Loop options (5=max_iter, 6=stop_word, 7=role)
-            Constraint::Length(3),                                   // Sprite toggle (8)
-            Constraint::Length(3),                                   // Network policy (9)
+            Constraint::Length(3), // Loop options (5=max_iter, 6=stop_word, 7=role)
+            Constraint::Length(3), // Sprite toggle (8)
+            Constraint::Length(3), // Network policy (9)
             Constraint::Length(3), // Resources: RAM (10), CPUs (11)
             Constraint::Length(if show_clone_dest { 3 } else { 0 }), // Clone destination (12) - conditional
             Constraint::Length(2),                                   // Error message
@@ -1230,9 +1230,9 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     let loop_options_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(25),  // Max iterations
-            Constraint::Percentage(30),  // Stop word
-            Constraint::Percentage(45),  // Role selector
+            Constraint::Percentage(25), // Max iterations
+            Constraint::Percentage(30), // Stop word
+            Constraint::Percentage(45), // Role selector
         ])
         .split(loop_options_area);
 

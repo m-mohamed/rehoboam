@@ -2,6 +2,9 @@
 //!
 //! v1.5: Adds distributed sprite swarms for parallel task execution.
 //! Supports hybrid mode with local planner and remote sprite workers.
+//!
+//! Note: Pool management APIs are prepared for future integration.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::path::PathBuf;

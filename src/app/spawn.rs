@@ -513,14 +513,15 @@ fn spawn_tmux_agent(
             if spawn_state.loop_enabled {
                 let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
                 // v1.4: Judge mode - pass custom prompt if enabled, otherwise None for heuristics
-                let judge_prompt = if spawn_state.judge_enabled && !spawn_state.judge_prompt.is_empty() {
-                    Some(spawn_state.judge_prompt.clone())
-                } else if spawn_state.judge_enabled {
-                    // Judge enabled but no custom prompt - use default heuristic mode
-                    Some(String::new())
-                } else {
-                    None
-                };
+                let judge_prompt =
+                    if spawn_state.judge_enabled && !spawn_state.judge_prompt.is_empty() {
+                        Some(spawn_state.judge_prompt.clone())
+                    } else if spawn_state.judge_enabled {
+                        // Judge enabled but no custom prompt - use default heuristic mode
+                        Some(String::new())
+                    } else {
+                        None
+                    };
                 state.register_loop_config(
                     &pane_id,
                     max_iter,

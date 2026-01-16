@@ -112,19 +112,40 @@ pub fn render_agent_card(
                 let display = if !running.is_empty() {
                     // v1.3: Show role breakdown for running subagents
                     use crate::state::AgentRole;
-                    let planners = running.iter().filter(|s| s.role == AgentRole::Planner).count();
-                    let workers = running.iter().filter(|s| s.role == AgentRole::Worker).count();
-                    let reviewers = running.iter().filter(|s| s.role == AgentRole::Reviewer).count();
+                    let planners = running
+                        .iter()
+                        .filter(|s| s.role == AgentRole::Planner)
+                        .count();
+                    let workers = running
+                        .iter()
+                        .filter(|s| s.role == AgentRole::Worker)
+                        .count();
+                    let reviewers = running
+                        .iter()
+                        .filter(|s| s.role == AgentRole::Reviewer)
+                        .count();
 
                     let mut parts = Vec::new();
-                    if planners > 0 { parts.push(format!("{planners}P")); }
-                    if workers > 0 { parts.push(format!("{workers}W")); }
-                    if reviewers > 0 { parts.push(format!("{reviewers}R")); }
+                    if planners > 0 {
+                        parts.push(format!("{planners}P"));
+                    }
+                    if workers > 0 {
+                        parts.push(format!("{workers}W"));
+                    }
+                    if reviewers > 0 {
+                        parts.push(format!("{reviewers}R"));
+                    }
                     let others = running.len() - planners - workers - reviewers;
-                    if others > 0 { parts.push(format!("{others}")); }
+                    if others > 0 {
+                        parts.push(format!("{others}"));
+                    }
 
                     if parts.is_empty() {
-                        format!("{} subagent{}", running.len(), if running.len() == 1 { "" } else { "s" })
+                        format!(
+                            "{} subagent{}",
+                            running.len(),
+                            if running.len() == 1 { "" } else { "s" }
+                        )
                     } else {
                         format!("⤵ {}", parts.join("/"))
                     }

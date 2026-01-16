@@ -23,6 +23,7 @@ pub const NUM_COLUMNS: usize = 3;
 
 /// Loop configuration for pending spawn
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct LoopConfig {
     /// Maximum iterations before stopping
     pub max_iterations: u32,
@@ -42,6 +43,7 @@ pub struct LoopConfig {
 
 /// v1.4: Judge decision after evaluating loop progress
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum JudgeDecision {
     /// Continue to next iteration
     Continue,
@@ -135,20 +137,40 @@ fn infer_role_from_description(description: &str) -> AgentRole {
 
     // Planner keywords (exploration/research)
     let planner_keywords = [
-        "explore", "search", "find", "research", "investigate", "understand",
-        "analyze", "discover", "locate", "identify", "scan", "examine",
+        "explore",
+        "search",
+        "find",
+        "research",
+        "investigate",
+        "understand",
+        "analyze",
+        "discover",
+        "locate",
+        "identify",
+        "scan",
+        "examine",
     ];
 
     // Worker keywords (implementation/mutation)
     let worker_keywords = [
-        "implement", "fix", "edit", "write", "create", "build", "update",
-        "add", "modify", "change", "refactor", "delete", "remove",
+        "implement",
+        "fix",
+        "edit",
+        "write",
+        "create",
+        "build",
+        "update",
+        "add",
+        "modify",
+        "change",
+        "refactor",
+        "delete",
+        "remove",
     ];
 
     // Reviewer keywords (verification)
     let reviewer_keywords = [
-        "review", "test", "verify", "check", "validate", "ensure",
-        "confirm", "audit", "inspect",
+        "review", "test", "verify", "check", "validate", "ensure", "confirm", "audit", "inspect",
     ];
 
     // Check in order of specificity
@@ -516,43 +538,41 @@ impl AppState {
                 let should_continue = if agent.judge_prompt.is_some() {
                     if let Some(ref ralph_dir) = agent.ralph_dir {
                         match ralph::judge_completion(ralph_dir) {
-                            Ok((decision, confidence, explanation)) => {
-                                match decision {
-                                    ralph::JudgeDecision::Complete => {
-                                        agent.loop_mode = LoopMode::Complete;
-                                        tracing::info!(
-                                            pane_id = %pane_id,
-                                            confidence = confidence,
-                                            explanation = %explanation,
-                                            "Judge: task complete"
-                                        );
-                                        false
-                                    }
-                                    ralph::JudgeDecision::Stalled => {
-                                        agent.loop_mode = LoopMode::Stalled;
-                                        tracing::warn!(
-                                            pane_id = %pane_id,
-                                            confidence = confidence,
-                                            explanation = %explanation,
-                                            "Judge: task stalled"
-                                        );
-                                        notify::send(
-                                            "Judge: Stalled",
-                                            &format!("{}: {}", agent.project, explanation),
-                                            Some("Basso"),
-                                        );
-                                        false
-                                    }
-                                    ralph::JudgeDecision::Continue => {
-                                        tracing::debug!(
-                                            pane_id = %pane_id,
-                                            confidence = confidence,
-                                            "Judge: continue"
-                                        );
-                                        true
-                                    }
+                            Ok((decision, confidence, explanation)) => match decision {
+                                ralph::JudgeDecision::Complete => {
+                                    agent.loop_mode = LoopMode::Complete;
+                                    tracing::info!(
+                                        pane_id = %pane_id,
+                                        confidence = confidence,
+                                        explanation = %explanation,
+                                        "Judge: task complete"
+                                    );
+                                    false
                                 }
-                            }
+                                ralph::JudgeDecision::Stalled => {
+                                    agent.loop_mode = LoopMode::Stalled;
+                                    tracing::warn!(
+                                        pane_id = %pane_id,
+                                        confidence = confidence,
+                                        explanation = %explanation,
+                                        "Judge: task stalled"
+                                    );
+                                    notify::send(
+                                        "Judge: Stalled",
+                                        &format!("{}: {}", agent.project, explanation),
+                                        Some("Basso"),
+                                    );
+                                    false
+                                }
+                                ralph::JudgeDecision::Continue => {
+                                    tracing::debug!(
+                                        pane_id = %pane_id,
+                                        confidence = confidence,
+                                        "Judge: continue"
+                                    );
+                                    true
+                                }
+                            },
                             Err(e) => {
                                 tracing::warn!(
                                     pane_id = %pane_id,

@@ -14,7 +14,8 @@ pub mod manager;
 // Re-exports
 pub use manager::CheckpointRecord;
 
-// v1.5: Sprite pool management
+// v1.5: Sprite pool management (public API for future integration)
+#[allow(unused_imports)]
 pub use manager::{
     HybridConfig, HybridSwarmStatus, SpritePool, SpritePoolConfig, SpriteWorker, SpriteWorkerStatus,
 };
