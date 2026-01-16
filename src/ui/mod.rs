@@ -659,7 +659,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             format!("{} ", mode_indicators.join(" "))
         };
 
-        format!("{prefix}s:spawn  d:dashboard  P:view  /:search  ?:help  q:quit")
+        format!("{prefix}s:spawn  d:dashboard  v:view  /:search  ?:help  q:quit")
     };
 
     let footer = Paragraph::new(help)
