@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.4] - 2026-01-16
+
+### Changed
+
+- Enable auto-merge for release-plz PRs
+
+### Fixed
+
+- Use pr_automerge action input instead of invalid config field
+[0.9.4]: https://github.com/m-mohamed/rehoboam/compare/v0.9.3...v0.9.4
+
+
 ## [0.9.3] - 2026-01-16
 
 ### Added
