@@ -1,7 +1,7 @@
-//! Ralph loop state management
+//! Rehoboam loop state management
 //!
-//! Implements proper Ralph loops with fresh sessions per iteration.
-//! State persists in `.ralph/` directory, context stays fresh.
+//! Implements proper Rehoboam loops with fresh sessions per iteration.
+//! State persists in `.rehoboam/` directory, context stays fresh.
 //!
 //! Files:
 //! - anchor.md: Task spec, success criteria (read every iteration)
@@ -30,9 +30,9 @@ pub const PROMISE_COMPLETE_TAG: &str = "<promise>COMPLETE</promise>";
 /// Max session history entries to keep
 const MAX_SESSION_HISTORY: usize = 50;
 
-/// Ralph loop state persisted to state.json
+/// Rehoboam loop state persisted to state.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RalphState {
+pub struct LoopState {
     /// Current iteration (0-indexed, incremented after each Stop)
     pub iteration: u32,
 
@@ -128,9 +128,9 @@ impl LoopRole {
     }
 }
 
-/// Configuration for starting a Ralph loop
+/// Configuration for starting a Rehoboam loop
 #[derive(Debug, Clone)]
-pub struct RalphConfig {
+pub struct RehoboamConfig {
     pub max_iterations: u32,
     pub stop_word: String,
     pub pane_id: String,
@@ -140,7 +140,7 @@ pub struct RalphConfig {
     pub enable_coordination: bool,
 }
 
-impl Default for RalphConfig {
+impl Default for RehoboamConfig {
     fn default() -> Self {
         Self {
             max_iterations: 50,
@@ -152,25 +152,25 @@ impl Default for RalphConfig {
     }
 }
 
-/// Initialize a new Ralph loop directory
+/// Initialize a new Rehoboam loop directory
 ///
-/// Creates `.ralph/` with:
+/// Creates `.rehoboam/` with:
 /// - anchor.md (the task prompt)
 /// - guardrails.md (empty, for learned constraints)
 /// - progress.md (empty, for tracking)
 /// - errors.log (empty)
 /// - state.json (initial state)
-pub fn init_ralph_dir(project_dir: &Path, prompt: &str, config: &RalphConfig) -> Result<PathBuf> {
-    let ralph_dir = project_dir.join(".ralph");
+pub fn init_loop_dir(project_dir: &Path, prompt: &str, config: &RehoboamConfig) -> Result<PathBuf> {
+    let loop_dir = project_dir.join(".rehoboam");
 
     // Create directory (ok if exists)
-    fs::create_dir_all(&ralph_dir)?;
+    fs::create_dir_all(&loop_dir)?;
 
-    info!("Initializing Ralph loop in {:?}", ralph_dir);
+    info!("Initializing Rehoboam loop in {:?}", loop_dir);
 
     // Write anchor.md
     let anchor_content = format!(
-        r#"# Ralph Loop Task
+        r#"# Rehoboam Loop Task
 
 ## Success Criteria
 <!-- Add checkboxes for completion criteria -->
@@ -187,7 +187,7 @@ pub fn init_ralph_dir(project_dir: &Path, prompt: &str, config: &RalphConfig) ->
         prompt = prompt,
         stop_word = config.stop_word,
     );
-    fs::write(ralph_dir.join("anchor.md"), anchor_content)?;
+    fs::write(loop_dir.join("anchor.md"), anchor_content)?;
 
     // Write empty guardrails.md
     let guardrails_content = r#"# Guardrails
@@ -196,7 +196,7 @@ Learned constraints from previous iterations. Check these before taking actions.
 
 <!-- Signs will be added here as the loop progresses -->
 "#;
-    fs::write(ralph_dir.join("guardrails.md"), guardrails_content)?;
+    fs::write(loop_dir.join("guardrails.md"), guardrails_content)?;
 
     // Write empty progress.md
     let progress_content = r#"# Progress
@@ -210,16 +210,16 @@ Starting iteration 1...
 ## Next Steps
 <!-- Track remaining tasks here -->
 "#;
-    fs::write(ralph_dir.join("progress.md"), progress_content)?;
+    fs::write(loop_dir.join("progress.md"), progress_content)?;
 
     // Create empty errors.log
-    fs::write(ralph_dir.join("errors.log"), "")?;
+    fs::write(loop_dir.join("errors.log"), "")?;
 
     // Create empty activity.log
-    fs::write(ralph_dir.join("activity.log"), "")?;
+    fs::write(loop_dir.join("activity.log"), "")?;
 
     // Create empty session_history.log
-    fs::write(ralph_dir.join("session_history.log"), "")?;
+    fs::write(loop_dir.join("session_history.log"), "")?;
 
     // v1.6: Create tasks.md for task queue (Cursor-aligned)
     let tasks_content = r#"# Task Queue
@@ -233,7 +233,7 @@ Starting iteration 1...
 ## Completed
 <!-- Completed tasks move here -->
 "#;
-    fs::write(ralph_dir.join("tasks.md"), tasks_content)?;
+    fs::write(loop_dir.join("tasks.md"), tasks_content)?;
 
     // v1.4/v1.6: Create coordination.md only if enabled (opt-in)
     // Per Cursor: "Workers never coordinate with each other"
@@ -244,11 +244,11 @@ Cross-agent discoveries and broadcasts. Only planners use this.
 
 <!-- Format: [timestamp] [agent_id]: message -->
 "#;
-        fs::write(ralph_dir.join("coordination.md"), coordination_content)?;
+        fs::write(loop_dir.join("coordination.md"), coordination_content)?;
     }
 
     // Write state.json
-    let state = RalphState {
+    let state = LoopState {
         iteration: 0,
         max_iterations: config.max_iterations,
         stop_word: config.stop_word.clone(),
@@ -261,25 +261,25 @@ Cross-agent discoveries and broadcasts. Only planners use this.
         role: config.role,
     };
     let state_json = serde_json::to_string_pretty(&state)?;
-    fs::write(ralph_dir.join("state.json"), state_json)?;
+    fs::write(loop_dir.join("state.json"), state_json)?;
 
-    debug!("Ralph directory initialized: {:?}", ralph_dir);
-    Ok(ralph_dir)
+    debug!("Rehoboam directory initialized: {:?}", loop_dir);
+    Ok(loop_dir)
 }
 
-/// Load Ralph state from directory
-pub fn load_state(ralph_dir: &Path) -> Result<RalphState> {
-    let state_path = ralph_dir.join("state.json");
+/// Load Rehoboam state from directory
+pub fn load_state(loop_dir: &Path) -> Result<LoopState> {
+    let state_path = loop_dir.join("state.json");
     let content =
         fs::read_to_string(&state_path).map_err(|e| eyre!("Failed to read state.json: {}", e))?;
-    let state: RalphState =
+    let state: LoopState =
         serde_json::from_str(&content).map_err(|e| eyre!("Failed to parse state.json: {}", e))?;
     Ok(state)
 }
 
-/// Save Ralph state to directory
-pub fn save_state(ralph_dir: &Path, state: &RalphState) -> Result<()> {
-    let state_path = ralph_dir.join("state.json");
+/// Save Rehoboam state to directory
+pub fn save_state(loop_dir: &Path, state: &LoopState) -> Result<()> {
+    let state_path = loop_dir.join("state.json");
     let content = serde_json::to_string_pretty(state)?;
     fs::write(state_path, content)?;
     Ok(())
@@ -287,6 +287,30 @@ pub fn save_state(ralph_dir: &Path, state: &RalphState) -> Result<()> {
 
 // ============================================================================
 // v1.6: Task Queue System (Cursor-aligned)
+// ============================================================================
+//
+// This module provides programmatic access to the tasks.md task queue.
+// Inspired by Cursor's "Scaling Agents" architecture where:
+// - Planners create tasks by exploring and decomposing work
+// - Workers execute tasks in isolation without coordination
+//
+// **Current Usage Pattern:**
+// Agents manage tasks.md directly via their role-specific prompts:
+// - Planners add tasks: `- [ ] [TASK-XXX] description`
+// - Workers mark complete: `- [x] [TASK-XXX] description`
+//
+// **Available APIs (for future automation):**
+// - `read_pending_tasks()` - Get all unclaimed tasks
+// - `read_next_task()` - Get the next available task
+// - `claim_task()` - Mark a task as "In Progress" with worker ID
+// - `complete_task()` - Move task from "In Progress" to "Completed"
+// - `add_task()` - Programmatically add a task to the queue
+//
+// **Future Enhancement Ideas:**
+// - Auto-claim task on Worker iteration start
+// - Conflict detection (two workers claiming same task)
+// - Task priority/dependency ordering
+// - Queue status display in TUI header
 // ============================================================================
 
 /// A task in the queue
@@ -301,8 +325,8 @@ pub struct Task {
 }
 
 /// Read all pending tasks from tasks.md
-pub fn read_pending_tasks(ralph_dir: &Path) -> Result<Vec<Task>> {
-    let tasks_path = ralph_dir.join("tasks.md");
+pub fn read_pending_tasks(loop_dir: &Path) -> Result<Vec<Task>> {
+    let tasks_path = loop_dir.join("tasks.md");
     if !tasks_path.exists() {
         return Ok(vec![]);
     }
@@ -332,14 +356,14 @@ pub fn read_pending_tasks(ralph_dir: &Path) -> Result<Vec<Task>> {
 }
 
 /// Read the next available task from the queue
-pub fn read_next_task(ralph_dir: &Path) -> Result<Option<Task>> {
-    let tasks = read_pending_tasks(ralph_dir)?;
+pub fn read_next_task(loop_dir: &Path) -> Result<Option<Task>> {
+    let tasks = read_pending_tasks(loop_dir)?;
     Ok(tasks.into_iter().next())
 }
 
 /// Claim a task by moving it from Pending to In Progress
-pub fn claim_task(ralph_dir: &Path, task_id: &str, worker_id: &str) -> Result<()> {
-    let tasks_path = ralph_dir.join("tasks.md");
+pub fn claim_task(loop_dir: &Path, task_id: &str, worker_id: &str) -> Result<()> {
+    let tasks_path = loop_dir.join("tasks.md");
     let content = fs::read_to_string(&tasks_path)?;
 
     let mut new_lines = Vec::new();
@@ -410,8 +434,8 @@ pub fn claim_task(ralph_dir: &Path, task_id: &str, worker_id: &str) -> Result<()
 }
 
 /// Complete a task by moving it from In Progress to Completed
-pub fn complete_task(ralph_dir: &Path, task_id: &str) -> Result<()> {
-    let tasks_path = ralph_dir.join("tasks.md");
+pub fn complete_task(loop_dir: &Path, task_id: &str) -> Result<()> {
+    let tasks_path = loop_dir.join("tasks.md");
     let content = fs::read_to_string(&tasks_path)?;
 
     let mut new_lines = Vec::new();
@@ -454,8 +478,8 @@ pub fn complete_task(ralph_dir: &Path, task_id: &str) -> Result<()> {
 }
 
 /// Add a new task to the Pending queue
-pub fn add_task(ralph_dir: &Path, task_id: &str, description: &str) -> Result<()> {
-    let tasks_path = ralph_dir.join("tasks.md");
+pub fn add_task(loop_dir: &Path, task_id: &str, description: &str) -> Result<()> {
+    let tasks_path = loop_dir.join("tasks.md");
     let content = fs::read_to_string(&tasks_path)?;
 
     let mut new_lines = Vec::new();
@@ -531,8 +555,8 @@ fn parse_in_progress_line(line: &str) -> Option<Task> {
 ///
 /// Messages are appended with timestamp and agent ID.
 /// Format: `[2025-01-15T12:34:56Z] [agent-id]: message`
-pub fn broadcast(ralph_dir: &Path, agent_id: &str, message: &str) -> Result<()> {
-    let coordination_path = ralph_dir.join("coordination.md");
+pub fn broadcast(loop_dir: &Path, agent_id: &str, message: &str) -> Result<()> {
+    let coordination_path = loop_dir.join("coordination.md");
 
     // Create if doesn't exist
     if !coordination_path.exists() {
@@ -557,8 +581,8 @@ pub fn broadcast(ralph_dir: &Path, agent_id: &str, message: &str) -> Result<()> 
 /// Read recent broadcasts from coordination.md
 ///
 /// Returns broadcasts from the last N minutes (default: 60)
-pub fn read_broadcasts(ralph_dir: &Path, max_age_minutes: Option<u32>) -> Result<Vec<String>> {
-    let coordination_path = ralph_dir.join("coordination.md");
+pub fn read_broadcasts(loop_dir: &Path, max_age_minutes: Option<u32>) -> Result<Vec<String>> {
+    let coordination_path = loop_dir.join("coordination.md");
 
     if !coordination_path.exists() {
         return Ok(vec![]);
@@ -588,28 +612,28 @@ pub fn read_broadcasts(ralph_dir: &Path, max_age_minutes: Option<u32>) -> Result
 ///
 /// Returns the ralph directory if it exists and has valid state
 pub fn join_existing_loop(project_dir: &Path) -> Result<PathBuf> {
-    let ralph_dir = project_dir.join(".ralph");
+    let loop_dir = project_dir.join(".rehoboam");
 
-    if !ralph_dir.exists() {
-        return Err(eyre!("No .ralph directory found in {:?}", project_dir));
+    if !loop_dir.exists() {
+        return Err(eyre!("No .rehoboam directory found in {:?}", project_dir));
     }
 
     // Verify state.json exists and is valid
-    let _ = load_state(&ralph_dir)?;
+    let _ = load_state(&loop_dir)?;
 
-    info!("Joining existing Rehoboam loop at {:?}", ralph_dir);
-    Ok(ralph_dir)
+    info!("Joining existing Rehoboam loop at {:?}", loop_dir);
+    Ok(loop_dir)
 }
 
 /// Register a worker with the coordination system
 ///
 /// Adds a broadcast announcing the worker joined
-pub fn register_worker(ralph_dir: &Path, worker_id: &str, description: &str) -> Result<()> {
+pub fn register_worker(loop_dir: &Path, worker_id: &str, description: &str) -> Result<()> {
     let message = format!("Worker joined: {}", description);
-    broadcast(ralph_dir, worker_id, &message)?;
+    broadcast(loop_dir, worker_id, &message)?;
 
     // Create worker-specific state file
-    let workers_dir = ralph_dir.join("workers");
+    let workers_dir = loop_dir.join("workers");
     fs::create_dir_all(&workers_dir)?;
 
     let worker_file = workers_dir.join(format!("{}.md", worker_id));
@@ -621,13 +645,13 @@ pub fn register_worker(ralph_dir: &Path, worker_id: &str, description: &str) -> 
     );
     fs::write(&worker_file, content)?;
 
-    info!("Registered worker {} in {:?}", worker_id, ralph_dir);
+    info!("Registered worker {} in {:?}", worker_id, loop_dir);
     Ok(())
 }
 
 /// Update worker status
-pub fn update_worker_status(ralph_dir: &Path, worker_id: &str, status: &str) -> Result<()> {
-    let worker_file = ralph_dir.join("workers").join(format!("{}.md", worker_id));
+pub fn update_worker_status(loop_dir: &Path, worker_id: &str, status: &str) -> Result<()> {
+    let worker_file = loop_dir.join("workers").join(format!("{}.md", worker_id));
 
     if !worker_file.exists() {
         return Err(eyre!("Worker {} not registered", worker_id));
@@ -659,8 +683,8 @@ pub fn update_worker_status(ralph_dir: &Path, worker_id: &str, status: &str) -> 
 }
 
 /// List active workers in the loop
-pub fn list_workers(ralph_dir: &Path) -> Result<Vec<String>> {
-    let workers_dir = ralph_dir.join("workers");
+pub fn list_workers(loop_dir: &Path) -> Result<Vec<String>> {
+    let workers_dir = loop_dir.join("workers");
 
     if !workers_dir.exists() {
         return Ok(vec![]);
@@ -680,17 +704,17 @@ pub fn list_workers(ralph_dir: &Path) -> Result<Vec<String>> {
 }
 
 /// Increment iteration counter and return new value
-pub fn increment_iteration(ralph_dir: &Path) -> Result<u32> {
-    let mut state = load_state(ralph_dir)?;
+pub fn increment_iteration(loop_dir: &Path) -> Result<u32> {
+    let mut state = load_state(loop_dir)?;
     state.iteration += 1;
-    save_state(ralph_dir, &state)?;
-    info!("Ralph iteration incremented to {}", state.iteration);
+    save_state(loop_dir, &state)?;
+    info!("Rehoboam iteration incremented to {}", state.iteration);
     Ok(state.iteration)
 }
 
 /// Check if stop word is present in progress.md
-pub fn check_stop_word(ralph_dir: &Path, stop_word: &str) -> Result<bool> {
-    let progress_path = ralph_dir.join("progress.md");
+pub fn check_stop_word(loop_dir: &Path, stop_word: &str) -> Result<bool> {
+    let progress_path = loop_dir.join("progress.md");
 
     if !progress_path.exists() {
         return Ok(false);
@@ -707,8 +731,8 @@ pub fn check_stop_word(ralph_dir: &Path, stop_word: &str) -> Result<bool> {
 }
 
 /// Check if max iterations reached
-pub fn check_max_iterations(ralph_dir: &Path) -> Result<bool> {
-    let state = load_state(ralph_dir)?;
+pub fn check_max_iterations(loop_dir: &Path) -> Result<bool> {
+    let state = load_state(loop_dir)?;
     let reached = state.iteration >= state.max_iterations;
 
     if reached {
@@ -729,10 +753,10 @@ pub fn check_max_iterations(ralph_dir: &Path) -> Result<bool> {
 ///
 /// Planners explore, decompose tasks, and write to tasks.md.
 /// They do NOT implement anything themselves.
-fn build_planner_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
-    let anchor = fs::read_to_string(ralph_dir.join("anchor.md")).unwrap_or_default();
-    let progress = fs::read_to_string(ralph_dir.join("progress.md")).unwrap_or_default();
-    let tasks = fs::read_to_string(ralph_dir.join("tasks.md")).unwrap_or_default();
+fn build_planner_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
+    let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
+    let progress = fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default();
+    let tasks = fs::read_to_string(loop_dir.join("tasks.md")).unwrap_or_default();
 
     let prompt = format!(
         r#"# Rehoboam Loop - PLANNER - Iteration {iteration}
@@ -749,23 +773,27 @@ You are a PLANNER. Your job is to explore and decompose work into tasks.
 {progress}
 
 ## Rules for Planners
-1. Explore the codebase to understand structure and patterns
-2. Break down the goal into discrete, independent tasks
-3. Each task should be completable by a single worker in ONE iteration
-4. Write tasks to tasks.md in the Pending section using format:
+1. **Explore first** - Read the codebase to understand structure and patterns
+2. **Check existing tasks** - Read tasks.md before creating new tasks to avoid duplicates
+3. Break down the goal into discrete, independent tasks
+4. Each task should be completable by a single worker in ONE iteration
+5. Write tasks to tasks.md in the Pending section using format:
    `- [ ] [TASK-XXX] Description of the task`
-5. Do NOT implement anything yourself
-6. Do NOT coordinate with workers - they work in isolation
-7. When planning is complete, write "PLANNING COMPLETE" to progress.md
-8. If stuck, add more exploration tasks rather than trying to solve everything
+6. Do NOT implement anything yourself
+7. Do NOT coordinate with workers - they work in isolation
+8. When planning is complete, write "PLANNING COMPLETE" to progress.md
+9. If stuck, add more exploration tasks rather than trying to solve everything
+10. Update progress.md with your exploration findings
 
 ## Task Guidelines
+- **No duplicates** - Check tasks.md before adding; skip if similar task exists
 - Tasks should be atomic and independent
 - Include enough context in the description for a worker to understand
 - Prefix related tasks with common identifiers (e.g., TASK-AUTH-001, TASK-AUTH-002)
 - Order tasks by dependency (simpler tasks first)
+- Mark your exploration progress in progress.md so future iterations don't repeat
 
-Remember: Your job is PLANNING, not IMPLEMENTING. Create clear tasks for workers.
+Remember: Your job is PLANNING, not IMPLEMENTING. Explore thoroughly, create clear tasks.
 "#,
         iteration = state.iteration + 1,
         anchor = anchor,
@@ -780,12 +808,12 @@ Remember: Your job is PLANNING, not IMPLEMENTING. Create clear tasks for workers
 ///
 /// Workers pick ONE task from the queue, execute it in isolation,
 /// and mark it complete. They do NOT coordinate with other workers.
-fn build_worker_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
-    let anchor = fs::read_to_string(ralph_dir.join("anchor.md")).unwrap_or_default();
-    let guardrails = fs::read_to_string(ralph_dir.join("guardrails.md")).unwrap_or_default();
+fn build_worker_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
+    let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
+    let guardrails = fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
 
     // Get next available task
-    let next_task = read_next_task(ralph_dir)?;
+    let next_task = read_next_task(loop_dir)?;
     let task_section = if let Some(task) = &next_task {
         format!(
             "## Your Assigned Task\n**[{}]** {}\n",
@@ -809,21 +837,31 @@ You are a WORKER. Your job is to complete ONE assigned task.
 {guardrails}
 
 ## Rules for Workers
-1. Focus ONLY on your assigned task - ignore other work
-2. Do NOT coordinate with other workers - they handle their own tasks
-3. Do NOT explore unrelated code or add scope
-4. When done, mark your task complete in tasks.md:
-   Change `- [ ] [TASK-XXX]` to `- [x] [TASK-XXX]` in the Completed section
-5. Update progress.md with what you accomplished
-6. If blocked by something outside your task, note it in progress.md and exit
-7. Do NOT try to solve blockers that require other tasks
-8. Write "{stop_word}" when your task is fully complete
+1. **Mark task "In Progress" FIRST** - Before starting, move your task from Pending to In Progress:
+   `- [~] [TASK-XXX] description (worker: YOUR_ID)`
+2. Focus ONLY on your assigned task - ignore other work
+3. Do NOT coordinate with other workers - they handle their own tasks
+4. Do NOT explore unrelated code or add scope
+5. When done, **mark task "Completed"** - Move from In Progress to Completed section:
+   `- [x] [TASK-XXX] description`
+6. Update progress.md with what you accomplished
+7. If blocked by something outside your task, note it in progress.md and exit
+8. Do NOT try to solve blockers that require other tasks
+9. Write "{stop_word}" when your task is fully complete
+
+## Task Status Flow
+```
+Pending → In Progress → Completed
+- [ ]   → - [~]       → - [x]
+```
 
 ## Task Completion Checklist
+- [ ] Task marked "In Progress" at start
 - [ ] Task implemented as described
 - [ ] Tests pass (if applicable)
-- [ ] Task marked complete in tasks.md
+- [ ] Task marked "Completed" in tasks.md
 - [ ] Progress.md updated with summary
+- [ ] Stop word written if fully complete
 
 Remember: Complete YOUR task, then exit. Don't do extra work.
 "#,
@@ -846,18 +884,18 @@ Remember: Complete YOUR task, then exit. Don't do extra work.
 /// - Progress so far
 ///
 /// v1.6: Dispatches to role-specific prompts based on state.role
-pub fn build_iteration_prompt(ralph_dir: &Path) -> Result<String> {
-    let state = load_state(ralph_dir)?;
+pub fn build_iteration_prompt(loop_dir: &Path) -> Result<String> {
+    let state = load_state(loop_dir)?;
 
     // v1.6: Dispatch to role-specific prompts
     let prompt = match state.role {
-        LoopRole::Planner => build_planner_prompt(ralph_dir, &state)?,
-        LoopRole::Worker => build_worker_prompt(ralph_dir, &state)?,
-        LoopRole::Auto => build_auto_prompt(ralph_dir, &state)?,
+        LoopRole::Planner => build_planner_prompt(loop_dir, &state)?,
+        LoopRole::Worker => build_worker_prompt(loop_dir, &state)?,
+        LoopRole::Auto => build_auto_prompt(loop_dir, &state)?,
     };
 
     // Write to a temp file for claude stdin piping
-    let prompt_file = ralph_dir.join("_iteration_prompt.md");
+    let prompt_file = loop_dir.join("_iteration_prompt.md");
     fs::write(&prompt_file, &prompt)?;
 
     debug!(
@@ -869,13 +907,13 @@ pub fn build_iteration_prompt(ralph_dir: &Path) -> Result<String> {
 }
 
 /// Build the legacy "Auto" prompt (backward compatible)
-fn build_auto_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
-    let anchor = fs::read_to_string(ralph_dir.join("anchor.md")).unwrap_or_default();
-    let guardrails = fs::read_to_string(ralph_dir.join("guardrails.md")).unwrap_or_default();
-    let progress = fs::read_to_string(ralph_dir.join("progress.md")).unwrap_or_default();
+fn build_auto_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
+    let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
+    let guardrails = fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
+    let progress = fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default();
 
     // Get recent iteration context (last 5 iterations)
-    let recent = get_recent_progress_summary(ralph_dir, 5).unwrap_or_default();
+    let recent = get_recent_progress_summary(loop_dir, 5).unwrap_or_default();
     let recent_section = if recent.is_empty() {
         String::new()
     } else {
@@ -883,7 +921,7 @@ fn build_auto_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
     };
 
     // v1.4: Get recent broadcasts from coordination.md
-    let broadcasts = read_broadcasts(ralph_dir, Some(60)).unwrap_or_default();
+    let broadcasts = read_broadcasts(loop_dir, Some(60)).unwrap_or_default();
     let coordination_section = if broadcasts.is_empty() {
         String::new()
     } else {
@@ -894,7 +932,7 @@ fn build_auto_prompt(ralph_dir: &Path, state: &RalphState) -> Result<String> {
     };
 
     // v1.4: List active workers if any
-    let workers = list_workers(ralph_dir).unwrap_or_default();
+    let workers = list_workers(loop_dir).unwrap_or_default();
     let workers_section = if workers.is_empty() {
         String::new()
     } else {
@@ -952,9 +990,9 @@ Git commits are created between iterations for easy rollback.
 }
 
 /// Add a guardrail/sign to guardrails.md (internal use)
-fn add_guardrail(ralph_dir: &Path, sign: &str, trigger: &str, instruction: &str) -> Result<()> {
-    let state = load_state(ralph_dir)?;
-    let guardrails_path = ralph_dir.join("guardrails.md");
+fn add_guardrail(loop_dir: &Path, sign: &str, trigger: &str, instruction: &str) -> Result<()> {
+    let state = load_state(loop_dir)?;
+    let guardrails_path = loop_dir.join("guardrails.md");
 
     let entry = format!(
         r#"
@@ -983,11 +1021,11 @@ fn add_guardrail(ralph_dir: &Path, sign: &str, trigger: &str, instruction: &str)
 
 /// Create a git checkpoint after an iteration completes
 ///
-/// Commits all changes with a message indicating the Ralph iteration.
+/// Commits all changes with a message indicating the Rehoboam iteration.
 /// Returns the commit hash if successful.
-pub fn create_git_checkpoint(ralph_dir: &Path) -> Result<Option<String>> {
-    let state = load_state(ralph_dir)?;
-    let project_dir = ralph_dir
+pub fn create_git_checkpoint(loop_dir: &Path) -> Result<Option<String>> {
+    let state = load_state(loop_dir)?;
+    let project_dir = loop_dir
         .parent()
         .ok_or_else(|| eyre!("Invalid ralph dir"))?;
 
@@ -1022,9 +1060,9 @@ pub fn create_git_checkpoint(ralph_dir: &Path) -> Result<Option<String>> {
         return Ok(state.last_commit.clone());
     }
 
-    // Commit with Ralph iteration message
+    // Commit with Rehoboam iteration message
     let commit_msg = format!(
-        "ralph: iteration {} checkpoint\n\nAutomated checkpoint from Ralph loop.",
+        "ralph: iteration {} checkpoint\n\nAutomated checkpoint from Rehoboam loop.",
         state.iteration
     );
 
@@ -1049,7 +1087,7 @@ pub fn create_git_checkpoint(ralph_dir: &Path) -> Result<Option<String>> {
             // Update state with new commit hash
             let mut new_state = state;
             new_state.last_commit = Some(hash.clone());
-            save_state(ralph_dir, &new_state)?;
+            save_state(loop_dir, &new_state)?;
 
             info!("Created git checkpoint: {}", &hash[..8.min(hash.len())]);
             Ok(Some(hash))
@@ -1074,13 +1112,13 @@ pub fn create_git_checkpoint(ralph_dir: &Path) -> Result<Option<String>> {
 ///
 /// Records timing, tool calls, and other metrics to activity.log
 pub fn log_activity(
-    ralph_dir: &Path,
+    loop_dir: &Path,
     iteration: u32,
     duration_secs: Option<u64>,
     tool_calls: Option<u32>,
     completion_reason: &str,
 ) -> Result<()> {
-    let activity_path = ralph_dir.join("activity.log");
+    let activity_path = loop_dir.join("activity.log");
 
     let duration_str = duration_secs
         .map(|s| format!("{}m {}s", s / 60, s % 60))
@@ -1111,16 +1149,16 @@ pub fn log_activity(
 }
 
 /// Mark iteration start time
-pub fn mark_iteration_start(ralph_dir: &Path) -> Result<()> {
-    let mut state = load_state(ralph_dir)?;
+pub fn mark_iteration_start(loop_dir: &Path) -> Result<()> {
+    let mut state = load_state(loop_dir)?;
     state.iteration_started_at = Some(Utc::now());
-    save_state(ralph_dir, &state)?;
+    save_state(loop_dir, &state)?;
     Ok(())
 }
 
 /// Get iteration duration in seconds
-pub fn get_iteration_duration(ralph_dir: &Path) -> Option<u64> {
-    let state = load_state(ralph_dir).ok()?;
+pub fn get_iteration_duration(loop_dir: &Path) -> Option<u64> {
+    let state = load_state(loop_dir).ok()?;
     let started = state.iteration_started_at?;
     let duration = Utc::now().signed_duration_since(started);
     Some(duration.num_seconds().max(0) as u64)
@@ -1133,8 +1171,8 @@ pub fn get_iteration_duration(ralph_dir: &Path) -> Option<u64> {
 /// Check if the <promise>COMPLETE</promise> tag is present in progress.md
 ///
 /// This is a more explicit completion signal than stop word matching.
-pub fn check_promise_tag(ralph_dir: &Path) -> Result<bool> {
-    let progress_path = ralph_dir.join("progress.md");
+pub fn check_promise_tag(loop_dir: &Path) -> Result<bool> {
+    let progress_path = loop_dir.join("progress.md");
 
     if !progress_path.exists() {
         return Ok(false);
@@ -1153,14 +1191,14 @@ pub fn check_promise_tag(ralph_dir: &Path) -> Result<bool> {
 /// Check for completion using both stop word AND promise tag
 ///
 /// Returns (is_complete, reason)
-pub fn check_completion(ralph_dir: &Path, stop_word: &str) -> Result<(bool, String)> {
+pub fn check_completion(loop_dir: &Path, stop_word: &str) -> Result<(bool, String)> {
     // Check promise tag first (more explicit)
-    if check_promise_tag(ralph_dir)? {
+    if check_promise_tag(loop_dir)? {
         return Ok((true, "promise_tag".to_string()));
     }
 
     // Check stop word
-    if check_stop_word(ralph_dir, stop_word)? {
+    if check_stop_word(loop_dir, stop_word)? {
         return Ok((true, "stop_word".to_string()));
     }
 
@@ -1215,9 +1253,9 @@ pub enum JudgeDecision {
 /// a separate Claude session to evaluate.
 ///
 /// Returns (decision, confidence, reason)
-pub fn judge_completion(ralph_dir: &Path) -> Result<(JudgeDecision, f64, String)> {
-    let progress = read_file_content(ralph_dir, "progress.md")?;
-    let anchor = read_file_content(ralph_dir, "anchor.md")?;
+pub fn judge_completion(loop_dir: &Path) -> Result<(JudgeDecision, f64, String)> {
+    let progress = read_file_content(loop_dir, "progress.md")?;
+    let anchor = read_file_content(loop_dir, "anchor.md")?;
     let progress_lower = progress.to_lowercase();
 
     // Check for explicit completion indicators
@@ -1292,8 +1330,8 @@ pub fn judge_completion(ralph_dir: &Path) -> Result<(JudgeDecision, f64, String)
 }
 
 /// Helper to read file content with default for missing files
-fn read_file_content(ralph_dir: &Path, filename: &str) -> Result<String> {
-    let path = ralph_dir.join(filename);
+fn read_file_content(loop_dir: &Path, filename: &str) -> Result<String> {
+    let path = loop_dir.join(filename);
     if path.exists() {
         Ok(fs::read_to_string(path)?)
     } else {
@@ -1312,8 +1350,8 @@ const AUTO_GUARDRAIL_THRESHOLD: u32 = 3;
 ///
 /// If the same error pattern appears AUTO_GUARDRAIL_THRESHOLD times,
 /// automatically adds it to guardrails.md
-pub fn track_error_pattern(ralph_dir: &Path, error: &str) -> Result<bool> {
-    let mut state = load_state(ralph_dir)?;
+pub fn track_error_pattern(loop_dir: &Path, error: &str) -> Result<bool> {
+    let mut state = load_state(loop_dir)?;
 
     // Create a simple hash of the error (first 100 chars, normalized)
     let error_key = error
@@ -1332,7 +1370,7 @@ pub fn track_error_pattern(ralph_dir: &Path, error: &str) -> Result<bool> {
     *count += 1;
     let current_count = *count;
 
-    save_state(ralph_dir, &state)?;
+    save_state(loop_dir, &state)?;
 
     // Check if we hit the threshold
     if current_count == AUTO_GUARDRAIL_THRESHOLD {
@@ -1344,7 +1382,7 @@ pub fn track_error_pattern(ralph_dir: &Path, error: &str) -> Result<bool> {
             current_count
         );
 
-        add_guardrail(ralph_dir, &sign_name, &trigger, &instruction)?;
+        add_guardrail(loop_dir, &sign_name, &trigger, &instruction)?;
         info!(
             "Auto-added guardrail for repeated error: {} ({} occurrences)",
             error_key, current_count
@@ -1363,13 +1401,13 @@ pub fn track_error_pattern(ralph_dir: &Path, error: &str) -> Result<bool> {
 ///
 /// Records transitions like: started -> working -> stopped -> respawning
 pub fn log_session_transition(
-    ralph_dir: &Path,
+    loop_dir: &Path,
     from_state: &str,
     to_state: &str,
     details: Option<&str>,
 ) -> Result<()> {
-    let history_path = ralph_dir.join("session_history.log");
-    let state = load_state(ralph_dir)?;
+    let history_path = loop_dir.join("session_history.log");
+    let state = load_state(loop_dir)?;
 
     let details_str = details.map(|d| format!(" | {}", d)).unwrap_or_default();
 
@@ -1406,8 +1444,8 @@ pub fn log_session_transition(
 ///
 /// Returns the last N entries from activity.log formatted for inclusion
 /// in the iteration prompt. This helps Claude understand recent progress.
-pub fn get_recent_progress_summary(ralph_dir: &Path, count: usize) -> Result<String> {
-    let activity_path = ralph_dir.join("activity.log");
+pub fn get_recent_progress_summary(loop_dir: &Path, count: usize) -> Result<String> {
+    let activity_path = loop_dir.join("activity.log");
 
     if !activity_path.exists() {
         return Ok(String::new());
@@ -1434,9 +1472,9 @@ mod tests {
     use tempfile::TempDir;
 
     #[test]
-    fn test_init_ralph_dir() {
+    fn test_init_loop_dir() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig {
+        let config = RehoboamConfig {
             max_iterations: 10,
             stop_word: "COMPLETE".to_string(),
             pane_id: "%42".to_string(),
@@ -1444,15 +1482,15 @@ mod tests {
             enable_coordination: false,
         };
 
-        let ralph_dir = init_ralph_dir(temp.path(), "Build a REST API", &config).unwrap();
+        let loop_dir = init_loop_dir(temp.path(), "Build a REST API", &config).unwrap();
 
-        assert!(ralph_dir.join("anchor.md").exists());
-        assert!(ralph_dir.join("guardrails.md").exists());
-        assert!(ralph_dir.join("progress.md").exists());
-        assert!(ralph_dir.join("errors.log").exists());
-        assert!(ralph_dir.join("state.json").exists());
+        assert!(loop_dir.join("anchor.md").exists());
+        assert!(loop_dir.join("guardrails.md").exists());
+        assert!(loop_dir.join("progress.md").exists());
+        assert!(loop_dir.join("errors.log").exists());
+        assert!(loop_dir.join("state.json").exists());
 
-        let state = load_state(&ralph_dir).unwrap();
+        let state = load_state(&loop_dir).unwrap();
         assert_eq!(state.iteration, 0);
         assert_eq!(state.max_iterations, 10);
         assert_eq!(state.stop_word, "COMPLETE");
@@ -1461,95 +1499,57 @@ mod tests {
     #[test]
     fn test_increment_iteration() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        let iter1 = increment_iteration(&ralph_dir).unwrap();
+        let iter1 = increment_iteration(&loop_dir).unwrap();
         assert_eq!(iter1, 1);
 
-        let iter2 = increment_iteration(&ralph_dir).unwrap();
+        let iter2 = increment_iteration(&loop_dir).unwrap();
         assert_eq!(iter2, 2);
-    }
-
-    #[test]
-    fn test_check_stop_word() {
-        let temp = TempDir::new().unwrap();
-        let config = RalphConfig {
-            stop_word: "FINISHED".to_string(),
-            ..Default::default()
-        };
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
-
-        // Initially no stop word
-        assert!(!check_stop_word(&ralph_dir, "FINISHED").unwrap());
-
-        // Add stop word to progress
-        fs::write(ralph_dir.join("progress.md"), "Task FINISHED successfully").unwrap();
-        assert!(check_stop_word(&ralph_dir, "FINISHED").unwrap());
-
-        // Case insensitive
-        assert!(check_stop_word(&ralph_dir, "finished").unwrap());
     }
 
     #[test]
     fn test_check_max_iterations() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig {
+        let config = RehoboamConfig {
             max_iterations: 3,
             ..Default::default()
         };
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        assert!(!check_max_iterations(&ralph_dir).unwrap());
+        assert!(!check_max_iterations(&loop_dir).unwrap());
 
-        increment_iteration(&ralph_dir).unwrap();
-        increment_iteration(&ralph_dir).unwrap();
-        assert!(!check_max_iterations(&ralph_dir).unwrap());
+        increment_iteration(&loop_dir).unwrap();
+        increment_iteration(&loop_dir).unwrap();
+        assert!(!check_max_iterations(&loop_dir).unwrap());
 
-        increment_iteration(&ralph_dir).unwrap();
-        assert!(check_max_iterations(&ralph_dir).unwrap());
-    }
-
-    #[test]
-    fn test_check_promise_tag() {
-        let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
-
-        // Initially no promise tag
-        assert!(!check_promise_tag(&ralph_dir).unwrap());
-
-        // Add promise tag to progress
-        fs::write(
-            ralph_dir.join("progress.md"),
-            "Task complete!\n<promise>COMPLETE</promise>",
-        )
-        .unwrap();
-        assert!(check_promise_tag(&ralph_dir).unwrap());
+        increment_iteration(&loop_dir).unwrap();
+        assert!(check_max_iterations(&loop_dir).unwrap());
     }
 
     #[test]
     fn test_check_completion() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig {
+        let config = RehoboamConfig {
             stop_word: "DONE".to_string(),
             ..Default::default()
         };
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // Initially not complete
-        let (complete, _) = check_completion(&ralph_dir, "DONE").unwrap();
+        let (complete, _) = check_completion(&loop_dir, "DONE").unwrap();
         assert!(!complete);
 
         // Stop word triggers completion
-        fs::write(ralph_dir.join("progress.md"), "Task DONE").unwrap();
-        let (complete, reason) = check_completion(&ralph_dir, "DONE").unwrap();
+        fs::write(loop_dir.join("progress.md"), "Task DONE").unwrap();
+        let (complete, reason) = check_completion(&loop_dir, "DONE").unwrap();
         assert!(complete);
         assert_eq!(reason, "stop_word");
 
         // Promise tag also triggers completion (takes precedence)
-        fs::write(ralph_dir.join("progress.md"), "<promise>COMPLETE</promise>").unwrap();
-        let (complete, reason) = check_completion(&ralph_dir, "DONE").unwrap();
+        fs::write(loop_dir.join("progress.md"), "<promise>COMPLETE</promise>").unwrap();
+        let (complete, reason) = check_completion(&loop_dir, "DONE").unwrap();
         assert!(complete);
         assert_eq!(reason, "promise_tag");
     }
@@ -1557,13 +1557,13 @@ mod tests {
     #[test]
     fn test_log_activity() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        log_activity(&ralph_dir, 1, Some(120), Some(50), "continuing").unwrap();
-        log_activity(&ralph_dir, 2, Some(90), None, "complete:stop_word").unwrap();
+        log_activity(&loop_dir, 1, Some(120), Some(50), "continuing").unwrap();
+        log_activity(&loop_dir, 2, Some(90), None, "complete:stop_word").unwrap();
 
-        let content = fs::read_to_string(ralph_dir.join("activity.log")).unwrap();
+        let content = fs::read_to_string(loop_dir.join("activity.log")).unwrap();
         assert!(content.contains("Iteration 1"));
         assert!(content.contains("2m 0s"));
         assert!(content.contains("Iteration 2"));
@@ -1573,14 +1573,14 @@ mod tests {
     #[test]
     fn test_log_session_transition() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        log_session_transition(&ralph_dir, "init", "starting", Some("%42")).unwrap();
-        log_session_transition(&ralph_dir, "working", "stopping", None).unwrap();
-        log_session_transition(&ralph_dir, "stopping", "respawning", Some("iteration 2")).unwrap();
+        log_session_transition(&loop_dir, "init", "starting", Some("%42")).unwrap();
+        log_session_transition(&loop_dir, "working", "stopping", None).unwrap();
+        log_session_transition(&loop_dir, "stopping", "respawning", Some("iteration 2")).unwrap();
 
-        let content = fs::read_to_string(ralph_dir.join("session_history.log")).unwrap();
+        let content = fs::read_to_string(loop_dir.join("session_history.log")).unwrap();
         assert!(content.contains("init -> starting"));
         assert!(content.contains("working -> stopping"));
         assert!(content.contains("respawning"));
@@ -1589,18 +1589,18 @@ mod tests {
     #[test]
     fn test_track_error_pattern() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // First two occurrences don't trigger guardrail
-        assert!(!track_error_pattern(&ralph_dir, "API rate limit exceeded").unwrap());
-        assert!(!track_error_pattern(&ralph_dir, "API rate limit exceeded").unwrap());
+        assert!(!track_error_pattern(&loop_dir, "API rate limit exceeded").unwrap());
+        assert!(!track_error_pattern(&loop_dir, "API rate limit exceeded").unwrap());
 
         // Third occurrence triggers auto-guardrail
-        assert!(track_error_pattern(&ralph_dir, "API rate limit exceeded").unwrap());
+        assert!(track_error_pattern(&loop_dir, "API rate limit exceeded").unwrap());
 
         // Check guardrail was added
-        let guardrails = fs::read_to_string(ralph_dir.join("guardrails.md")).unwrap();
+        let guardrails = fs::read_to_string(loop_dir.join("guardrails.md")).unwrap();
         assert!(guardrails.contains("Auto-detected"));
         assert!(guardrails.contains("occurred 3 times"));
     }
@@ -1608,62 +1608,46 @@ mod tests {
     #[test]
     fn test_activity_log_created() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        assert!(ralph_dir.join("activity.log").exists());
-        assert!(ralph_dir.join("session_history.log").exists());
+        assert!(loop_dir.join("activity.log").exists());
+        assert!(loop_dir.join("session_history.log").exists());
     }
 
     // v1.4: Judge mode tests
 
     #[test]
-    fn test_judge_completion_indicators() {
-        let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+    fn test_judge_completion_decisions() {
+        // Table-driven test for judge decision logic based on progress.md content
+        let cases: Vec<(&str, JudgeDecision, &str)> = vec![
+            // (progress_content, expected_decision, description)
+            (
+                "All tasks completed successfully.",
+                JudgeDecision::Complete,
+                "completion indicator triggers Complete",
+            ),
+            (
+                "Blocked by missing API credentials.",
+                JudgeDecision::Stalled,
+                "stall indicator triggers Stalled",
+            ),
+            (
+                "Working on implementing the feature.",
+                JudgeDecision::Continue,
+                "no indicators defaults to Continue",
+            ),
+        ];
 
-        // Test completion indicator
-        fs::write(
-            ralph_dir.join("progress.md"),
-            "All tasks completed successfully.",
-        )
-        .unwrap();
-        let (decision, confidence, _) = super::judge_completion(&ralph_dir).unwrap();
-        assert_eq!(decision, JudgeDecision::Complete);
-        assert!(confidence > 0.5);
-    }
+        for (progress_content, expected_decision, desc) in cases {
+            let temp = TempDir::new().unwrap();
+            let config = RehoboamConfig::default();
+            let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-    #[test]
-    fn test_judge_stall_indicators() {
-        let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
-
-        // Test stall indicator
-        fs::write(
-            ralph_dir.join("progress.md"),
-            "Blocked by missing API credentials.",
-        )
-        .unwrap();
-        let (decision, _, _) = super::judge_completion(&ralph_dir).unwrap();
-        assert_eq!(decision, JudgeDecision::Stalled);
-    }
-
-    #[test]
-    fn test_judge_continue_default() {
-        let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
-
-        // Test continue (no indicators)
-        fs::write(
-            ralph_dir.join("progress.md"),
-            "Working on implementing the feature.",
-        )
-        .unwrap();
-        let (decision, _, _) = super::judge_completion(&ralph_dir).unwrap();
-        assert_eq!(decision, JudgeDecision::Continue);
+            fs::write(loop_dir.join("progress.md"), progress_content).unwrap();
+            let (decision, _, _) = super::judge_completion(&loop_dir).unwrap();
+            assert_eq!(decision, expected_decision, "{}", desc);
+        }
     }
 
     // v1.4: Multi-Agent Coordination tests
@@ -1672,38 +1656,38 @@ mod tests {
     fn test_coordination_file_created() {
         let temp = TempDir::new().unwrap();
         // Coordination is opt-in per Cursor guidance
-        let config = RalphConfig {
+        let config = RehoboamConfig {
             enable_coordination: true,
             ..Default::default()
         };
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        assert!(ralph_dir.join("coordination.md").exists());
+        assert!(loop_dir.join("coordination.md").exists());
     }
 
     #[test]
     fn test_coordination_file_not_created_by_default() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // Coordination is opt-in, so it shouldn't exist by default
-        assert!(!ralph_dir.join("coordination.md").exists());
+        assert!(!loop_dir.join("coordination.md").exists());
     }
 
     #[test]
     fn test_broadcast() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig {
+        let config = RehoboamConfig {
             enable_coordination: true,
             ..Default::default()
         };
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        broadcast(&ralph_dir, "worker-1", "Found API schema at /api/v1").unwrap();
-        broadcast(&ralph_dir, "worker-2", "Database migration complete").unwrap();
+        broadcast(&loop_dir, "worker-1", "Found API schema at /api/v1").unwrap();
+        broadcast(&loop_dir, "worker-2", "Database migration complete").unwrap();
 
-        let content = fs::read_to_string(ralph_dir.join("coordination.md")).unwrap();
+        let content = fs::read_to_string(loop_dir.join("coordination.md")).unwrap();
         assert!(content.contains("[worker-1]: Found API schema at /api/v1"));
         assert!(content.contains("[worker-2]: Database migration complete"));
     }
@@ -1711,46 +1695,46 @@ mod tests {
     #[test]
     fn test_read_broadcasts() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        broadcast(&ralph_dir, "agent-a", "Test message 1").unwrap();
-        broadcast(&ralph_dir, "agent-b", "Test message 2").unwrap();
+        broadcast(&loop_dir, "agent-a", "Test message 1").unwrap();
+        broadcast(&loop_dir, "agent-b", "Test message 2").unwrap();
 
-        let broadcasts = read_broadcasts(&ralph_dir, Some(60)).unwrap();
+        let broadcasts = read_broadcasts(&loop_dir, Some(60)).unwrap();
         assert_eq!(broadcasts.len(), 2);
     }
 
     #[test]
     fn test_register_worker() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        register_worker(&ralph_dir, "worker-1", "API endpoint worker").unwrap();
+        register_worker(&loop_dir, "worker-1", "API endpoint worker").unwrap();
 
         // Check worker file created
-        let worker_file = ralph_dir.join("workers/worker-1.md");
+        let worker_file = loop_dir.join("workers/worker-1.md");
         assert!(worker_file.exists());
 
         let content = fs::read_to_string(&worker_file).unwrap();
         assert!(content.contains("API endpoint worker"));
 
         // Check broadcast was sent
-        let broadcasts = read_broadcasts(&ralph_dir, Some(60)).unwrap();
+        let broadcasts = read_broadcasts(&loop_dir, Some(60)).unwrap();
         assert!(!broadcasts.is_empty());
     }
 
     #[test]
     fn test_list_workers() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        register_worker(&ralph_dir, "worker-a", "First worker").unwrap();
-        register_worker(&ralph_dir, "worker-b", "Second worker").unwrap();
+        register_worker(&loop_dir, "worker-a", "First worker").unwrap();
+        register_worker(&loop_dir, "worker-b", "Second worker").unwrap();
 
-        let workers = list_workers(&ralph_dir).unwrap();
+        let workers = list_workers(&loop_dir).unwrap();
         assert_eq!(workers.len(), 2);
         assert!(workers.contains(&"worker-a".to_string()));
         assert!(workers.contains(&"worker-b".to_string()));
@@ -1759,8 +1743,8 @@ mod tests {
     #[test]
     fn test_join_existing_loop() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let _ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let _loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // Should be able to join existing loop
         let joined_dir = join_existing_loop(temp.path()).unwrap();
@@ -1776,24 +1760,24 @@ mod tests {
     #[test]
     fn test_tasks_file_created() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
-        assert!(ralph_dir.join("tasks.md").exists());
+        assert!(loop_dir.join("tasks.md").exists());
     }
 
     #[test]
     fn test_add_and_read_tasks() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // Add tasks (newest first - LIFO order)
-        add_task(&ralph_dir, "TASK-001", "Implement user auth").unwrap();
-        add_task(&ralph_dir, "TASK-002", "Add API validation").unwrap();
+        add_task(&loop_dir, "TASK-001", "Implement user auth").unwrap();
+        add_task(&loop_dir, "TASK-002", "Add API validation").unwrap();
 
         // Read pending tasks - newest task is at top
-        let tasks = read_pending_tasks(&ralph_dir).unwrap();
+        let tasks = read_pending_tasks(&loop_dir).unwrap();
         assert_eq!(tasks.len(), 2);
         // Most recently added task is first
         assert_eq!(tasks[0].id, "TASK-002");
@@ -1804,18 +1788,18 @@ mod tests {
     #[test]
     fn test_read_next_task() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // No tasks initially
-        let task = read_next_task(&ralph_dir).unwrap();
+        let task = read_next_task(&loop_dir).unwrap();
         assert!(task.is_none());
 
         // Add a task
-        add_task(&ralph_dir, "TASK-001", "First task").unwrap();
+        add_task(&loop_dir, "TASK-001", "First task").unwrap();
 
         // Should return the first task
-        let task = read_next_task(&ralph_dir).unwrap();
+        let task = read_next_task(&loop_dir).unwrap();
         assert!(task.is_some());
         assert_eq!(task.unwrap().id, "TASK-001");
     }
@@ -1823,21 +1807,21 @@ mod tests {
     #[test]
     fn test_claim_task() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // Add a task
-        add_task(&ralph_dir, "TASK-001", "Auth endpoint").unwrap();
+        add_task(&loop_dir, "TASK-001", "Auth endpoint").unwrap();
 
         // Claim it
-        claim_task(&ralph_dir, "TASK-001", "%42").unwrap();
+        claim_task(&loop_dir, "TASK-001", "%42").unwrap();
 
         // Should no longer be in pending
-        let pending = read_pending_tasks(&ralph_dir).unwrap();
+        let pending = read_pending_tasks(&loop_dir).unwrap();
         assert!(pending.is_empty());
 
         // Check the file content
-        let content = fs::read_to_string(ralph_dir.join("tasks.md")).unwrap();
+        let content = fs::read_to_string(loop_dir.join("tasks.md")).unwrap();
         assert!(content.contains("In Progress"));
         assert!(content.contains("[TASK-001]"));
         assert!(content.contains("worker: %42"));
@@ -1846,18 +1830,18 @@ mod tests {
     #[test]
     fn test_complete_task() {
         let temp = TempDir::new().unwrap();
-        let config = RalphConfig::default();
-        let ralph_dir = init_ralph_dir(temp.path(), "Test", &config).unwrap();
+        let config = RehoboamConfig::default();
+        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
 
         // Add and claim a task
-        add_task(&ralph_dir, "TASK-001", "Auth endpoint").unwrap();
-        claim_task(&ralph_dir, "TASK-001", "%42").unwrap();
+        add_task(&loop_dir, "TASK-001", "Auth endpoint").unwrap();
+        claim_task(&loop_dir, "TASK-001", "%42").unwrap();
 
         // Complete it
-        complete_task(&ralph_dir, "TASK-001").unwrap();
+        complete_task(&loop_dir, "TASK-001").unwrap();
 
         // Check the file content
-        let content = fs::read_to_string(ralph_dir.join("tasks.md")).unwrap();
+        let content = fs::read_to_string(loop_dir.join("tasks.md")).unwrap();
         assert!(content.contains("Completed"));
         assert!(content.contains("[x] [TASK-001]"));
     }
@@ -1867,34 +1851,34 @@ mod tests {
         let temp = TempDir::new().unwrap();
 
         // Test Planner role
-        let planner_config = RalphConfig {
+        let planner_config = RehoboamConfig {
             role: LoopRole::Planner,
             ..Default::default()
         };
-        let ralph_dir = init_ralph_dir(temp.path(), "Build API", &planner_config).unwrap();
-        let prompt_file = build_iteration_prompt(&ralph_dir).unwrap();
+        let loop_dir = init_loop_dir(temp.path(), "Build API", &planner_config).unwrap();
+        let prompt_file = build_iteration_prompt(&loop_dir).unwrap();
         let prompt = fs::read_to_string(&prompt_file).unwrap();
         assert!(prompt.contains("PLANNER"));
         assert!(prompt.contains("Do NOT implement anything yourself"));
 
         // Test Worker role
         let temp2 = TempDir::new().unwrap();
-        let worker_config = RalphConfig {
+        let worker_config = RehoboamConfig {
             role: LoopRole::Worker,
             ..Default::default()
         };
-        let ralph_dir2 = init_ralph_dir(temp2.path(), "Build API", &worker_config).unwrap();
-        add_task(&ralph_dir2, "TASK-001", "Build auth").unwrap();
-        let prompt_file2 = build_iteration_prompt(&ralph_dir2).unwrap();
+        let loop_dir2 = init_loop_dir(temp2.path(), "Build API", &worker_config).unwrap();
+        add_task(&loop_dir2, "TASK-001", "Build auth").unwrap();
+        let prompt_file2 = build_iteration_prompt(&loop_dir2).unwrap();
         let prompt2 = fs::read_to_string(&prompt_file2).unwrap();
         assert!(prompt2.contains("WORKER"));
         assert!(prompt2.contains("TASK-001"));
 
         // Test Auto role (backward compatible)
         let temp3 = TempDir::new().unwrap();
-        let auto_config = RalphConfig::default();
-        let ralph_dir3 = init_ralph_dir(temp3.path(), "Build API", &auto_config).unwrap();
-        let prompt_file3 = build_iteration_prompt(&ralph_dir3).unwrap();
+        let auto_config = RehoboamConfig::default();
+        let loop_dir3 = init_loop_dir(temp3.path(), "Build API", &auto_config).unwrap();
+        let prompt_file3 = build_iteration_prompt(&loop_dir3).unwrap();
         let prompt3 = fs::read_to_string(&prompt_file3).unwrap();
         assert!(prompt3.contains("Rehoboam Loop - Iteration"));
         assert!(!prompt3.contains("PLANNER"));

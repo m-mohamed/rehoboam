@@ -258,7 +258,7 @@ fn render_project_view(f: &mut Frame, area: Rect, app: &App) {
 
     let list = List::new(items).block(
         Block::default()
-            .title(" Projects [P to toggle Kanban] ")
+            .title(" Projects [v:view] ")
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors::BORDER))
             .border_type(ratatui::widgets::BorderType::Rounded),
@@ -336,7 +336,7 @@ fn render_agent_list_compact(f: &mut Frame, area: Rect, app: &App) {
                 " "
             };
 
-            // Show loop iteration if in Ralph mode
+            // Show loop iteration if in Rehoboam mode
             let loop_info = if agent.loop_mode != crate::state::LoopMode::None {
                 format!(" [{}]", agent.loop_iteration)
             } else {
@@ -659,7 +659,18 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             format!("{} ", mode_indicators.join(" "))
         };
 
-        format!("{prefix}s:spawn  d:dashboard  v:view  /:search  ?:help  q:quit")
+        // View-aware hints
+        match app.view_mode {
+            crate::app::ViewMode::Kanban => {
+                format!("{prefix}s:spawn  d:dashboard  v:view  /:search  ?:help  q:quit")
+            }
+            crate::app::ViewMode::Project => {
+                format!("{prefix}j/k:nav  v:view  /:search  ?:help  q:quit")
+            }
+            crate::app::ViewMode::Split => {
+                format!("{prefix}PgUp/Dn:scroll  T:subagents  v:view  ?:help  q:quit")
+            }
+        }
     };
 
     let footer = Paragraph::new(help)
@@ -762,7 +773,8 @@ fn render_help(f: &mut Frame) {
                 .title(" Help ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(colors::HIGHLIGHT))
-                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_type(ratatui::widgets::BorderType::Double)
+                .title_bottom(Line::from(" ?:close ").centered())
                 .style(Style::default().bg(colors::BG)),
         );
 
@@ -862,9 +874,6 @@ fn render_dashboard(f: &mut Frame, app: &App) {
         lines.push("  └─────────────────────────────────────────────────────┘".to_string());
     }
 
-    lines.push(String::new());
-    lines.push("                     Press 'd' to close".to_string());
-
     let dashboard_text = lines.join("\n");
 
     let dashboard = Paragraph::new(dashboard_text)
@@ -874,7 +883,8 @@ fn render_dashboard(f: &mut Frame, app: &App) {
                 .title(" Rehoboam Dashboard ")
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(colors::HIGHLIGHT))
-                .border_type(ratatui::widgets::BorderType::Rounded)
+                .border_type(ratatui::widgets::BorderType::Double)
+                .title_bottom(Line::from(" d:close ").centered())
                 .style(Style::default().bg(colors::BG)),
         );
 
@@ -1348,7 +1358,7 @@ fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     } else {
         "[ ]"
     };
-    let loop_text = format!("{loop_checkbox} Enable Loop Mode (Ralph-style autonomy)");
+    let loop_text = format!("{loop_checkbox} Enable Loop Mode (Rehoboam-style autonomy)");
     let loop_widget = Paragraph::new(loop_text)
         .style(field_style(spawn_state.active_field == 4))
         .block(

@@ -5,7 +5,7 @@ pub use agent::{Agent, AgentRole, AttentionType, LoopMode, Status, Subagent};
 use crate::config::{MAX_AGENTS, MAX_EVENTS, MAX_SPARKLINE_POINTS};
 use crate::event::{EventSource, HookEvent};
 use crate::notify;
-use crate::ralph;
+use crate::rehoboam_loop;
 use crate::tmux::TmuxController;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,14 +23,13 @@ pub const NUM_COLUMNS: usize = 3;
 
 /// Loop configuration for pending spawn
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct LoopConfig {
     /// Maximum iterations before stopping
     pub max_iterations: u32,
     /// Stop word to detect completion
     pub stop_word: String,
-    /// Path to .ralph/ directory for proper Ralph loops (fresh sessions)
-    pub ralph_dir: Option<std::path::PathBuf>,
+    /// Path to .rehoboam/ directory for Rehoboam loops (fresh sessions)
+    pub loop_dir: Option<std::path::PathBuf>,
 
     // v1.4: Judge mode (Cursor-inspired evaluation phase)
     /// Optional judge prompt for completion evaluation
@@ -38,12 +37,15 @@ pub struct LoopConfig {
     /// to evaluate whether the task is complete.
     pub judge_prompt: Option<String>,
     /// Model override for judge (defaults to haiku for speed)
+    /// Reserved for Phase 1: LLM-based judge enhancement
+    #[allow(dead_code)]
     pub judge_model: Option<String>,
 }
 
 /// v1.4: Judge decision after evaluating loop progress
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Reserved for Phase 1: LLM-based judge enhancement (currently heuristic only)
 #[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JudgeDecision {
     /// Continue to next iteration
     Continue,
@@ -344,12 +346,15 @@ impl AppState {
                 agent.loop_mode = LoopMode::Active;
                 agent.loop_max = loop_config.max_iterations;
                 agent.loop_stop_word = loop_config.stop_word.clone();
-                agent.ralph_dir = loop_config.ralph_dir.clone();
+                agent.loop_dir = loop_config.loop_dir.clone();
+                // v1.4: Wire judge_prompt for Cursor-aligned evaluation
+                agent.judge_prompt = loop_config.judge_prompt.clone();
                 tracing::info!(
                     pane_id = %pane_id,
                     max = loop_config.max_iterations,
                     stop_word = %loop_config.stop_word,
-                    ralph_dir = ?loop_config.ralph_dir,
+                    loop_dir = ?loop_config.loop_dir,
+                    judge_enabled = agent.judge_prompt.is_some(),
                     "Loop mode applied from spawn config"
                 );
             }
@@ -527,9 +532,9 @@ impl AppState {
                 agent.loop_mode = LoopMode::Stalled;
 
                 // Track error pattern for potential auto-guardrail
-                if let Some(ref ralph_dir) = agent.ralph_dir {
+                if let Some(ref loop_dir) = agent.loop_dir {
                     let error_msg = format!("Stalled: {}", reason_str);
-                    if let Ok(added_guardrail) = ralph::track_error_pattern(ralph_dir, &error_msg) {
+                    if let Ok(added_guardrail) = rehoboam_loop::track_error_pattern(loop_dir, &error_msg) {
                         if added_guardrail {
                             tracing::info!(
                                 pane_id = %pane_id,
@@ -537,8 +542,8 @@ impl AppState {
                             );
                         }
                     }
-                    let _ = ralph::log_session_transition(
-                        ralph_dir,
+                    let _ = rehoboam_loop::log_session_transition(
+                        loop_dir,
                         "working",
                         "stalled",
                         Some(reason_str),
@@ -559,10 +564,10 @@ impl AppState {
             } else {
                 // v1.4: Judge mode - evaluate before continuing
                 let should_continue = if agent.judge_prompt.is_some() {
-                    if let Some(ref ralph_dir) = agent.ralph_dir {
-                        match ralph::judge_completion(ralph_dir) {
+                    if let Some(ref loop_dir) = agent.loop_dir {
+                        match rehoboam_loop::judge_completion(loop_dir) {
                             Ok((decision, confidence, explanation)) => match decision {
-                                ralph::JudgeDecision::Complete => {
+                                rehoboam_loop::JudgeDecision::Complete => {
                                     agent.loop_mode = LoopMode::Complete;
                                     tracing::info!(
                                         pane_id = %pane_id,
@@ -572,7 +577,7 @@ impl AppState {
                                     );
                                     false
                                 }
-                                ralph::JudgeDecision::Stalled => {
+                                rehoboam_loop::JudgeDecision::Stalled => {
                                     agent.loop_mode = LoopMode::Stalled;
                                     tracing::warn!(
                                         pane_id = %pane_id,
@@ -587,7 +592,7 @@ impl AppState {
                                     );
                                     false
                                 }
-                                ralph::JudgeDecision::Continue => {
+                                rehoboam_loop::JudgeDecision::Continue => {
                                     tracing::debug!(
                                         pane_id = %pane_id,
                                         confidence = confidence,
@@ -606,7 +611,7 @@ impl AppState {
                             }
                         }
                     } else {
-                        true // No ralph_dir, continue
+                        true // No loop_dir, continue
                     }
                 } else {
                     true // No judge configured, continue
@@ -629,18 +634,18 @@ impl AppState {
                         "Sprite loop continuing (async)"
                     );
                 } else if pane_id.starts_with('%') {
-                    // Tmux panes: check if proper Ralph mode (fresh sessions)
-                    // Clone ralph_dir to avoid borrow conflict with mutable agent
-                    let ralph_dir_clone = agent.ralph_dir.clone();
-                    if let Some(ralph_dir) = ralph_dir_clone {
-                        // Proper Ralph loop: spawn fresh session
-                        match spawn_fresh_ralph_session(&pane_id, &ralph_dir, agent) {
+                    // Tmux panes: check if proper Rehoboam mode (fresh sessions)
+                    // Clone loop_dir to avoid borrow conflict with mutable agent
+                    let loop_dir_clone = agent.loop_dir.clone();
+                    if let Some(loop_dir) = loop_dir_clone {
+                        // Proper Rehoboam loop: spawn fresh session
+                        match spawn_fresh_ralph_session(&pane_id, &loop_dir, agent) {
                             Ok(new_pane_id) => {
                                 tracing::info!(
                                     old_pane = %pane_id,
                                     new_pane = %new_pane_id,
                                     iteration = agent.loop_iteration,
-                                    "Ralph loop: spawned fresh session"
+                                    "Rehoboam loop: spawned fresh session"
                                 );
                                 // Update pane_id if it changed
                                 if new_pane_id != pane_id {
@@ -650,9 +655,9 @@ impl AppState {
                             Err(e) => {
                                 // Track error pattern for potential auto-guardrail
                                 let error_msg = format!("Spawn failed: {}", e);
-                                let _ = ralph::track_error_pattern(&ralph_dir, &error_msg);
-                                let _ = ralph::log_session_transition(
-                                    &ralph_dir,
+                                let _ = rehoboam_loop::track_error_pattern(&loop_dir, &error_msg);
+                                let _ = rehoboam_loop::log_session_transition(
+                                    &loop_dir,
                                     "respawning",
                                     "error",
                                     Some(&error_msg),
@@ -661,11 +666,11 @@ impl AppState {
                                 tracing::error!(
                                     pane_id = %pane_id,
                                     error = %e,
-                                    "Failed to spawn fresh Ralph session"
+                                    "Failed to spawn fresh Rehoboam session"
                                 );
                                 agent.loop_mode = LoopMode::Stalled;
                                 notify::send(
-                                    "Ralph Error",
+                                    "Rehoboam Error",
                                     &format!("{}: {}", agent.project, e),
                                     Some("Basso"),
                                 );
@@ -993,14 +998,14 @@ impl AppState {
     /// Register a pending loop config for a newly spawned agent
     ///
     /// When the agent sends its first hook event, the config will be applied.
-    /// If `ralph_dir` is Some, the agent will use proper Ralph mode (fresh sessions).
+    /// If `loop_dir` is Some, the agent will use proper Rehoboam mode (fresh sessions).
     /// If `judge_prompt` is Some, uses judge evaluation instead of stop-word matching.
     pub fn register_loop_config(
         &mut self,
         pane_id: &str,
         max_iterations: u32,
         stop_word: &str,
-        ralph_dir: Option<std::path::PathBuf>,
+        loop_dir: Option<std::path::PathBuf>,
         judge_prompt: Option<String>,
         judge_model: Option<String>,
     ) {
@@ -1009,7 +1014,7 @@ impl AppState {
             LoopConfig {
                 max_iterations,
                 stop_word: stop_word.to_string(),
-                ralph_dir: ralph_dir.clone(),
+                loop_dir: loop_dir.clone(),
                 judge_prompt,
                 judge_model,
             },
@@ -1018,7 +1023,7 @@ impl AppState {
             pane_id = %pane_id,
             max = max_iterations,
             stop_word = %stop_word,
-            ralph_dir = ?ralph_dir,
+            loop_dir = ?loop_dir,
             "Registered pending loop config"
         );
     }
@@ -1104,9 +1109,9 @@ impl AppState {
     }
 }
 
-/// Spawn a fresh Ralph session in the given pane
+/// Spawn a fresh Rehoboam session in the given pane
 ///
-/// This is the core of proper Ralph loops:
+/// This is the core of proper Rehoboam loops:
 /// 1. Increment iteration counter in state.json
 /// 2. Check stop word in progress.md
 /// 3. Build iteration prompt with current state
@@ -1115,32 +1120,32 @@ impl AppState {
 /// Returns the new pane_id (may be different from old one)
 fn spawn_fresh_ralph_session(
     pane_id: &str,
-    ralph_dir: &std::path::Path,
+    loop_dir: &std::path::Path,
     agent: &mut Agent,
 ) -> color_eyre::eyre::Result<String> {
     use color_eyre::eyre::WrapErr;
 
     // Log session transition: iteration ending
     let _ =
-        ralph::log_session_transition(ralph_dir, "working", "stopping", Some("iteration ending"));
+        rehoboam_loop::log_session_transition(loop_dir, "working", "stopping", Some("iteration ending"));
 
     // Get iteration duration before incrementing
-    let duration = ralph::get_iteration_duration(ralph_dir);
+    let duration = rehoboam_loop::get_iteration_duration(loop_dir);
 
     // 1. Increment iteration counter
     let new_iteration =
-        ralph::increment_iteration(ralph_dir).wrap_err("Failed to increment Ralph iteration")?;
+        rehoboam_loop::increment_iteration(loop_dir).wrap_err("Failed to increment Rehoboam iteration")?;
     agent.loop_iteration = new_iteration;
 
     // 2. Check completion (stop word OR promise tag)
     let (is_complete, completion_reason) =
-        ralph::check_completion(ralph_dir, &agent.loop_stop_word)
+        rehoboam_loop::check_completion(loop_dir, &agent.loop_stop_word)
             .wrap_err("Failed to check completion")?;
 
     if is_complete {
         // Log activity for completed iteration
-        let _ = ralph::log_activity(
-            ralph_dir,
+        let _ = rehoboam_loop::log_activity(
+            loop_dir,
             new_iteration,
             duration,
             None,
@@ -1148,9 +1153,9 @@ fn spawn_fresh_ralph_session(
         );
 
         // Create final git checkpoint
-        let _ = ralph::create_git_checkpoint(ralph_dir);
-        let _ = ralph::log_session_transition(
-            ralph_dir,
+        let _ = rehoboam_loop::create_git_checkpoint(loop_dir);
+        let _ = rehoboam_loop::log_session_transition(
+            loop_dir,
             "stopping",
             "complete",
             Some(&completion_reason),
@@ -1161,10 +1166,10 @@ fn spawn_fresh_ralph_session(
             pane_id = %pane_id,
             iteration = new_iteration,
             reason = %completion_reason,
-            "Ralph loop complete"
+            "Rehoboam loop complete"
         );
         notify::send(
-            "Ralph Complete",
+            "Rehoboam Complete",
             &format!(
                 "{}: {} iterations ({})",
                 agent.project, new_iteration, completion_reason
@@ -1175,23 +1180,23 @@ fn spawn_fresh_ralph_session(
     }
 
     // 3. Check max iterations
-    if ralph::check_max_iterations(ralph_dir).wrap_err("Failed to check max iterations")? {
+    if rehoboam_loop::check_max_iterations(loop_dir).wrap_err("Failed to check max iterations")? {
         // Log activity
-        let _ = ralph::log_activity(ralph_dir, new_iteration, duration, None, "max_iterations");
+        let _ = rehoboam_loop::log_activity(loop_dir, new_iteration, duration, None, "max_iterations");
 
         // Create git checkpoint
-        let _ = ralph::create_git_checkpoint(ralph_dir);
-        let _ = ralph::log_session_transition(ralph_dir, "stopping", "max_reached", None);
+        let _ = rehoboam_loop::create_git_checkpoint(loop_dir);
+        let _ = rehoboam_loop::log_session_transition(loop_dir, "stopping", "max_reached", None);
 
         agent.loop_mode = LoopMode::Complete;
         tracing::info!(
             pane_id = %pane_id,
             iteration = new_iteration,
             max = agent.loop_max,
-            "Ralph loop complete: max iterations reached"
+            "Rehoboam loop complete: max iterations reached"
         );
         notify::send(
-            "Ralph Max Reached",
+            "Rehoboam Max Reached",
             &format!("{}: {} iterations", agent.project, new_iteration),
             Some("Basso"),
         );
@@ -1199,24 +1204,24 @@ fn spawn_fresh_ralph_session(
     }
 
     // Log activity for continuing iteration
-    let _ = ralph::log_activity(ralph_dir, new_iteration, duration, None, "continuing");
+    let _ = rehoboam_loop::log_activity(loop_dir, new_iteration, duration, None, "continuing");
 
     // 4. Create git checkpoint before respawning
-    let _ = ralph::create_git_checkpoint(ralph_dir);
+    let _ = rehoboam_loop::create_git_checkpoint(loop_dir);
 
     // 5. Build iteration prompt
     let prompt_file =
-        ralph::build_iteration_prompt(ralph_dir).wrap_err("Failed to build iteration prompt")?;
+        rehoboam_loop::build_iteration_prompt(loop_dir).wrap_err("Failed to build iteration prompt")?;
 
     // 6. Get project directory for respawn
-    let project_dir = ralph_dir
+    let project_dir = loop_dir
         .parent()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string());
 
     // Log session transition: respawning
-    let _ = ralph::log_session_transition(
-        ralph_dir,
+    let _ = rehoboam_loop::log_session_transition(
+        loop_dir,
         "stopping",
         "respawning",
         Some(&format!("iteration {}", new_iteration + 1)),
@@ -1239,15 +1244,15 @@ fn spawn_fresh_ralph_session(
         .wrap_err("Failed to respawn Claude session")?;
 
     // 9. Mark iteration start time for next iteration
-    let _ = ralph::mark_iteration_start(ralph_dir);
-    let _ = ralph::log_session_transition(ralph_dir, "respawning", "working", Some(&new_pane_id));
+    let _ = rehoboam_loop::mark_iteration_start(loop_dir);
+    let _ = rehoboam_loop::log_session_transition(loop_dir, "respawning", "working", Some(&new_pane_id));
 
     tracing::info!(
         old_pane = %pane_id,
         new_pane = %new_pane_id,
         iteration = new_iteration,
         prompt_file = %prompt_file,
-        "Spawned fresh Ralph session"
+        "Spawned fresh Rehoboam session"
     );
 
     Ok(new_pane_id)
@@ -1367,51 +1372,32 @@ mod tests {
     }
 
     #[test]
-    fn test_is_stalled_empty() {
-        let reasons: VecDeque<String> = VecDeque::new();
-        assert!(!is_stalled(&reasons));
-    }
-
-    #[test]
-    fn test_is_stalled_less_than_five() {
-        let mut reasons = VecDeque::new();
-        reasons.push_back("error".to_string());
-        reasons.push_back("error".to_string());
-        reasons.push_back("error".to_string());
-        reasons.push_back("error".to_string());
-        assert!(!is_stalled(&reasons)); // Only 4, need 5
-    }
-
-    #[test]
-    fn test_is_stalled_five_identical() {
-        let mut reasons = VecDeque::new();
-        for _ in 0..5 {
-            reasons.push_back("File not found".to_string());
+    fn test_is_stalled_returns_false() {
+        // Table-driven test for cases that should NOT stall
+        let cases: Vec<(Vec<&str>, &str)> = vec![
+            (vec![], "empty"),
+            (vec!["a", "b", "c", "d"], "less than 5"),
+            (vec!["a", "b", "c", "d", "e"], "5 different"),
+        ];
+        for (reasons_data, desc) in cases {
+            let reasons: VecDeque<String> =
+                reasons_data.into_iter().map(String::from).collect();
+            assert!(!is_stalled(&reasons), "should not stall: {}", desc);
         }
-        assert!(is_stalled(&reasons));
     }
 
     #[test]
-    fn test_is_stalled_five_different() {
-        let mut reasons = VecDeque::new();
-        reasons.push_back("error1".to_string());
-        reasons.push_back("error2".to_string());
-        reasons.push_back("error3".to_string());
-        reasons.push_back("error4".to_string());
-        reasons.push_back("error5".to_string());
-        assert!(!is_stalled(&reasons));
-    }
-
-    #[test]
-    fn test_is_stalled_last_five_identical_with_different_earlier() {
-        let mut reasons = VecDeque::new();
-        reasons.push_back("different".to_string());
-        reasons.push_back("same".to_string());
-        reasons.push_back("same".to_string());
-        reasons.push_back("same".to_string());
-        reasons.push_back("same".to_string());
-        reasons.push_back("same".to_string());
-        assert!(is_stalled(&reasons)); // Last 5 are "same"
+    fn test_is_stalled_returns_true() {
+        // Table-driven test for cases that SHOULD stall
+        let cases: Vec<(Vec<&str>, &str)> = vec![
+            (vec!["same"; 5], "5 identical"),
+            (vec!["different", "same", "same", "same", "same", "same"], "last 5 identical"),
+        ];
+        for (reasons_data, desc) in cases {
+            let reasons: VecDeque<String> =
+                reasons_data.into_iter().map(String::from).collect();
+            assert!(is_stalled(&reasons), "should stall: {}", desc);
+        }
     }
 
     #[test]
@@ -1481,52 +1467,30 @@ mod tests {
     // v1.3: Tests for parent-child tracking and role inference from description
 
     #[test]
-    fn test_subagent_role_from_description_planner() {
-        assert_eq!(
-            super::infer_role_from_description("Explore codebase structure"),
-            AgentRole::Planner
-        );
-        assert_eq!(
-            super::infer_role_from_description("Research API patterns"),
-            AgentRole::Planner
-        );
-        assert_eq!(
-            super::infer_role_from_description("Search for error handlers"),
-            AgentRole::Planner
-        );
-    }
-
-    #[test]
-    fn test_subagent_role_from_description_worker() {
-        assert_eq!(
-            super::infer_role_from_description("Implement the login feature"),
-            AgentRole::Worker
-        );
-        assert_eq!(
-            super::infer_role_from_description("Fix the bug in auth"),
-            AgentRole::Worker
-        );
-        assert_eq!(
-            super::infer_role_from_description("Write tests for API"),
-            AgentRole::Worker
-        );
-    }
-
-    #[test]
-    fn test_subagent_role_from_description_reviewer() {
-        // Note: Worker keywords take priority, so avoid "change", "update" etc.
-        assert_eq!(
-            super::infer_role_from_description("Review the pull request"),
-            AgentRole::Reviewer
-        );
-        assert_eq!(
-            super::infer_role_from_description("Test the results"),
-            AgentRole::Reviewer
-        );
-        assert_eq!(
-            super::infer_role_from_description("Verify all passes"),
-            AgentRole::Reviewer
-        );
+    fn test_subagent_role_from_description() {
+        // Table-driven test for role inference from description
+        let cases = vec![
+            // Planner keywords
+            ("Explore codebase structure", AgentRole::Planner),
+            ("Research API patterns", AgentRole::Planner),
+            ("Search for error handlers", AgentRole::Planner),
+            // Worker keywords
+            ("Implement the login feature", AgentRole::Worker),
+            ("Fix the bug in auth", AgentRole::Worker),
+            ("Write tests for API", AgentRole::Worker),
+            // Reviewer keywords (avoid Worker keywords like "change", "update")
+            ("Review the pull request", AgentRole::Reviewer),
+            ("Test the results", AgentRole::Reviewer),
+            ("Verify all passes", AgentRole::Reviewer),
+        ];
+        for (desc, expected) in cases {
+            assert_eq!(
+                super::infer_role_from_description(desc),
+                expected,
+                "description: {}",
+                desc
+            );
+        }
     }
 
     #[test]

@@ -364,7 +364,7 @@ impl TmuxController {
 
     /// Kill a tmux pane
     ///
-    /// Used by Ralph loops to kill the old session before respawning fresh.
+    /// Used by Rehoboam loops to kill the old session before respawning fresh.
     ///
     /// # Arguments
     /// * `pane_id` - Tmux pane identifier (e.g., "%1", "%2")
@@ -385,7 +385,7 @@ impl TmuxController {
     /// Respawn a pane with a fresh Claude Code session
     ///
     /// Creates a new pane in the same window and starts Claude with the given prompt file.
-    /// Used by Ralph loops to spawn fresh sessions per iteration.
+    /// Used by Rehoboam loops to spawn fresh sessions per iteration.
     ///
     /// # Arguments
     /// * `cwd` - Working directory for the new pane
@@ -456,62 +456,72 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_match_permission_patterns_yn() {
-        let output = "Do you want to allow this action? [y/n]";
+    fn test_match_permission_patterns() {
+        // Table-driven test for permission prompt detection
+        let cases: Vec<(&str, &str)> = vec![
+            ("Do you want to allow this action? [y/n]", "[y/n] pattern"),
+            ("Allow this tool to execute?\n> ", "Allow this pattern"),
+            ("Please approve the following action:", "approve pattern"),
+        ];
+
+        for (output, desc) in cases {
+            assert_eq!(
+                TmuxController::match_prompt_patterns(output),
+                Some(PromptType::Permission),
+                "should match permission: {}",
+                desc
+            );
+        }
+    }
+
+    #[test]
+    fn test_match_working_blocks_and_input() {
+        // Working indicators should block permission matching
+        let working_cases: Vec<(&str, &str)> = vec![
+            (
+                "⠋ Thinking about your request...\n[y/n]",
+                "spinner blocks",
+            ),
+            ("Running tool: Bash\nAllow this?", "running indicator blocks"),
+        ];
+
+        for (output, desc) in working_cases {
+            assert_eq!(
+                TmuxController::match_prompt_patterns(output),
+                None,
+                "should not match: {}",
+                desc
+            );
+        }
+
+        // Input prompt should be detected
         assert_eq!(
-            TmuxController::match_prompt_patterns(output),
-            Some(PromptType::Permission)
+            TmuxController::match_prompt_patterns(
+                "Some context here\nWhat would you like me to do next?"
+            ),
+            Some(PromptType::Input),
+            "should match input prompt"
         );
     }
 
     #[test]
-    fn test_match_permission_patterns_allow_this() {
-        let output = "Allow this tool to execute?\n> ";
-        assert_eq!(
-            TmuxController::match_prompt_patterns(output),
-            Some(PromptType::Permission)
-        );
-    }
+    fn test_match_no_prompt() {
+        // Table-driven test for non-matching patterns
+        let cases: Vec<(&str, &str)> = vec![
+            (
+                "Reading file contents...\nProcessing data...",
+                "normal output",
+            ),
+            ("", "empty output"),
+        ];
 
-    #[test]
-    fn test_match_permission_patterns_approve() {
-        let output = "Please approve the following action:";
-        assert_eq!(
-            TmuxController::match_prompt_patterns(output),
-            Some(PromptType::Permission)
-        );
-    }
-
-    #[test]
-    fn test_match_working_spinner_blocks() {
-        // Spinner char should block pattern matching (still working)
-        let output = "⠋ Thinking about your request...\n[y/n]";
-        assert_eq!(TmuxController::match_prompt_patterns(output), None);
-    }
-
-    #[test]
-    fn test_match_working_indicator_blocks() {
-        let output = "Running tool: Bash\nAllow this?";
-        assert_eq!(TmuxController::match_prompt_patterns(output), None);
-    }
-
-    #[test]
-    fn test_match_input_prompt_question() {
-        let output = "Some context here\nWhat would you like me to do next?";
-        assert_eq!(
-            TmuxController::match_prompt_patterns(output),
-            Some(PromptType::Input)
-        );
-    }
-
-    #[test]
-    fn test_match_no_prompt_normal_output() {
-        let output = "Reading file contents...\nProcessing data...";
-        assert_eq!(TmuxController::match_prompt_patterns(output), None);
-    }
-
-    #[test]
-    fn test_match_empty_output() {
-        assert_eq!(TmuxController::match_prompt_patterns(""), None);
+        for (output, desc) in cases {
+            assert_eq!(
+                TmuxController::match_prompt_patterns(output),
+                None,
+                "should not match: {}",
+                desc
+            );
+        }
     }
 }

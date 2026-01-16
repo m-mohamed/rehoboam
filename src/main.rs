@@ -44,7 +44,7 @@ mod event;
 mod git;
 mod init;
 mod notify;
-mod ralph;
+mod rehoboam_loop;
 mod reconcile;
 mod sprite;
 mod state;

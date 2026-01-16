@@ -4,7 +4,7 @@
 //! Supports multiple terminal emulators: Tmux, WezTerm, Kitty, iTerm2.
 //!
 //! # Loop Mode (v0.9.0)
-//! Agents can run in "Loop Mode" for Ralph-style autonomous iteration.
+//! Agents can run in "Loop Mode" for Rehoboam-style autonomous iteration.
 //! Rehoboam sends Enter keystrokes via tmux to continue loops until:
 //! - Max iterations reached
 //! - Stop word detected in reason
@@ -55,7 +55,6 @@ pub enum AgentRole {
 /// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
 /// v1.3: Extended with parent tracking for hierarchical visualization.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Subagent {
     /// Subagent session ID (for correlation)
     pub id: String,
@@ -67,9 +66,12 @@ pub struct Subagent {
     pub duration_ms: Option<u64>,
 
     // v1.3: Parent-child relationship tracking
+    // Reserved for hierarchical visualization in future TUI update
     /// Parent pane ID (the agent that spawned this subagent)
+    #[allow(dead_code)]
     pub parent_pane_id: String,
     /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.)
+    #[allow(dead_code)]
     pub depth: u8,
     /// Inferred role based on subagent description
     pub role: AgentRole,
@@ -176,7 +178,6 @@ impl AttentionType {
 /// Measures time between PreToolUse and PostToolUse events using `tool_use_id`
 /// correlation. Provides real-time insight into tool execution times.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Agent {
     /// WezTerm pane ID (unique identifier for this agent)
     pub pane_id: String,
@@ -238,9 +239,9 @@ pub struct Agent {
     /// Working directory for git operations (worktree path)
     pub working_dir: Option<std::path::PathBuf>,
 
-    // v1.1 Proper Ralph loops
-    /// Ralph directory for proper loop mode (fresh sessions)
-    pub ralph_dir: Option<std::path::PathBuf>,
+    // v1.1 Proper Rehoboam loops
+    /// Loop directory for Rehoboam Loop mode (fresh sessions)
+    pub loop_dir: Option<std::path::PathBuf>,
 
     // v1.2 Agent role classification (Cursor-inspired)
     /// Inferred agent role based on tool usage patterns
@@ -252,6 +253,8 @@ pub struct Agent {
     /// Optional judge prompt for completion evaluation
     pub judge_prompt: Option<String>,
     /// Model override for judge (defaults to haiku for speed)
+    /// Reserved for Phase 1: LLM-based judge enhancement
+    #[allow(dead_code)]
     pub judge_model: Option<String>,
 
     // v2.0 Per-agent file tracking (Phase 7)
@@ -293,8 +296,8 @@ impl Agent {
             sprite_id: None,
             // v1.0 Git operations
             working_dir: None,
-            // v1.1 Proper Ralph loops
-            ralph_dir: None,
+            // v1.1 Proper Rehoboam loops
+            loop_dir: None,
             // v1.2 Agent role classification
             role: AgentRole::General,
             tool_history: VecDeque::with_capacity(10),
@@ -553,44 +556,38 @@ mod tests {
     }
 
     #[test]
-    fn test_role_classification_planner() {
-        let mut agent = Agent::new("%0".to_string(), "test".to_string());
+    fn test_role_classification() {
+        // Table-driven test for role classification based on tool usage patterns
+        let cases: Vec<(Vec<&str>, AgentRole, &str, &str)> = vec![
+            // (tools, expected_role, expected_badge, description)
+            (
+                vec!["Read", "Glob", "Grep", "Read", "WebSearch"],
+                AgentRole::Planner,
+                "[P]",
+                "5 read-only tools -> Planner (>80% read-only)",
+            ),
+            (
+                vec!["Read", "Edit"],
+                AgentRole::Worker,
+                "[W]",
+                "Any mutation tool -> Worker",
+            ),
+            (
+                vec!["Edit", "Read", "Read", "Grep"],
+                AgentRole::Reviewer,
+                "[R]",
+                "Edit followed by 2+ reads -> Reviewer",
+            ),
+        ];
 
-        // Record 5 read-only tools (should become Planner at >80%)
-        agent.record_tool("Read");
-        agent.record_tool("Glob");
-        agent.record_tool("Grep");
-        agent.record_tool("Read");
-        agent.record_tool("WebSearch");
-
-        assert_eq!(agent.role, AgentRole::Planner);
-        assert_eq!(agent.role_badge(), "[P]");
-    }
-
-    #[test]
-    fn test_role_classification_worker() {
-        let mut agent = Agent::new("%0".to_string(), "test".to_string());
-
-        // Any mutation tool should make it a Worker
-        agent.record_tool("Read");
-        agent.record_tool("Edit");
-
-        assert_eq!(agent.role, AgentRole::Worker);
-        assert_eq!(agent.role_badge(), "[W]");
-    }
-
-    #[test]
-    fn test_role_classification_reviewer() {
-        let mut agent = Agent::new("%0".to_string(), "test".to_string());
-
-        // Edit followed by 2+ reads = Reviewer
-        agent.record_tool("Edit");
-        agent.record_tool("Read");
-        agent.record_tool("Read");
-        agent.record_tool("Grep");
-
-        assert_eq!(agent.role, AgentRole::Reviewer);
-        assert_eq!(agent.role_badge(), "[R]");
+        for (tools, expected_role, expected_badge, desc) in cases {
+            let mut agent = Agent::new("%0".to_string(), "test".to_string());
+            for tool in tools {
+                agent.record_tool(tool);
+            }
+            assert_eq!(agent.role, expected_role, "{}", desc);
+            assert_eq!(agent.role_badge(), expected_badge, "{}", desc);
+        }
     }
 
     #[test]

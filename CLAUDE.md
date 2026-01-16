@@ -7,7 +7,7 @@ Project instructions for Claude Code.
 Rehoboam is a real-time TUI for monitoring Claude Code agents. Single Rust binary with:
 - **TUI mode**: `rehoboam` - Kanban dashboard for agent status
 - **Hook mode**: `rehoboam hook` - Process Claude Code hook events from stdin
-- **Loop mode**: Ralph-style autonomous iterations with `.rehoboam/` state
+- **Loop mode**: Rehoboam's Loop autonomous iterations with `.rehoboam/` state
 
 ## Commands
 
@@ -42,7 +42,7 @@ src/
   event/       # Event system (socket, keyboard input)
   state/       # Agent state, status tracking, role classification
   ui/          # Ratatui widgets (columns, cards, dialogs)
-  ralph.rs     # Loop state management, task queue, role prompts
+  rehoboam_loop.rs  # Loop state management, task queue, role prompts
   sprite/      # Remote VM (Sprites) integration
   git.rs       # Git worktree and checkpoint support
 ```
@@ -57,7 +57,7 @@ src/
 
 ## Key Concepts
 
-### Loop Mode (Ralph)
+### Loop Mode (Rehoboam's Loop)
 - `.rehoboam/` directory stores loop state
 - `anchor.md` = immutable task spec
 - `progress.md` = work completed each iteration
@@ -89,7 +89,7 @@ src/
 
 ```bash
 cargo test                     # All tests
-cargo test ralph               # Loop mode tests
+cargo test rehoboam_loop       # Loop mode tests
 cargo test state               # Agent state tests
 cargo test --release           # Release mode tests
 ```

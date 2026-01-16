@@ -44,7 +44,7 @@ src/
 ├── tmux.rs           Tmux pane control (send keys, capture output)
 ├── git.rs            Git operations (checkpoint, push, diff)
 ├── diff.rs           Enhanced diff parsing (files, hunks, line numbers)
-├── ralph.rs          Loop mode logic (Ralph autonomous iterations)
+├── rehoboam_loop.rs  Loop mode logic (Rehoboam's Loop autonomous iterations)
 ├── reconcile.rs      Tmux reconciliation for stuck agent detection
 │
 └── sprite/           Remote agent support (experimental)
@@ -123,9 +123,9 @@ The `derive_status()` function maps hook events to TUI status:
 - **Non-blocking hooks**: 500ms timeout ensures Claude Code never waits
 - **Agent identity**: Agents keyed by pane_id (tmux: `%N`, sprite: `sp_xxx`)
 
-## Loop Mode (Ralph)
+## Loop Mode (Rehoboam's Loop)
 
-Ralph enables autonomous agent loops for long-running tasks:
+Rehoboam's Loop enables autonomous agent loops for long-running tasks:
 
 ```
 Agent spawned with loop mode
@@ -145,7 +145,7 @@ Agent resumes, iteration counter increments
 ```
 
 Key files:
-- `ralph.rs` - Iteration tracking, state persistence, stop word detection
+- `rehoboam_loop.rs` - Iteration tracking, state persistence, stop word detection
 - `state/agent.rs` - `LoopMode` enum (None, Active, Stalled, Complete)
 - `app/spawn.rs` - Loop config registration on spawn
 
