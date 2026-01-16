@@ -18,6 +18,10 @@ semver_check = true
 changelog_update = true
 changelog_config = "cliff.toml"
 
+# Only these commit types trigger releases
+# Excludes: ci, chore, docs, test, style
+release_commits_regexp = "^(feat|fix|perf|refactor)(\\([^)]+\\))?!?:"
+
 # PR settings
 pr_draft = false
 pr_labels = ["release"]
