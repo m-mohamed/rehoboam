@@ -466,11 +466,12 @@ async fn main() -> Result<()> {
     // Handle subcommands
     match cli.command {
         Some(Commands::Hook {
-            notify,
+            no_notify,
             inject_context,
         }) => {
             // Hook mode: read stdin JSON, enrich with context, send to TUI
-            return handle_hook(&cli.socket, notify, inject_context).await;
+            // Notifications are ON by default, use --no-notify to disable
+            return handle_hook(&cli.socket, !no_notify, inject_context).await;
         }
         Some(Commands::Init {
             path,
@@ -533,14 +534,9 @@ async fn main() -> Result<()> {
     });
 
     // Optionally spawn sprite event forwarder (WebSocket server for remote sprites)
-    let sprite_handle = if cli.enable_sprites {
-        // Validate sprites token is provided
-        if cli.sprites_token.is_none() {
-            return Err(color_eyre::eyre::eyre!(
-                "--sprites-token or SPRITES_TOKEN env required when --enable-sprites is set"
-            ));
-        }
-
+    // Sprites are auto-enabled when SPRITES_TOKEN is set, use --no-sprites to disable
+    let sprites_enabled = !cli.no_sprites && cli.sprites_token.is_some();
+    let sprite_handle = if sprites_enabled {
         tracing::info!(
             "Sprite support enabled, WebSocket server on port {}",
             cli.sprite_ws_port
