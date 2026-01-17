@@ -66,11 +66,12 @@ pub struct Subagent {
     pub duration_ms: Option<u64>,
 
     // v1.3: Parent-child relationship tracking
-    // Reserved for hierarchical visualization in future TUI update
-    /// Parent pane ID (the agent that spawned this subagent)
+    /// Parent pane ID (the agent that spawned this subagent).
+    /// Reserved for Phase 1: Hierarchical subagent tree visualization.
     #[allow(dead_code)]
     pub parent_pane_id: String,
-    /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.)
+    /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.).
+    /// Reserved for Phase 1: Hierarchical subagent tree visualization.
     #[allow(dead_code)]
     pub depth: u8,
     /// Inferred role based on subagent description
@@ -250,10 +251,10 @@ pub struct Agent {
     pub tool_history: VecDeque<String>,
 
     // v1.4 Judge mode (Cursor-inspired evaluation phase)
-    /// Optional judge prompt for completion evaluation
+    /// Optional judge prompt for completion evaluation.
     pub judge_prompt: Option<String>,
-    /// Model override for judge (defaults to haiku for speed)
-    /// Reserved for Phase 1: LLM-based judge enhancement
+    /// Model override for judge (defaults to haiku for speed).
+    /// Reserved for Phase 1: LLM-based judge enhancement with configurable model.
     #[allow(dead_code)]
     pub judge_model: Option<String>,
 

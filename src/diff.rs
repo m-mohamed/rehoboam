@@ -2,7 +2,6 @@
 //!
 //! Parses raw `git diff` output into structured data for enhanced TUI display.
 //! Supports file navigation, line numbers, and collapsible hunks.
-#![allow(dead_code)] // Structs used by UI module
 
 /// Structured representation of a complete git diff
 #[derive(Debug, Clone, Default)]
@@ -46,17 +45,27 @@ pub struct FileDiff {
 pub struct Hunk {
     /// The @@ header line (e.g., "@@ -10,5 +10,7 @@")
     pub header: String,
-    /// Starting line in old file
+    /// Starting line in old file.
+    /// Reserved for Phase 1: Line navigation and jump-to-line features.
+    #[allow(dead_code)]
     pub old_start: u32,
-    /// Number of lines in old file
+    /// Number of lines in old file.
+    /// Reserved for Phase 1: Hunk size indicators.
+    #[allow(dead_code)]
     pub old_count: u32,
-    /// Starting line in new file
+    /// Starting line in new file.
+    /// Reserved for Phase 1: Line navigation and jump-to-line features.
+    #[allow(dead_code)]
     pub new_start: u32,
-    /// Number of lines in new file
+    /// Number of lines in new file.
+    /// Reserved for Phase 1: Hunk size indicators.
+    #[allow(dead_code)]
     pub new_count: u32,
     /// Lines in this hunk
     pub lines: Vec<DiffLine>,
-    /// Whether this hunk is collapsed in the UI
+    /// Whether this hunk is collapsed in the UI.
+    /// Reserved for Phase 1: Collapsible hunks for large diffs.
+    #[allow(dead_code)]
     pub collapsed: bool,
 }
 

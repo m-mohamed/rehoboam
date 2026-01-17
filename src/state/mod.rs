@@ -32,18 +32,21 @@ pub struct LoopConfig {
     pub loop_dir: Option<std::path::PathBuf>,
 
     // v1.4: Judge mode (Cursor-inspired evaluation phase)
-    /// Optional judge prompt for completion evaluation
+    /// Optional judge prompt for completion evaluation.
     /// When set, spawns an ephemeral judge session after each Stop
     /// to evaluate whether the task is complete.
     pub judge_prompt: Option<String>,
-    /// Model override for judge (defaults to haiku for speed)
-    /// Reserved for Phase 1: LLM-based judge enhancement
+    /// Model override for judge (defaults to haiku for speed).
+    /// Reserved for Phase 1: LLM-based judge enhancement with configurable model.
     #[allow(dead_code)]
     pub judge_model: Option<String>,
 }
 
-/// v1.4: Judge decision after evaluating loop progress
-/// Reserved for Phase 1: LLM-based judge enhancement (currently heuristic only)
+/// v1.4: Judge decision after evaluating loop progress.
+///
+/// Reserved for Phase 1: LLM-based judge enhancement. Currently, completion
+/// detection uses heuristic pattern matching in `rehoboam_loop::judge_completion()`.
+/// Future: This enum will be returned by an LLM-based judge model (e.g., Haiku).
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum JudgeDecision {
