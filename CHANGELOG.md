@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.7] - 2026-01-17
+
+### Changed
+
+- Rebrand Ralph → Rehoboam's Loop and consolidate tests ([#24](https://github.com/m-mohamed/rehoboam/pull/24))
+- Streamline keybindings and update documentation
+
+### Fixed
+
+- Update footer hint P:view to v:view
+[0.9.7]: https://github.com/m-mohamed/rehoboam/compare/v0.9.6...v0.9.7
+
+
 ## [0.9.6] - 2026-01-16
 
 ### Added
