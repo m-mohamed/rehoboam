@@ -324,6 +324,11 @@ fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str)
         description: None,
         subagent_duration_ms: None,
         source: EventSource::Local,
+        context_window: None,
+        agent_type: None,
+        permission_mode: None,
+        cwd: None,
+        transcript_path: None,
     }
 }
 

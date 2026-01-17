@@ -372,6 +372,36 @@ impl AppState {
             agent.session_id = Some(sid.clone());
         }
 
+        // Claude Code 2.1.x: Update context window usage
+        if let Some(ref ctx) = event.context_window {
+            if let Some(pct) = ctx.used_percentage {
+                agent.context_usage_percent = Some(pct);
+            }
+            if let Some(tokens) = ctx.total_tokens {
+                agent.context_total_tokens = Some(tokens);
+            }
+        }
+
+        // Claude Code 2.1.x: Update explicit agent type (overrides inferred role display)
+        if let Some(ref agent_type) = event.agent_type {
+            agent.explicit_agent_type = Some(agent_type.clone());
+        }
+
+        // Claude Code 2.1.x: Update permission mode
+        if let Some(ref perm_mode) = event.permission_mode {
+            agent.permission_mode = Some(perm_mode.clone());
+        }
+
+        // Claude Code 2.1.x: Update cwd if provided
+        if let Some(ref cwd) = event.cwd {
+            agent.cwd = Some(cwd.clone());
+        }
+
+        // Claude Code 2.1.x: Update transcript path
+        if let Some(ref transcript) = event.transcript_path {
+            agent.transcript_path = Some(transcript.clone());
+        }
+
         // Track tool latency (v1.0) and role classification (v1.2)
         match event.event.as_str() {
             "PreToolUse" => {
@@ -534,7 +564,9 @@ impl AppState {
                 // Track error pattern for potential auto-guardrail
                 if let Some(ref loop_dir) = agent.loop_dir {
                     let error_msg = format!("Stalled: {}", reason_str);
-                    if let Ok(added_guardrail) = rehoboam_loop::track_error_pattern(loop_dir, &error_msg) {
+                    if let Ok(added_guardrail) =
+                        rehoboam_loop::track_error_pattern(loop_dir, &error_msg)
+                    {
                         if added_guardrail {
                             tracing::info!(
                                 pane_id = %pane_id,
@@ -639,7 +671,7 @@ impl AppState {
                     let loop_dir_clone = agent.loop_dir.clone();
                     if let Some(loop_dir) = loop_dir_clone {
                         // Proper Rehoboam loop: spawn fresh session
-                        match spawn_fresh_ralph_session(&pane_id, &loop_dir, agent) {
+                        match spawn_fresh_rehoboam_session(&pane_id, &loop_dir, agent) {
                             Ok(new_pane_id) => {
                                 tracing::info!(
                                     old_pane = %pane_id,
@@ -1118,7 +1150,7 @@ impl AppState {
 /// 4. Kill old pane, spawn fresh Claude session
 ///
 /// Returns the new pane_id (may be different from old one)
-fn spawn_fresh_ralph_session(
+fn spawn_fresh_rehoboam_session(
     pane_id: &str,
     loop_dir: &std::path::Path,
     agent: &mut Agent,
@@ -1126,15 +1158,19 @@ fn spawn_fresh_ralph_session(
     use color_eyre::eyre::WrapErr;
 
     // Log session transition: iteration ending
-    let _ =
-        rehoboam_loop::log_session_transition(loop_dir, "working", "stopping", Some("iteration ending"));
+    let _ = rehoboam_loop::log_session_transition(
+        loop_dir,
+        "working",
+        "stopping",
+        Some("iteration ending"),
+    );
 
     // Get iteration duration before incrementing
     let duration = rehoboam_loop::get_iteration_duration(loop_dir);
 
     // 1. Increment iteration counter
-    let new_iteration =
-        rehoboam_loop::increment_iteration(loop_dir).wrap_err("Failed to increment Rehoboam iteration")?;
+    let new_iteration = rehoboam_loop::increment_iteration(loop_dir)
+        .wrap_err("Failed to increment Rehoboam iteration")?;
     agent.loop_iteration = new_iteration;
 
     // 2. Check completion (stop word OR promise tag)
@@ -1182,7 +1218,8 @@ fn spawn_fresh_ralph_session(
     // 3. Check max iterations
     if rehoboam_loop::check_max_iterations(loop_dir).wrap_err("Failed to check max iterations")? {
         // Log activity
-        let _ = rehoboam_loop::log_activity(loop_dir, new_iteration, duration, None, "max_iterations");
+        let _ =
+            rehoboam_loop::log_activity(loop_dir, new_iteration, duration, None, "max_iterations");
 
         // Create git checkpoint
         let _ = rehoboam_loop::create_git_checkpoint(loop_dir);
@@ -1210,8 +1247,8 @@ fn spawn_fresh_ralph_session(
     let _ = rehoboam_loop::create_git_checkpoint(loop_dir);
 
     // 5. Build iteration prompt
-    let prompt_file =
-        rehoboam_loop::build_iteration_prompt(loop_dir).wrap_err("Failed to build iteration prompt")?;
+    let prompt_file = rehoboam_loop::build_iteration_prompt(loop_dir)
+        .wrap_err("Failed to build iteration prompt")?;
 
     // 6. Get project directory for respawn
     let project_dir = loop_dir
@@ -1245,7 +1282,12 @@ fn spawn_fresh_ralph_session(
 
     // 9. Mark iteration start time for next iteration
     let _ = rehoboam_loop::mark_iteration_start(loop_dir);
-    let _ = rehoboam_loop::log_session_transition(loop_dir, "respawning", "working", Some(&new_pane_id));
+    let _ = rehoboam_loop::log_session_transition(
+        loop_dir,
+        "respawning",
+        "working",
+        Some(&new_pane_id),
+    );
 
     tracing::info!(
         old_pane = %pane_id,
@@ -1288,6 +1330,11 @@ mod tests {
             description: None,
             subagent_duration_ms: None,
             source: crate::event::EventSource::Local,
+            context_window: None,
+            agent_type: None,
+            permission_mode: None,
+            cwd: None,
+            transcript_path: None,
         }
     }
 
@@ -1380,8 +1427,7 @@ mod tests {
             (vec!["a", "b", "c", "d", "e"], "5 different"),
         ];
         for (reasons_data, desc) in cases {
-            let reasons: VecDeque<String> =
-                reasons_data.into_iter().map(String::from).collect();
+            let reasons: VecDeque<String> = reasons_data.into_iter().map(String::from).collect();
             assert!(!is_stalled(&reasons), "should not stall: {}", desc);
         }
     }
@@ -1391,11 +1437,13 @@ mod tests {
         // Table-driven test for cases that SHOULD stall
         let cases: Vec<(Vec<&str>, &str)> = vec![
             (vec!["same"; 5], "5 identical"),
-            (vec!["different", "same", "same", "same", "same", "same"], "last 5 identical"),
+            (
+                vec!["different", "same", "same", "same", "same", "same"],
+                "last 5 identical",
+            ),
         ];
         for (reasons_data, desc) in cases {
-            let reasons: VecDeque<String> =
-                reasons_data.into_iter().map(String::from).collect();
+            let reasons: VecDeque<String> = reasons_data.into_iter().map(String::from).collect();
             assert!(is_stalled(&reasons), "should stall: {}", desc);
         }
     }

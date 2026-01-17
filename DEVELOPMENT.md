@@ -108,7 +108,7 @@ src/
 ├── state/    # Agent state management
 ├── ui/       # Ratatui widgets
 ├── event/    # Hook events, socket listener
-└── ralph.rs  # Loop mode logic
+└── rehoboam_loop.rs  # Loop mode logic
 ```
 
 ## Testing Hook Events

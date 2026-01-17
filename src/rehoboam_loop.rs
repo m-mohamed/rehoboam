@@ -610,7 +610,7 @@ pub fn read_broadcasts(loop_dir: &Path, max_age_minutes: Option<u32>) -> Result<
 
 /// Join an existing Rehoboam loop (for multi-worker coordination)
 ///
-/// Returns the ralph directory if it exists and has valid state
+/// Returns the rehoboam directory if it exists and has valid state
 pub fn join_existing_loop(project_dir: &Path) -> Result<PathBuf> {
     let loop_dir = project_dir.join(".rehoboam");
 
@@ -1027,7 +1027,7 @@ pub fn create_git_checkpoint(loop_dir: &Path) -> Result<Option<String>> {
     let state = load_state(loop_dir)?;
     let project_dir = loop_dir
         .parent()
-        .ok_or_else(|| eyre!("Invalid ralph dir"))?;
+        .ok_or_else(|| eyre!("Invalid rehoboam dir"))?;
 
     // Check if we're in a git repo
     let git_dir = project_dir.join(".git");
@@ -1062,7 +1062,7 @@ pub fn create_git_checkpoint(loop_dir: &Path) -> Result<Option<String>> {
 
     // Commit with Rehoboam iteration message
     let commit_msg = format!(
-        "ralph: iteration {} checkpoint\n\nAutomated checkpoint from Rehoboam loop.",
+        "rehoboam: iteration {} checkpoint\n\nAutomated checkpoint from Rehoboam loop.",
         state.iteration
     );
 
@@ -1439,6 +1439,75 @@ pub fn log_session_transition(
 // =============================================================================
 // NEW: Progress Injection - Recent Iteration Context
 // =============================================================================
+
+/// Build additionalContext string for hook injection (Claude Code 2.1.x)
+///
+/// This creates a context string that can be returned from a hook to inject
+/// additional context into Claude's conversation. Used by `rehoboam hook --inject-context`.
+pub fn build_loop_context(loop_dir: &Path) -> Result<String> {
+    let state = load_state(loop_dir)?;
+    let anchor = std::fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
+    let progress = std::fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default();
+    let guardrails = std::fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
+    let tasks = std::fs::read_to_string(loop_dir.join("tasks.md")).unwrap_or_default();
+
+    // Build context based on role
+    let role_context = match state.role {
+        LoopRole::Planner => "You are a PLANNER. Explore and create tasks, do NOT implement.",
+        LoopRole::Worker => "You are a WORKER. Execute ONE assigned task, then exit.",
+        LoopRole::Auto => "You are in autonomous loop mode. Make incremental progress.",
+    };
+
+    Ok(format!(
+        r#"## Rehoboam Loop Context
+
+**Iteration:** {}/{} | **Role:** {} | **Stop Word:** {}
+
+{}
+
+### Task (anchor.md)
+{}
+
+### Progress (progress.md)
+{}
+
+### Tasks Queue (tasks.md)
+{}
+
+### Guardrails
+{}
+"#,
+        state.iteration + 1,
+        state.max_iterations,
+        state.role,
+        state.stop_word,
+        role_context,
+        anchor.trim(),
+        progress.trim(),
+        tasks.trim(),
+        guardrails.trim()
+    ))
+}
+
+/// Find .rehoboam/ directory by searching up from cwd
+///
+/// Searches current directory and parents for .rehoboam/ directory.
+pub fn find_rehoboam_dir() -> Option<std::path::PathBuf> {
+    let mut current = std::env::current_dir().ok()?;
+
+    loop {
+        let candidate = current.join(".rehoboam");
+        if candidate.is_dir() && candidate.join("state.json").exists() {
+            return Some(candidate);
+        }
+
+        if !current.pop() {
+            break;
+        }
+    }
+
+    None
+}
 
 /// Get summary of recent iteration outcomes for context injection
 ///

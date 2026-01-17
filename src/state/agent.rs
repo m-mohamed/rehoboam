@@ -262,6 +262,20 @@ pub struct Agent {
     pub modified_files: HashSet<PathBuf>,
     /// Git commit hash at session start (for session-scoped diffs)
     pub session_start_commit: Option<String>,
+
+    // Claude Code 2.1.x integration fields
+    /// Context window usage percentage (0.0-100.0)
+    pub context_usage_percent: Option<f64>,
+    /// Total tokens in context
+    pub context_total_tokens: Option<u64>,
+    /// Agent type from --agent flag (explicit, overrides inferred role)
+    pub explicit_agent_type: Option<String>,
+    /// Permission mode (plan, acceptEdits, etc.)
+    pub permission_mode: Option<String>,
+    /// Working directory (from cwd field, may differ from project)
+    pub cwd: Option<String>,
+    /// Transcript path for linking to conversation
+    pub transcript_path: Option<String>,
 }
 
 impl Agent {
@@ -307,6 +321,13 @@ impl Agent {
             // v2.0 Per-agent file tracking
             modified_files: HashSet::new(),
             session_start_commit: None,
+            // Claude Code 2.1.x integration fields
+            context_usage_percent: None,
+            context_total_tokens: None,
+            explicit_agent_type: None,
+            permission_mode: None,
+            cwd: None,
+            transcript_path: None,
         }
     }
 
@@ -522,6 +543,39 @@ impl Agent {
             AgentRole::Worker => "[W]",
             AgentRole::Reviewer => "[R]",
             AgentRole::General => "",
+        }
+    }
+
+    /// Get context usage level for UI display (Claude Code 2.1.x)
+    ///
+    /// Returns: None (no data), Some("low"), Some("medium"), Some("high"), Some("critical")
+    pub fn context_level(&self) -> Option<&'static str> {
+        self.context_usage_percent.map(|pct| {
+            if pct >= 95.0 {
+                "critical"
+            } else if pct >= 80.0 {
+                "high"
+            } else if pct >= 50.0 {
+                "medium"
+            } else {
+                "low"
+            }
+        })
+    }
+
+    /// Get display badge for explicit agent type (Claude Code 2.1.x)
+    ///
+    /// When explicit_agent_type is set from --agent flag, use it for display.
+    /// Falls back to inferred role badge.
+    pub fn agent_type_badge(&self) -> &'static str {
+        if let Some(ref agent_type) = self.explicit_agent_type {
+            match agent_type.as_str() {
+                "explore" => "[E]",
+                "plan" => "[P]",
+                _ => "",
+            }
+        } else {
+            self.role_badge()
         }
     }
 }

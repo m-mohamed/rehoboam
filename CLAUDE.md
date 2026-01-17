@@ -99,5 +99,5 @@ cargo test --release           # Release mode tests
 - Event handling: `src/event/`
 - UI rendering: `src/ui/mod.rs`
 - Agent state: `src/state/mod.rs`
-- Loop logic: `src/ralph.rs`
+- Loop logic: `src/rehoboam_loop.rs`
 - Spawn dialog: `src/app/spawn.rs`

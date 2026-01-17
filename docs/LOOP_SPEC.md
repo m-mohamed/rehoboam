@@ -18,7 +18,7 @@ Key learnings from Cursor's engineering blog that informed this design:
 |---------|----------------|
 | Planners explore, Workers execute | `LoopRole::Planner` and `LoopRole::Worker` roles |
 | Workers never coordinate | Each Worker gets ONE task in isolation |
-| Judge evaluates progress | `judge_completion()` heuristic in ralph.rs |
+| Judge evaluates progress | `judge_completion()` heuristic in rehoboam_loop.rs |
 | Fresh sessions per iteration | Each iteration spawns new Claude session |
 | Prompting matters more than harness | Role-specific prompts in `build_*_prompt()` |
 

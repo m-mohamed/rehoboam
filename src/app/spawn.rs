@@ -490,8 +490,12 @@ fn spawn_tmux_agent(
 
                 match rehoboam_loop::init_loop_dir(&working_dir, prompt, &config) {
                     Ok(dir) => {
-                        let _ =
-                            rehoboam_loop::log_session_transition(&dir, "init", "starting", Some(&pane_id));
+                        let _ = rehoboam_loop::log_session_transition(
+                            &dir,
+                            "init",
+                            "starting",
+                            Some(&pane_id),
+                        );
                         let _ = rehoboam_loop::mark_iteration_start(&dir);
 
                         tracing::info!(

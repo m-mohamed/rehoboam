@@ -478,11 +478,11 @@ mod tests {
     fn test_match_working_blocks_and_input() {
         // Working indicators should block permission matching
         let working_cases: Vec<(&str, &str)> = vec![
+            ("⠋ Thinking about your request...\n[y/n]", "spinner blocks"),
             (
-                "⠋ Thinking about your request...\n[y/n]",
-                "spinner blocks",
+                "Running tool: Bash\nAllow this?",
+                "running indicator blocks",
             ),
-            ("Running tool: Bash\nAllow this?", "running indicator blocks"),
         ];
 
         for (output, desc) in working_cases {

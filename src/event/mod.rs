@@ -3,6 +3,20 @@ pub mod socket;
 
 use serde::{Deserialize, Serialize};
 
+/// Context window usage information from Claude Code 2.1.x
+///
+/// Tracks how much of the context window is being used, allowing
+/// the TUI to display warnings when context is nearly full.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct ContextWindow {
+    /// Percentage of context used (0.0-100.0)
+    #[serde(default)]
+    pub used_percentage: Option<f64>,
+    /// Total tokens in context
+    #[serde(default)]
+    pub total_tokens: Option<u64>,
+}
+
 /// Application events
 #[derive(Debug)]
 pub enum Event {
@@ -122,6 +136,23 @@ pub struct HookEvent {
     /// Event source: local or remote sprite
     #[serde(default)]
     pub source: EventSource,
+
+    // Claude Code 2.1.x enriched fields
+    /// Context window usage
+    #[serde(default)]
+    pub context_window: Option<ContextWindow>,
+    /// Agent type from --agent flag (e.g., "explore", "plan")
+    #[serde(default)]
+    pub agent_type: Option<String>,
+    /// Permission mode: "default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+    /// Current working directory
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Path to conversation transcript (.jsonl)
+    #[serde(default)]
+    pub transcript_path: Option<String>,
 }
 
 impl HookEvent {
@@ -204,6 +235,23 @@ pub struct ClaudeHookInput {
     /// Subagent duration in milliseconds (SubagentStop)
     #[serde(default)]
     pub duration_ms: Option<u64>,
+
+    // Claude Code 2.1.x fields
+    /// Context window usage percentage (0.0-100.0)
+    #[serde(default)]
+    pub context_window: Option<ContextWindow>,
+    /// Agent type from --agent flag (e.g., "explore", "plan")
+    #[serde(default)]
+    pub agent_type: Option<String>,
+    /// Permission mode: "default", "plan", "acceptEdits", "dontAsk", "bypassPermissions"
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+    /// Current working directory
+    #[serde(default)]
+    pub cwd: Option<String>,
+    /// Path to conversation transcript (.jsonl)
+    #[serde(default)]
+    pub transcript_path: Option<String>,
 }
 
 impl ClaudeHookInput {
@@ -229,6 +277,7 @@ impl ClaudeHookInput {
             "PostToolUse" => ("working", None),      // Just finished a tool, may continue
             "SubagentStart" => ("working", None),    // Spawned a subagent
             "SubagentStop" => ("working", None),     // Subagent finished, may continue
+            "Setup" => ("working", None),            // Claude Code 2.1.x: initialization/setup phase
 
             // ATTENTION: Claude needs user attention
             "PermissionRequest" => ("attention", Some("permission")),
@@ -258,9 +307,8 @@ impl ClaudeHookInput {
 pub fn derive_status_from_hook_name(hook_name: &str) -> (String, Option<String>) {
     match hook_name {
         // WORKING: Claude is actively doing something
-        "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "SubagentStart" | "SubagentStop" => {
-            ("working".to_string(), None)
-        }
+        "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "SubagentStart" | "SubagentStop"
+        | "Setup" => ("working".to_string(), None),
 
         // ATTENTION: Claude is BLOCKED waiting for explicit user approval
         "PermissionRequest" => ("attention".to_string(), Some("permission".to_string())),
@@ -339,6 +387,11 @@ mod tests {
             description: None,
             subagent_duration_ms: None,
             source: EventSource::Local,
+            context_window: None,
+            agent_type: None,
+            permission_mode: None,
+            cwd: None,
+            transcript_path: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -361,6 +414,11 @@ mod tests {
             description: None,
             subagent_duration_ms: None,
             source: EventSource::Local,
+            context_window: None,
+            agent_type: None,
+            permission_mode: None,
+            cwd: None,
+            transcript_path: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -383,6 +441,11 @@ mod tests {
             description: None,
             subagent_duration_ms: None,
             source: EventSource::Local,
+            context_window: None,
+            agent_type: None,
+            permission_mode: None,
+            cwd: None,
+            transcript_path: None,
         };
         assert_eq!(
             event.validate(),
@@ -409,6 +472,11 @@ mod tests {
                 description: None,
                 subagent_duration_ms: None,
                 source: EventSource::Local,
+                context_window: None,
+                agent_type: None,
+                permission_mode: None,
+                cwd: None,
+                transcript_path: None,
             };
             assert!(
                 event.validate().is_ok(),
