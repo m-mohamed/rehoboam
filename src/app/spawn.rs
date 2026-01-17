@@ -1,7 +1,7 @@
 //! Spawn dialog state and agent spawning logic
 
 use crate::git::GitController;
-use crate::ralph::{self, LoopRole, RalphConfig};
+use crate::rehoboam_loop::{self, LoopRole, RehoboamConfig};
 use crate::sprite::config::NetworkPreset;
 use crate::tmux::TmuxController;
 use sprites::SpritesClient;
@@ -206,7 +206,7 @@ pub fn validate_spawn(state: &SpawnState, has_sprites_client: bool) -> Result<()
 /// This handles the full spawning flow including:
 /// - GitHub clone (if project_path is a GitHub URL in local mode)
 /// - Git worktree creation (if enabled)
-/// - Ralph loop initialization (if enabled)
+/// - Rehoboam loop initialization (if enabled)
 /// - Sprite creation with GitHub clone (if sprite mode)
 /// - Tmux pane creation (if local mode)
 ///
@@ -477,10 +477,10 @@ fn spawn_tmux_agent(
         Ok(pane_id) => {
             tracing::info!(pane_id = %pane_id, "Created new tmux pane");
 
-            // Initialize Ralph loop if loop mode is enabled
-            let ralph_dir = if spawn_state.loop_enabled && !prompt.is_empty() {
+            // Initialize Rehoboam loop if loop mode is enabled
+            let loop_dir = if spawn_state.loop_enabled && !prompt.is_empty() {
                 let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
-                let config = RalphConfig {
+                let config = RehoboamConfig {
                     max_iterations: max_iter,
                     stop_word: spawn_state.loop_stop_word.clone(),
                     pane_id: pane_id.clone(),
@@ -488,20 +488,24 @@ fn spawn_tmux_agent(
                     enable_coordination: false, // Coordination is opt-in per Cursor guidance
                 };
 
-                match ralph::init_ralph_dir(&working_dir, prompt, &config) {
+                match rehoboam_loop::init_loop_dir(&working_dir, prompt, &config) {
                     Ok(dir) => {
-                        let _ =
-                            ralph::log_session_transition(&dir, "init", "starting", Some(&pane_id));
-                        let _ = ralph::mark_iteration_start(&dir);
+                        let _ = rehoboam_loop::log_session_transition(
+                            &dir,
+                            "init",
+                            "starting",
+                            Some(&pane_id),
+                        );
+                        let _ = rehoboam_loop::mark_iteration_start(&dir);
 
                         tracing::info!(
-                            ralph_dir = ?dir,
-                            "Initialized Ralph loop directory"
+                            loop_dir = ?dir,
+                            "Initialized Rehoboam Loop directory"
                         );
                         Some(dir)
                     }
                     Err(e) => {
-                        tracing::error!(error = %e, "Failed to initialize Ralph directory");
+                        tracing::error!(error = %e, "Failed to initialize Rehoboam Loop directory");
                         None
                     }
                 }
@@ -526,7 +530,7 @@ fn spawn_tmux_agent(
                     &pane_id,
                     max_iter,
                     &spawn_state.loop_stop_word,
-                    ralph_dir.clone(),
+                    loop_dir.clone(),
                     judge_prompt,
                     None, // judge_model (future: expose in UI)
                 );
@@ -536,7 +540,7 @@ fn spawn_tmux_agent(
             state.set_agent_working_dir(&pane_id, working_dir.clone());
 
             // Start Claude Code in the new pane
-            start_claude_in_pane(&pane_id, prompt, ralph_dir.as_ref());
+            start_claude_in_pane(&pane_id, prompt, loop_dir.as_ref());
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to create tmux pane");
@@ -545,10 +549,10 @@ fn spawn_tmux_agent(
 }
 
 /// Start Claude Code in a tmux pane
-fn start_claude_in_pane(pane_id: &str, prompt: &str, ralph_dir: Option<&PathBuf>) {
-    if let Some(ralph_dir) = ralph_dir {
-        // Ralph loop mode: pipe the iteration prompt to Claude
-        match ralph::build_iteration_prompt(ralph_dir) {
+fn start_claude_in_pane(pane_id: &str, prompt: &str, loop_dir: Option<&PathBuf>) {
+    if let Some(loop_dir) = loop_dir {
+        // Rehoboam loop mode: pipe the iteration prompt to Claude
+        match rehoboam_loop::build_iteration_prompt(loop_dir) {
             Ok(prompt_file) => {
                 let cmd = format!("cat '{}' | claude", prompt_file);
                 if let Err(e) = TmuxController::send_keys(pane_id, &cmd) {
@@ -558,7 +562,7 @@ fn start_claude_in_pane(pane_id: &str, prompt: &str, ralph_dir: Option<&PathBuf>
                 tracing::info!(
                     pane_id = %pane_id,
                     prompt_file = %prompt_file,
-                    "Started Claude in Ralph loop mode"
+                    "Started Claude in Rehoboam loop mode"
                 );
             }
             Err(e) => {

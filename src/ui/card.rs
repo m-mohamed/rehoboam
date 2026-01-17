@@ -10,8 +10,8 @@ use crate::config::colors;
 use crate::state::{Agent, LoopMode};
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
-    text::Line,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame,
 };
@@ -62,17 +62,26 @@ pub fn render_agent_card(
     let sprite_indicator = if agent.is_sprite { "☁ " } else { "" };
 
     // v1.2: Role badge (Cursor-inspired Planner/Worker/Reviewer)
-    let role_badge = agent.role_badge();
+    // v2.1.x: Use explicit agent type badge if available
+    let role_badge = agent.agent_type_badge();
+
+    // v2.1.x: Plan mode indicator
+    let mode_indicator = if agent.permission_mode.as_deref() == Some("plan") {
+        " [PLAN]"
+    } else {
+        ""
+    };
 
     // Build card content
     let mut content = vec![
         // Line 1: Project name with sprite indicator and role badge
         Line::from(format!(
-            "{}{}{} {}",
+            "{}{}{} {}{}",
             selection_indicator,
             sprite_indicator,
-            truncate(&agent.project, area.width.saturating_sub(10) as usize),
-            role_badge
+            truncate(&agent.project, area.width.saturating_sub(14) as usize),
+            role_badge,
+            mode_indicator
         ))
         .style(Style::default().fg(colors::FG).add_modifier(Modifier::BOLD)),
     ];
@@ -161,8 +170,41 @@ pub fn render_agent_card(
         }
     }
 
-    // Line 3: Elapsed time (or most recent subagent if any running)
-    if !agent.subagents.is_empty() {
+    // Line 3: Elapsed time OR context usage warning (when context is high)
+    // v2.1.x: Show context usage bar when context is getting full (>= 80%)
+    let show_context_warning = agent.context_usage_percent.is_some_and(|pct| pct >= 80.0);
+
+    if show_context_warning {
+        // Show context usage bar instead of elapsed time when context is high
+        let pct = agent.context_usage_percent.unwrap();
+        let bar_width = 10_usize;
+        let filled = ((pct / 100.0) * bar_width as f64) as usize;
+        let empty = bar_width.saturating_sub(filled);
+
+        let (bar_color, label) = match agent.context_level() {
+            Some("critical") => (Color::Red, "FULL"),
+            Some("high") => (Color::Yellow, "HIGH"),
+            _ => (Color::Blue, ""),
+        };
+
+        let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
+
+        // Build context line with spans
+        let mut spans = vec![
+            Span::styled("[", Style::default().fg(colors::IDLE)),
+            Span::styled(bar, Style::default().fg(bar_color)),
+            Span::styled("]", Style::default().fg(colors::IDLE)),
+            Span::raw(format!(" {:.0}%", pct)),
+        ];
+        if !label.is_empty() {
+            spans.push(Span::styled(
+                format!(" {}", label),
+                Style::default().fg(bar_color).add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        content.push(Line::from(spans));
+    } else if !agent.subagents.is_empty() {
         // Show most recent subagent description with role badge
         if let Some(subagent) = agent.subagents.iter().rev().find(|s| s.status == "running") {
             // v1.3: Include role badge in subagent description

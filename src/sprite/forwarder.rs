@@ -13,7 +13,7 @@ use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, RwLock};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, info_span, warn, Instrument};
 
 /// Connection status event for sprite
 #[derive(Debug, Clone)]
@@ -36,6 +36,11 @@ pub struct RemoteHookEvent {
     /// Timestamp when event was sent
     #[serde(default)]
     pub timestamp: Option<i64>,
+
+    /// W3C Trace Context for distributed tracing (OTEL)
+    /// Format: "00-{trace_id}-{span_id}-{flags}"
+    #[serde(default)]
+    pub trace_context: Option<String>,
 }
 
 /// Hook event data matching Claude Code's hook format
@@ -113,14 +118,29 @@ impl HookEventForwarder {
                     let status_tx = self.status_tx.clone();
                     let connections = self.connections.clone();
 
-                    tokio::spawn(async move {
-                        if let Err(e) =
-                            Self::handle_connection(stream, addr, event_tx, status_tx, connections)
-                                .await
-                        {
-                            error!("WebSocket connection error from {}: {}", addr, e);
+                    // Create a span for the connection with OTEL context
+                    let connection_span = info_span!(
+                        "sprite_connection",
+                        sprite.addr = %addr,
+                        otel.kind = "server"
+                    );
+
+                    tokio::spawn(
+                        async move {
+                            if let Err(e) = Self::handle_connection(
+                                stream,
+                                addr,
+                                event_tx,
+                                status_tx,
+                                connections,
+                            )
+                            .await
+                            {
+                                error!("WebSocket connection error from {}: {}", addr, e);
+                            }
                         }
-                    });
+                        .instrument(connection_span),
+                    );
                 }
                 Err(e) => {
                     error!("Failed to accept connection: {}", e);
@@ -184,6 +204,19 @@ impl HookEventForwarder {
                                     info.event_count += 1;
                                 }
                             }
+
+                            // Create span for the event with trace context
+                            let event_span = info_span!(
+                                "sprite_hook_event",
+                                sprite.id = %event.sprite_id,
+                                hook.name = ?event.event.hook_event_name,
+                                tool.name = ?event.event.tool_name,
+                                otel.kind = "internal",
+                                // Include trace context if provided by sprite
+                                trace.parent = ?event.trace_context,
+                            );
+
+                            let _guard = event_span.enter();
 
                             debug!(
                                 "Received hook event from {}: {:?}",

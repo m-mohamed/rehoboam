@@ -4,7 +4,7 @@
 //! Supports multiple terminal emulators: Tmux, WezTerm, Kitty, iTerm2.
 //!
 //! # Loop Mode (v0.9.0)
-//! Agents can run in "Loop Mode" for Ralph-style autonomous iteration.
+//! Agents can run in "Loop Mode" for Rehoboam-style autonomous iteration.
 //! Rehoboam sends Enter keystrokes via tmux to continue loops until:
 //! - Max iterations reached
 //! - Stop word detected in reason
@@ -55,7 +55,6 @@ pub enum AgentRole {
 /// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
 /// v1.3: Extended with parent tracking for hierarchical visualization.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Subagent {
     /// Subagent session ID (for correlation)
     pub id: String,
@@ -67,9 +66,12 @@ pub struct Subagent {
     pub duration_ms: Option<u64>,
 
     // v1.3: Parent-child relationship tracking
+    // Reserved for hierarchical visualization in future TUI update
     /// Parent pane ID (the agent that spawned this subagent)
+    #[allow(dead_code)]
     pub parent_pane_id: String,
     /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.)
+    #[allow(dead_code)]
     pub depth: u8,
     /// Inferred role based on subagent description
     pub role: AgentRole,
@@ -176,7 +178,6 @@ impl AttentionType {
 /// Measures time between PreToolUse and PostToolUse events using `tool_use_id`
 /// correlation. Provides real-time insight into tool execution times.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Agent {
     /// WezTerm pane ID (unique identifier for this agent)
     pub pane_id: String,
@@ -238,9 +239,9 @@ pub struct Agent {
     /// Working directory for git operations (worktree path)
     pub working_dir: Option<std::path::PathBuf>,
 
-    // v1.1 Proper Ralph loops
-    /// Ralph directory for proper loop mode (fresh sessions)
-    pub ralph_dir: Option<std::path::PathBuf>,
+    // v1.1 Proper Rehoboam loops
+    /// Loop directory for Rehoboam Loop mode (fresh sessions)
+    pub loop_dir: Option<std::path::PathBuf>,
 
     // v1.2 Agent role classification (Cursor-inspired)
     /// Inferred agent role based on tool usage patterns
@@ -252,6 +253,8 @@ pub struct Agent {
     /// Optional judge prompt for completion evaluation
     pub judge_prompt: Option<String>,
     /// Model override for judge (defaults to haiku for speed)
+    /// Reserved for Phase 1: LLM-based judge enhancement
+    #[allow(dead_code)]
     pub judge_model: Option<String>,
 
     // v2.0 Per-agent file tracking (Phase 7)
@@ -259,6 +262,22 @@ pub struct Agent {
     pub modified_files: HashSet<PathBuf>,
     /// Git commit hash at session start (for session-scoped diffs)
     pub session_start_commit: Option<String>,
+
+    // Claude Code 2.1.x integration fields
+    /// Context window usage percentage (0.0-100.0)
+    pub context_usage_percent: Option<f64>,
+    /// Context window remaining percentage (0.0-100.0) - Claude Code 2.1.6+
+    pub context_remaining_percent: Option<f64>,
+    /// Total tokens in context
+    pub context_total_tokens: Option<u64>,
+    /// Agent type from --agent flag (explicit, overrides inferred role)
+    pub explicit_agent_type: Option<String>,
+    /// Permission mode (plan, acceptEdits, etc.)
+    pub permission_mode: Option<String>,
+    /// Working directory (from cwd field, may differ from project)
+    pub cwd: Option<String>,
+    /// Transcript path for linking to conversation
+    pub transcript_path: Option<String>,
 }
 
 impl Agent {
@@ -293,8 +312,8 @@ impl Agent {
             sprite_id: None,
             // v1.0 Git operations
             working_dir: None,
-            // v1.1 Proper Ralph loops
-            ralph_dir: None,
+            // v1.1 Proper Rehoboam loops
+            loop_dir: None,
             // v1.2 Agent role classification
             role: AgentRole::General,
             tool_history: VecDeque::with_capacity(10),
@@ -304,6 +323,14 @@ impl Agent {
             // v2.0 Per-agent file tracking
             modified_files: HashSet::new(),
             session_start_commit: None,
+            // Claude Code 2.1.x integration fields
+            context_usage_percent: None,
+            context_remaining_percent: None,
+            context_total_tokens: None,
+            explicit_agent_type: None,
+            permission_mode: None,
+            cwd: None,
+            transcript_path: None,
         }
     }
 
@@ -521,6 +548,56 @@ impl Agent {
             AgentRole::General => "",
         }
     }
+
+    /// Get context usage level for UI display (Claude Code 2.1.x)
+    ///
+    /// Returns: None (no data), Some("low"), Some("medium"), Some("high"), Some("critical")
+    ///
+    /// Prefers remaining_percentage when available (Claude Code 2.1.6+) as it's cleaner
+    /// for threshold checks: `remaining < 20%` maps to "high", `remaining < 5%` maps to "critical"
+    pub fn context_level(&self) -> Option<&'static str> {
+        // Prefer remaining_percentage (Claude Code 2.1.6+)
+        if let Some(remaining) = self.context_remaining_percent {
+            return Some(if remaining <= 5.0 {
+                "critical"
+            } else if remaining <= 20.0 {
+                "high"
+            } else if remaining <= 50.0 {
+                "medium"
+            } else {
+                "low"
+            });
+        }
+
+        // Fall back to used_percentage
+        self.context_usage_percent.map(|pct| {
+            if pct >= 95.0 {
+                "critical"
+            } else if pct >= 80.0 {
+                "high"
+            } else if pct >= 50.0 {
+                "medium"
+            } else {
+                "low"
+            }
+        })
+    }
+
+    /// Get display badge for explicit agent type (Claude Code 2.1.x)
+    ///
+    /// When explicit_agent_type is set from --agent flag, use it for display.
+    /// Falls back to inferred role badge.
+    pub fn agent_type_badge(&self) -> &'static str {
+        if let Some(ref agent_type) = self.explicit_agent_type {
+            match agent_type.as_str() {
+                "explore" => "[E]",
+                "plan" => "[P]",
+                _ => "",
+            }
+        } else {
+            self.role_badge()
+        }
+    }
 }
 
 /// Truncate tool name for display (max 12 chars)
@@ -553,44 +630,38 @@ mod tests {
     }
 
     #[test]
-    fn test_role_classification_planner() {
-        let mut agent = Agent::new("%0".to_string(), "test".to_string());
+    fn test_role_classification() {
+        // Table-driven test for role classification based on tool usage patterns
+        let cases: Vec<(Vec<&str>, AgentRole, &str, &str)> = vec![
+            // (tools, expected_role, expected_badge, description)
+            (
+                vec!["Read", "Glob", "Grep", "Read", "WebSearch"],
+                AgentRole::Planner,
+                "[P]",
+                "5 read-only tools -> Planner (>80% read-only)",
+            ),
+            (
+                vec!["Read", "Edit"],
+                AgentRole::Worker,
+                "[W]",
+                "Any mutation tool -> Worker",
+            ),
+            (
+                vec!["Edit", "Read", "Read", "Grep"],
+                AgentRole::Reviewer,
+                "[R]",
+                "Edit followed by 2+ reads -> Reviewer",
+            ),
+        ];
 
-        // Record 5 read-only tools (should become Planner at >80%)
-        agent.record_tool("Read");
-        agent.record_tool("Glob");
-        agent.record_tool("Grep");
-        agent.record_tool("Read");
-        agent.record_tool("WebSearch");
-
-        assert_eq!(agent.role, AgentRole::Planner);
-        assert_eq!(agent.role_badge(), "[P]");
-    }
-
-    #[test]
-    fn test_role_classification_worker() {
-        let mut agent = Agent::new("%0".to_string(), "test".to_string());
-
-        // Any mutation tool should make it a Worker
-        agent.record_tool("Read");
-        agent.record_tool("Edit");
-
-        assert_eq!(agent.role, AgentRole::Worker);
-        assert_eq!(agent.role_badge(), "[W]");
-    }
-
-    #[test]
-    fn test_role_classification_reviewer() {
-        let mut agent = Agent::new("%0".to_string(), "test".to_string());
-
-        // Edit followed by 2+ reads = Reviewer
-        agent.record_tool("Edit");
-        agent.record_tool("Read");
-        agent.record_tool("Read");
-        agent.record_tool("Grep");
-
-        assert_eq!(agent.role, AgentRole::Reviewer);
-        assert_eq!(agent.role_badge(), "[R]");
+        for (tools, expected_role, expected_badge, desc) in cases {
+            let mut agent = Agent::new("%0".to_string(), "test".to_string());
+            for tool in tools {
+                agent.record_tool(tool);
+            }
+            assert_eq!(agent.role, expected_role, "{}", desc);
+            assert_eq!(agent.role_badge(), expected_badge, "{}", desc);
+        }
     }
 
     #[test]

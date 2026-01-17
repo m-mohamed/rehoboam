@@ -74,6 +74,15 @@ pub struct Cli {
         global = true
     )]
     pub sprite_ws_port: u16,
+
+    // OpenTelemetry integration
+    /// Enable OpenTelemetry export for distributed tracing
+    ///
+    /// Traces are exported to the OTLP endpoint (gRPC port 4317).
+    /// Use with Jaeger, Grafana Tempo, or any OTLP-compatible collector.
+    /// Example: --otel-endpoint http://localhost:4317
+    #[arg(long, env = "REHOBOAM_OTEL_ENDPOINT", global = true)]
+    pub otel_endpoint: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -86,6 +95,14 @@ pub enum Commands {
         /// Send desktop notification (for attention and stop events)
         #[arg(short = 'N', long, default_value_t = false)]
         notify: bool,
+
+        /// Output additionalContext for loop mode (Claude Code 2.1.x)
+        ///
+        /// When enabled and .rehoboam/ directory exists, outputs JSON with
+        /// additionalContext field that Claude Code injects into the conversation.
+        /// Only applies to PreToolUse and PostToolUse hooks.
+        #[arg(long, default_value_t = false)]
+        inject_context: bool,
     },
 
     /// Install Claude Code hooks to a project

@@ -464,13 +464,18 @@ impl App {
             return;
         }
 
-        if let Some((raw, parsed)) = operations::get_diff_content(&self.state) {
-            self.diff_content = raw;
-            self.parsed_diff = Some(parsed);
-            self.diff_scroll = 0;
-            self.diff_selected_file = 0;
-            self.diff_collapsed_hunks.clear();
-            self.show_diff = true;
+        match operations::get_diff_content(&self.state) {
+            Ok((raw, parsed)) => {
+                self.diff_content = raw;
+                self.parsed_diff = Some(parsed);
+                self.diff_scroll = 0;
+                self.diff_selected_file = 0;
+                self.diff_collapsed_hunks.clear();
+                self.show_diff = true;
+            }
+            Err(msg) => {
+                self.show_status(&format!("Cannot show diff: {}", msg));
+            }
         }
     }
 

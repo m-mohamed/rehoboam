@@ -44,10 +44,12 @@ mod event;
 mod git;
 mod init;
 mod notify;
-mod ralph;
 mod reconcile;
+mod rehoboam_loop;
 mod sprite;
 mod state;
+#[allow(dead_code)]
+mod telemetry;
 mod tmux;
 mod tui;
 mod ui;
@@ -204,7 +206,11 @@ async fn handle_sprites_command(action: SpritesAction, token: Option<String>) ->
 /// Silently succeeds if:
 /// - No stdin input (empty hook call)
 /// - Socket unavailable (TUI not running)
-async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
+async fn handle_hook(
+    socket_path: &PathBuf,
+    should_notify: bool,
+    inject_context: bool,
+) -> Result<()> {
     use std::io::{self, BufRead};
     use tokio::io::AsyncWriteExt;
     use tokio::net::UnixStream as TokioUnixStream;
@@ -233,6 +239,62 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
             return Ok(()); // Exit - invalid JSON
         }
     };
+
+    // Handle PermissionRequest events in loop mode - auto-approve based on policy
+    // This must be checked before other processing to return early with decision
+    if hook_input.hook_event_name == "PermissionRequest" {
+        if let Some(loop_dir) = rehoboam_loop::find_rehoboam_dir() {
+            // Get project directory for step-up checks
+            let project_dir = loop_dir.parent().map(std::path::Path::to_path_buf);
+
+            // Evaluate permission against policy
+            let decision = rehoboam_loop::evaluate_permission(
+                &loop_dir,
+                hook_input.tool_name.as_deref().unwrap_or("Unknown"),
+                hook_input.tool_input.as_ref(),
+                project_dir.as_deref(),
+            );
+
+            // If we have a decision, output it and return early
+            if let Some(decision_value) = decision.as_json_value() {
+                let output = serde_json::json!({
+                    "permissionDecision": decision_value
+                });
+                println!("{}", serde_json::to_string(&output)?);
+
+                tracing::info!(
+                    tool = ?hook_input.tool_name,
+                    decision = decision_value,
+                    "Permission auto-decided in loop mode"
+                );
+
+                // Don't return early - still want to send event to TUI
+                // But the permission decision has been output
+            }
+        }
+    }
+
+    // Claude Code 2.1.x: Inject additionalContext for loop mode
+    // Only applies to PreToolUse and PostToolUse hooks
+    if inject_context {
+        let is_tool_hook = matches!(
+            hook_input.hook_event_name.as_str(),
+            "PreToolUse" | "PostToolUse"
+        );
+
+        if is_tool_hook {
+            if let Some(loop_dir) = rehoboam_loop::find_rehoboam_dir() {
+                if let Ok(context) = rehoboam_loop::build_loop_context(&loop_dir) {
+                    // Output JSON that Claude Code will inject
+                    let output = serde_json::json!({
+                        "additionalContext": context
+                    });
+                    println!("{}", serde_json::to_string(&output)?);
+                    // Continue processing - we still want to update the TUI
+                }
+            }
+        }
+    }
 
     // Get pane ID from terminal-specific env vars, fall back to session_id
     // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
@@ -291,6 +353,12 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         subagent_duration_ms: hook_input.duration_ms,
         // v0.10.0 sprite fields
         source: event::EventSource::Local,
+        // Claude Code 2.1.x fields
+        context_window: hook_input.context_window.clone(),
+        agent_type: hook_input.agent_type.clone(),
+        permission_mode: hook_input.permission_mode.clone(),
+        cwd: hook_input.cwd.clone(),
+        transcript_path: hook_input.transcript_path.clone(),
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -398,9 +466,12 @@ async fn main() -> Result<()> {
 
     // Handle subcommands
     match cli.command {
-        Some(Commands::Hook { notify }) => {
+        Some(Commands::Hook {
+            notify,
+            inject_context,
+        }) => {
             // Hook mode: read stdin JSON, enrich with context, send to TUI
-            return handle_hook(&cli.socket, notify).await;
+            return handle_hook(&cli.socket, notify, inject_context).await;
         }
         Some(Commands::Init {
             path,
@@ -554,6 +625,12 @@ async fn main() -> Result<()> {
                     source: event::EventSource::Sprite {
                         sprite_id: remote_event.sprite_id.clone(),
                     },
+                    // Claude Code 2.1.x fields (not yet available from sprites)
+                    context_window: None,
+                    agent_type: None,
+                    permission_mode: None,
+                    cwd: None,
+                    transcript_path: remote_event.event.transcript_path,
                 };
 
                 // Send as RemoteHook event

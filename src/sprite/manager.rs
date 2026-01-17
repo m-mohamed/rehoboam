@@ -74,8 +74,8 @@ pub struct SpriteWorker {
     /// Task description (if any)
     pub task_description: Option<String>,
 
-    /// Ralph directory for coordination
-    pub ralph_dir: Option<PathBuf>,
+    /// Rehoboam directory for coordination
+    pub loop_dir: Option<PathBuf>,
 
     /// Loop iteration counter
     pub iteration: u32,
@@ -88,6 +88,11 @@ pub struct SpriteWorker {
 
     /// Last activity timestamp (Unix seconds)
     pub last_activity: i64,
+
+    /// W3C Trace Context for OTEL distributed tracing
+    /// Format: "00-{trace_id}-{span_id}-{flags}"
+    /// Set when spawning to correlate with parent session
+    pub trace_context: Option<String>,
 }
 
 impl SpriteWorker {
@@ -99,11 +104,33 @@ impl SpriteWorker {
             sprite_name,
             status: SpriteWorkerStatus::Provisioning,
             task_description: None,
-            ralph_dir: None,
+            loop_dir: None,
             iteration: 0,
             last_checkpoint: None,
             created_at: now,
             last_activity: now,
+            trace_context: None,
+        }
+    }
+
+    /// Create a new sprite worker with trace context for OTEL
+    pub fn with_trace_context(
+        id: String,
+        sprite_name: String,
+        trace_context: Option<String>,
+    ) -> Self {
+        let now = chrono::Utc::now().timestamp();
+        Self {
+            id,
+            sprite_name,
+            status: SpriteWorkerStatus::Provisioning,
+            task_description: None,
+            loop_dir: None,
+            iteration: 0,
+            last_checkpoint: None,
+            created_at: now,
+            last_activity: now,
+            trace_context,
         }
     }
 
@@ -114,10 +141,10 @@ impl SpriteWorker {
     }
 
     /// Start working on a task
-    pub fn start_task(&mut self, description: &str, ralph_dir: Option<PathBuf>) {
+    pub fn start_task(&mut self, description: &str, loop_dir: Option<PathBuf>) {
         self.status = SpriteWorkerStatus::Working;
         self.task_description = Some(description.to_string());
-        self.ralph_dir = ralph_dir;
+        self.loop_dir = loop_dir;
         self.last_activity = chrono::Utc::now().timestamp();
     }
 
@@ -178,8 +205,8 @@ pub struct SpritePool {
     /// Active workers in the pool
     pub workers: HashMap<String, SpriteWorker>,
 
-    /// Ralph directory for shared coordination (if any)
-    pub shared_ralph_dir: Option<PathBuf>,
+    /// Rehoboam directory for shared coordination (if any)
+    pub shared_loop_dir: Option<PathBuf>,
 
     /// Whether the pool is in hybrid mode (local planner + remote workers)
     pub hybrid_mode: bool,
@@ -194,17 +221,17 @@ impl SpritePool {
         Self {
             config,
             workers: HashMap::new(),
-            shared_ralph_dir: None,
+            shared_loop_dir: None,
             hybrid_mode: false,
             local_planner_pane: None,
         }
     }
 
     /// Enable hybrid mode with local planner
-    pub fn set_hybrid_mode(&mut self, planner_pane: &str, ralph_dir: PathBuf) {
+    pub fn set_hybrid_mode(&mut self, planner_pane: &str, loop_dir: PathBuf) {
         self.hybrid_mode = true;
         self.local_planner_pane = Some(planner_pane.to_string());
-        self.shared_ralph_dir = Some(ralph_dir);
+        self.shared_loop_dir = Some(loop_dir);
     }
 
     /// Add a worker to the pool
@@ -275,8 +302,8 @@ pub struct HybridConfig {
     /// Pane ID for local planner
     pub planner_pane: String,
 
-    /// Ralph directory for shared coordination
-    pub ralph_dir: PathBuf,
+    /// Rehoboam directory for shared coordination
+    pub loop_dir: PathBuf,
 
     /// Number of remote sprite workers
     pub num_workers: usize,
@@ -368,9 +395,9 @@ mod tests {
 
         assert!(!pool.hybrid_mode);
 
-        pool.set_hybrid_mode("%42", PathBuf::from("/tmp/.ralph"));
+        pool.set_hybrid_mode("%42", PathBuf::from("/tmp/.rehoboam"));
         assert!(pool.hybrid_mode);
         assert_eq!(pool.local_planner_pane, Some("%42".to_string()));
-        assert_eq!(pool.shared_ralph_dir, Some(PathBuf::from("/tmp/.ralph")));
+        assert_eq!(pool.shared_loop_dir, Some(PathBuf::from("/tmp/.rehoboam")));
     }
 }

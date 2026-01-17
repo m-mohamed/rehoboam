@@ -1,5 +1,5 @@
 ---
-description: Initialize and validate Ralph loop state directory for autonomous agent iterations
+description: Initialize and validate Rehoboam loop state directory for autonomous agent iterations
 allowed-tools: Bash(mkdir:*), Bash(ls:*), Bash(cat:*), Read, Write
 argument-hint: [role: planner|worker|auto]
 ---

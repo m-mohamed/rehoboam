@@ -28,12 +28,18 @@ fn get_rehoboam_path() -> String {
 ///
 /// Uses `rehoboam hook` which reads JSON from stdin - status is derived
 /// automatically from hook_event_name, no manual flags needed.
+///
+/// Claude Code 2.1.x: Supports `once: true` for one-time hooks like SessionStart.
 fn hook_template() -> String {
     let path = get_rehoboam_path();
     format!(
         r#"{{
   "hooks": {{
     "SessionStart": [{{
+      "matcher": "*",
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5, "once": true }}]
+    }}],
+    "Setup": [{{
       "matcher": "*",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
     }}],

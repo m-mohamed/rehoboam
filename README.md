@@ -57,19 +57,19 @@ rehoboam
 | `?` | Help |
 | `q` | Quit |
 
-## Ralph Loops
+## Rehoboam's Loop
 
 Autonomous iteration with fresh sessions per loop. Progress persists, failures evaporate.
 
 In spawn dialog (`s`):
 - Enable **Loop Mode**
 - Set max iterations and stop word
-- Rehoboam creates `.ralph/` directory with state files
+- Rehoboam creates `.rehoboam/` directory with state files
 - Each iteration spawns a fresh Claude session
 - Git checkpoint created between iterations for rollback
 - Loop stops on stop word, `<promise>COMPLETE</promise>` tag, or max iterations
 
-State files in `.ralph/`:
+State files in `.rehoboam/`:
 - `anchor.md` - Task spec (your prompt)
 - `progress.md` - Track completed work
 - `guardrails.md` - Learned constraints (auto-populated from repeated errors)
