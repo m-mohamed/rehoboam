@@ -114,7 +114,11 @@ impl SpriteWorker {
     }
 
     /// Create a new sprite worker with trace context for OTEL
-    pub fn with_trace_context(id: String, sprite_name: String, trace_context: Option<String>) -> Self {
+    pub fn with_trace_context(
+        id: String,
+        sprite_name: String,
+        trace_context: Option<String>,
+    ) -> Self {
         let now = chrono::Utc::now().timestamp();
         Self {
             id,

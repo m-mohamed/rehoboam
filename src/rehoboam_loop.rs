@@ -1949,11 +1949,13 @@ pub fn evaluate_permission(
                 .and_then(|v| v.as_str())
         });
 
-        if check_approval_memory(loop_dir, tool_name, target, policy.memory.approval_ttl_hours) {
-            info!(
-                "Auto-approving {} (found in approval memory)",
-                tool_name
-            );
+        if check_approval_memory(
+            loop_dir,
+            tool_name,
+            target,
+            policy.memory.approval_ttl_hours,
+        ) {
+            info!("Auto-approving {} (found in approval memory)", tool_name);
             return PermissionDecision::Approve;
         }
     }
@@ -2494,12 +2496,7 @@ mod tests {
             let decision = evaluate_permission(&loop_dir, "Bash", Some(&input), None);
 
             if should_approve {
-                assert_eq!(
-                    decision,
-                    PermissionDecision::Approve,
-                    "{}",
-                    desc
-                );
+                assert_eq!(decision, PermissionDecision::Approve, "{}", desc);
             }
         }
     }
@@ -2514,7 +2511,10 @@ mod tests {
         let deny_cases = vec![
             ("rm -rf /", "rm -rf should be denied"),
             ("sudo apt install foo", "sudo should be denied"),
-            ("git push --force origin main", "force push should be denied"),
+            (
+                "git push --force origin main",
+                "force push should be denied",
+            ),
             ("chmod 777 /etc/passwd", "chmod 777 should be denied"),
         ];
 
@@ -2579,7 +2579,12 @@ bash_deny = []
         let cases = vec![
             // (command, pattern, expected, description)
             ("git status", "git status*", true, "prefix match"),
-            ("git status --short", "git status*", true, "prefix with args"),
+            (
+                "git status --short",
+                "git status*",
+                true,
+                "prefix with args",
+            ),
             ("git diff", "git status*", false, "different command"),
             ("my-cmd --help", "*--help*", true, "contains match"),
             ("--help", "*--help*", true, "just --help"),
@@ -2591,7 +2596,11 @@ bash_deny = []
 
         for (command, pattern, expected, desc) in cases {
             let result = matches_pattern(command, pattern);
-            assert_eq!(result, expected, "{}: pattern '{}' vs command '{}'", desc, pattern, command);
+            assert_eq!(
+                result, expected,
+                "{}: pattern '{}' vs command '{}'",
+                desc, pattern, command
+            );
         }
     }
 

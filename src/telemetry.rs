@@ -52,9 +52,9 @@ impl TelemetryConfig {
 ///
 /// Returns a tracer that can be used with tracing-opentelemetry.
 fn init_tracer(config: &TelemetryConfig) -> Result<Tracer> {
+    use opentelemetry::KeyValue;
     use opentelemetry_sdk::trace::Config;
     use opentelemetry_sdk::Resource;
-    use opentelemetry::KeyValue;
 
     let resource = Resource::new(vec![
         KeyValue::new("service.name", config.service_name.clone()),
@@ -117,7 +117,12 @@ pub async fn check_endpoint(endpoint: &str) -> bool {
     let addr = format!("{}:{}", host, port);
 
     // Try to connect with timeout
-    match timeout(Duration::from_secs(1), tokio::net::TcpStream::connect(&addr)).await {
+    match timeout(
+        Duration::from_secs(1),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await
+    {
         Ok(Ok(_)) => {
             tracing::debug!("OTEL endpoint {} is reachable", endpoint);
             true

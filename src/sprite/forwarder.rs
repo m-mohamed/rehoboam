@@ -127,9 +127,14 @@ impl HookEventForwarder {
 
                     tokio::spawn(
                         async move {
-                            if let Err(e) =
-                                Self::handle_connection(stream, addr, event_tx, status_tx, connections)
-                                    .await
+                            if let Err(e) = Self::handle_connection(
+                                stream,
+                                addr,
+                                event_tx,
+                                status_tx,
+                                connections,
+                            )
+                            .await
                             {
                                 error!("WebSocket connection error from {}: {}", addr, e);
                             }

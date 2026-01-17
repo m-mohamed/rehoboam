@@ -172,9 +172,7 @@ pub fn render_agent_card(
 
     // Line 3: Elapsed time OR context usage warning (when context is high)
     // v2.1.x: Show context usage bar when context is getting full (>= 80%)
-    let show_context_warning = agent
-        .context_usage_percent
-        .is_some_and(|pct| pct >= 80.0);
+    let show_context_warning = agent.context_usage_percent.is_some_and(|pct| pct >= 80.0);
 
     if show_context_warning {
         // Show context usage bar instead of elapsed time when context is high

@@ -281,7 +281,7 @@ impl ClaudeHookInput {
             "PostToolUse" => ("working", None),      // Just finished a tool, may continue
             "SubagentStart" => ("working", None),    // Spawned a subagent
             "SubagentStop" => ("working", None),     // Subagent finished, may continue
-            "Setup" => ("working", None),            // Claude Code 2.1.x: initialization/setup phase
+            "Setup" => ("working", None), // Claude Code 2.1.x: initialization/setup phase
 
             // ATTENTION: Claude needs user attention
             "PermissionRequest" => ("attention", Some("permission")),
