@@ -29,11 +29,18 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Run release-plz
+        id: release-plz
         uses: release-plz/action@v0.5
         with:
           command: release-pr
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
+
+      - name: Enable auto-merge on release PR
+        if: steps.release-plz.outputs.prs_created == 'true'
+        run: gh pr merge --auto --squash "${{ fromJson(steps.release-plz.outputs.pr).head_branch }}"
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLZ_TOKEN }}
 
   # Publish to crates.io and create git tag when release PR is merged
   release-plz-release:

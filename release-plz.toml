@@ -25,6 +25,3 @@ release_commits = "^(feat|fix|perf|refactor)"
 # PR settings
 pr_draft = false
 pr_labels = ["release"]
-
-# Auto-merge release PRs when CI passes
-pr_auto_merge = true
