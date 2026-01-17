@@ -764,6 +764,7 @@ fn render_help(f: &mut Frame) {
 
   A           Auto-accept (use caution)
   q, Esc      Quit (Esc closes modals first)
+  Ctrl+C      Force quit
 ";
 
     let help = Paragraph::new(help_text)
@@ -938,10 +939,20 @@ fn render_diff_modal(f: &mut Frame, app: &App) {
     // Build enhanced diff content with parsed data
     let lines: Vec<Line> = if let Some(ref parsed) = app.parsed_diff {
         if parsed.is_empty() {
-            vec![Line::styled(
-                "No uncommitted changes",
-                Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
-            )]
+            vec![
+                Line::from(""),
+                Line::styled(
+                    "  No uncommitted changes",
+                    Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
+                ),
+                Line::from(""),
+                Line::styled(
+                    "  Working directory is clean.",
+                    Style::default()
+                        .fg(colors::IDLE)
+                        .add_modifier(Modifier::DIM),
+                ),
+            ]
         } else {
             build_enhanced_diff_lines(parsed, app)
         }

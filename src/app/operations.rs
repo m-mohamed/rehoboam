@@ -115,15 +115,23 @@ pub fn git_push_selected(state: &AppState) {
 
 /// Get diff content for selected agent
 ///
-/// Returns None if diff should not be shown, Some((raw, parsed)) otherwise.
+/// Returns Ok((raw, parsed)) on success, Err(message) with user-friendly error otherwise.
 /// Uses session-scoped diff if session_start_commit is available (shows only
 /// changes made during this session), otherwise shows full diff.
-pub fn get_diff_content(state: &AppState) -> Option<(String, ParsedDiff)> {
-    let agent = state.selected_agent()?;
+pub fn get_diff_content(state: &AppState) -> Result<(String, ParsedDiff), String> {
+    let agent = state.selected_agent().ok_or("No agent selected")?;
 
-    let working_dir = agent.working_dir.as_ref()?;
+    let working_dir = agent
+        .working_dir
+        .as_ref()
+        .ok_or("Agent has no working directory")?;
 
     let git = GitController::new(working_dir.clone());
+
+    // Check if it's actually a git repository
+    if !git.is_git_repo() {
+        return Err("Not a git repository".into());
+    }
 
     // Try session-scoped diff first (v2.0)
     let diff_result = if let Some(ref commit) = agent.session_start_commit {
@@ -146,7 +154,7 @@ pub fn get_diff_content(state: &AppState) -> Option<(String, ParsedDiff)> {
                     project = %agent.project,
                     "No changes to display"
                 );
-                Some(("No uncommitted changes.".to_string(), ParsedDiff::empty()))
+                Ok(("No uncommitted changes.".to_string(), ParsedDiff::empty()))
             } else {
                 tracing::debug!(
                     pane_id = %agent.pane_id,
@@ -155,7 +163,7 @@ pub fn get_diff_content(state: &AppState) -> Option<(String, ParsedDiff)> {
                     "Showing diff view"
                 );
                 let parsed = parse_diff(&diff);
-                Some((diff, parsed))
+                Ok((diff, parsed))
             }
         }
         Err(e) => {
@@ -165,7 +173,7 @@ pub fn get_diff_content(state: &AppState) -> Option<(String, ParsedDiff)> {
                 project = %agent.project,
                 "Failed to get diff"
             );
-            None
+            Err(format!("Git error: {}", e))
         }
     }
 }
