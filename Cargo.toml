@@ -44,6 +44,13 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
+# OpenTelemetry (distributed tracing for agent fleet)
+opentelemetry = { version = "0.21", features = ["trace"] }
+opentelemetry_sdk = { version = "0.21", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.14", features = ["tonic"] }
+tracing-opentelemetry = "0.22"
+url = "2"  # URL parsing for OTEL endpoint validation
+
 # Utilities
 chrono = { version = "0.4", features = ["serde"] }
 directories = "6"

@@ -266,6 +266,8 @@ pub struct Agent {
     // Claude Code 2.1.x integration fields
     /// Context window usage percentage (0.0-100.0)
     pub context_usage_percent: Option<f64>,
+    /// Context window remaining percentage (0.0-100.0) - Claude Code 2.1.6+
+    pub context_remaining_percent: Option<f64>,
     /// Total tokens in context
     pub context_total_tokens: Option<u64>,
     /// Agent type from --agent flag (explicit, overrides inferred role)
@@ -323,6 +325,7 @@ impl Agent {
             session_start_commit: None,
             // Claude Code 2.1.x integration fields
             context_usage_percent: None,
+            context_remaining_percent: None,
             context_total_tokens: None,
             explicit_agent_type: None,
             permission_mode: None,
@@ -549,7 +552,24 @@ impl Agent {
     /// Get context usage level for UI display (Claude Code 2.1.x)
     ///
     /// Returns: None (no data), Some("low"), Some("medium"), Some("high"), Some("critical")
+    ///
+    /// Prefers remaining_percentage when available (Claude Code 2.1.6+) as it's cleaner
+    /// for threshold checks: `remaining < 20%` maps to "high", `remaining < 5%` maps to "critical"
     pub fn context_level(&self) -> Option<&'static str> {
+        // Prefer remaining_percentage (Claude Code 2.1.6+)
+        if let Some(remaining) = self.context_remaining_percent {
+            return Some(if remaining <= 5.0 {
+                "critical"
+            } else if remaining <= 20.0 {
+                "high"
+            } else if remaining <= 50.0 {
+                "medium"
+            } else {
+                "low"
+            });
+        }
+
+        // Fall back to used_percentage
         self.context_usage_percent.map(|pct| {
             if pct >= 95.0 {
                 "critical"

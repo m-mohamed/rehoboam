@@ -48,6 +48,8 @@ mod reconcile;
 mod rehoboam_loop;
 mod sprite;
 mod state;
+#[allow(dead_code)]
+mod telemetry;
 mod tmux;
 mod tui;
 mod ui;
@@ -237,6 +239,40 @@ async fn handle_hook(
             return Ok(()); // Exit - invalid JSON
         }
     };
+
+    // Handle PermissionRequest events in loop mode - auto-approve based on policy
+    // This must be checked before other processing to return early with decision
+    if hook_input.hook_event_name == "PermissionRequest" {
+        if let Some(loop_dir) = rehoboam_loop::find_rehoboam_dir() {
+            // Get project directory for step-up checks
+            let project_dir = loop_dir.parent().map(std::path::Path::to_path_buf);
+
+            // Evaluate permission against policy
+            let decision = rehoboam_loop::evaluate_permission(
+                &loop_dir,
+                hook_input.tool_name.as_deref().unwrap_or("Unknown"),
+                hook_input.tool_input.as_ref(),
+                project_dir.as_deref(),
+            );
+
+            // If we have a decision, output it and return early
+            if let Some(decision_value) = decision.as_json_value() {
+                let output = serde_json::json!({
+                    "permissionDecision": decision_value
+                });
+                println!("{}", serde_json::to_string(&output)?);
+
+                tracing::info!(
+                    tool = ?hook_input.tool_name,
+                    decision = decision_value,
+                    "Permission auto-decided in loop mode"
+                );
+
+                // Don't return early - still want to send event to TUI
+                // But the permission decision has been output
+            }
+        }
+    }
 
     // Claude Code 2.1.x: Inject additionalContext for loop mode
     // Only applies to PreToolUse and PostToolUse hooks

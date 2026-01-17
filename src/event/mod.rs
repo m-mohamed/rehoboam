@@ -12,6 +12,10 @@ pub struct ContextWindow {
     /// Percentage of context used (0.0-100.0)
     #[serde(default)]
     pub used_percentage: Option<f64>,
+    /// Percentage of context remaining (0.0-100.0) - Claude Code 2.1.6+
+    /// Cleaner for threshold checks: `remaining < 20%` vs `used > 80%`
+    #[serde(default)]
+    pub remaining_percentage: Option<f64>,
     /// Total tokens in context
     #[serde(default)]
     pub total_tokens: Option<u64>,

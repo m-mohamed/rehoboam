@@ -377,6 +377,9 @@ impl AppState {
             if let Some(pct) = ctx.used_percentage {
                 agent.context_usage_percent = Some(pct);
             }
+            if let Some(remaining) = ctx.remaining_percentage {
+                agent.context_remaining_percent = Some(remaining);
+            }
             if let Some(tokens) = ctx.total_tokens {
                 agent.context_total_tokens = Some(tokens);
             }
@@ -410,6 +413,9 @@ impl AppState {
 
                     // v1.2: Track tool for role inference
                     agent.record_tool(tool);
+
+                    // OTEL: Record tool call metric
+                    crate::telemetry::metrics::record_tool_call();
 
                     // v2.0: Track modified files from Edit/Write tool_input
                     if matches!(tool.as_str(), "Edit" | "Write") {
@@ -447,6 +453,11 @@ impl AppState {
                 let tool_name = agent.current_tool.clone();
                 agent.end_tool(event.tool_use_id.as_deref(), event.timestamp);
                 if let Some(latency) = agent.last_latency_ms {
+                    // OTEL: Record tool latency metric
+                    if let Some(ref tool) = tool_name {
+                        crate::telemetry::metrics::record_tool_latency(tool, latency);
+                    }
+
                     tracing::info!(
                         pane_id = %pane_id,
                         tool = ?tool_name,
@@ -523,6 +534,9 @@ impl AppState {
         // v0.9.0 Loop Mode: Handle Stop events for loop-enabled agents
         if event.event == "Stop" && agent.loop_mode == LoopMode::Active {
             agent.loop_iteration += 1;
+
+            // OTEL: Record iteration metric
+            crate::telemetry::metrics::record_iteration();
 
             // Track stop reason for stall detection (keep last 5)
             if let Some(reason) = &event.reason {

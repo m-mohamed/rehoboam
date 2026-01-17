@@ -852,8 +852,41 @@ fn render_dashboard(f: &mut Frame, app: &App) {
         String::new(),
     ];
 
+    // Add OTEL Fleet Metrics
+    let tool_calls = crate::telemetry::metrics::get_tool_calls();
+    let otel_iterations = crate::telemetry::metrics::get_iterations();
+
+    // Calculate average latency from agent data
+    let avg_latency: f64 = {
+        let latencies: Vec<u64> = app
+            .state
+            .agents
+            .values()
+            .filter_map(|a| a.avg_latency_ms)
+            .collect();
+        if latencies.is_empty() {
+            0.0
+        } else {
+            latencies.iter().sum::<u64>() as f64 / latencies.len() as f64
+        }
+    };
+
+    lines.push(String::new());
+    lines.push("  ┌─ Fleet Metrics (OTEL) ────────────────────────────────┐".to_string());
+    lines.push(format!(
+        "  │ Tool Calls: {:>8}   Avg Latency: {:>6.1}ms           │",
+        tool_calls, avg_latency
+    ));
+    lines.push(format!(
+        "  │ Traced Iterations: {:>5}   Connected Sprites: {:>3}   │",
+        otel_iterations,
+        app.state.connected_sprite_count()
+    ));
+    lines.push("  └──────────────────────────────────────────────────────┘".to_string());
+
     // Add project breakdown
     if !project_counts.is_empty() {
+        lines.push(String::new());
         lines.push("  ┌─ By Project ───────────────────────────────────────┐".to_string());
         let mut projects: Vec<_> = project_counts.iter().collect();
         projects.sort_by(|a, b| b.1 .1.cmp(&a.1 .1)); // Sort by iterations desc

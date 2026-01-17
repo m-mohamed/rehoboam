@@ -74,6 +74,15 @@ pub struct Cli {
         global = true
     )]
     pub sprite_ws_port: u16,
+
+    // OpenTelemetry integration
+    /// Enable OpenTelemetry export for distributed tracing
+    ///
+    /// Traces are exported to the OTLP endpoint (gRPC port 4317).
+    /// Use with Jaeger, Grafana Tempo, or any OTLP-compatible collector.
+    /// Example: --otel-endpoint http://localhost:4317
+    #[arg(long, env = "REHOBOAM_OTEL_ENDPOINT", global = true)]
+    pub otel_endpoint: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]

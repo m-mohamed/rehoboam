@@ -88,6 +88,11 @@ pub struct SpriteWorker {
 
     /// Last activity timestamp (Unix seconds)
     pub last_activity: i64,
+
+    /// W3C Trace Context for OTEL distributed tracing
+    /// Format: "00-{trace_id}-{span_id}-{flags}"
+    /// Set when spawning to correlate with parent session
+    pub trace_context: Option<String>,
 }
 
 impl SpriteWorker {
@@ -104,6 +109,24 @@ impl SpriteWorker {
             last_checkpoint: None,
             created_at: now,
             last_activity: now,
+            trace_context: None,
+        }
+    }
+
+    /// Create a new sprite worker with trace context for OTEL
+    pub fn with_trace_context(id: String, sprite_name: String, trace_context: Option<String>) -> Self {
+        let now = chrono::Utc::now().timestamp();
+        Self {
+            id,
+            sprite_name,
+            status: SpriteWorkerStatus::Provisioning,
+            task_description: None,
+            loop_dir: None,
+            iteration: 0,
+            last_checkpoint: None,
+            created_at: now,
+            last_activity: now,
+            trace_context,
         }
     }
 
