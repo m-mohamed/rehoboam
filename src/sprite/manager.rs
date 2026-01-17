@@ -1,9 +1,18 @@
 //! Sprite checkpoint and pool management
 //!
-//! v1.5: Adds distributed sprite swarms for parallel task execution.
-//! Supports hybrid mode with local planner and remote sprite workers.
+//! # Active Components
 //!
-//! Note: Pool management APIs are prepared for future integration.
+//! - [`CheckpointRecord`] - Used for checkpoint timeline display in the TUI
+//!
+//! # Reserved for Phase 1.5
+//!
+//! The following are reserved for distributed sprite swarms:
+//! - [`SpritePool`] - Pool of sprite workers for parallel task execution
+//! - [`SpriteWorker`] - Individual worker in the pool
+//! - [`SpritePoolConfig`] - Pool configuration
+//! - [`HybridConfig`] - Local planner + remote workers hybrid mode
+//!
+//! These APIs support hybrid mode with local planner and remote sprite workers.
 #![allow(dead_code)]
 
 use std::collections::HashMap;

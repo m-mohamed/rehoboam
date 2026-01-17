@@ -2,6 +2,19 @@
 //!
 //! This module contains the main `App` struct and related types.
 //! Keyboard handling, spawning, and operations are in sub-modules.
+//!
+//! # API Stability
+//!
+//! The `App` struct fields are public for sub-module access within the crate.
+//! External consumers should use public methods only:
+//!
+//! - [`App::new()`] - Constructor
+//! - [`App::handle_event()`] - Event processing
+//! - [`App::tick()`] - Timer updates
+//! - [`App::rendered()`] - Mark frame as rendered
+//! - [`App::show_status()`] - Display status messages
+//!
+//! Direct field access is internal API and may change between versions.
 
 mod agent_control;
 mod keyboard;

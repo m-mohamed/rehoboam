@@ -200,16 +200,16 @@ pub fn init_loop_dir(project_dir: &Path, prompt: &str, config: &RehoboamConfig) 
     fs::write(loop_dir.join("anchor.md"), anchor_content)?;
 
     // Write empty guardrails.md
-    let guardrails_content = r#"# Guardrails
+    let guardrails_content = r"# Guardrails
 
 Learned constraints from previous iterations. Check these before taking actions.
 
 <!-- Signs will be added here as the loop progresses -->
-"#;
+";
     fs::write(loop_dir.join("guardrails.md"), guardrails_content)?;
 
     // Write empty progress.md
-    let progress_content = r#"# Progress
+    let progress_content = r"# Progress
 
 ## Current Status
 Starting iteration 1...
@@ -219,7 +219,7 @@ Starting iteration 1...
 
 ## Next Steps
 <!-- Track remaining tasks here -->
-"#;
+";
     fs::write(loop_dir.join("progress.md"), progress_content)?;
 
     // Create empty errors.log
@@ -232,7 +232,7 @@ Starting iteration 1...
     fs::write(loop_dir.join("session_history.log"), "")?;
 
     // v1.6: Create tasks.md for task queue (Cursor-aligned)
-    let tasks_content = r#"# Task Queue
+    let tasks_content = r"# Task Queue
 
 ## Pending
 <!-- Planners add tasks here -->
@@ -242,18 +242,18 @@ Starting iteration 1...
 
 ## Completed
 <!-- Completed tasks move here -->
-"#;
+";
     fs::write(loop_dir.join("tasks.md"), tasks_content)?;
 
     // v1.4/v1.6: Create coordination.md only if enabled (opt-in)
     // Per Cursor: "Workers never coordinate with each other"
     if config.enable_coordination {
-        let coordination_content = r#"# Coordination
+        let coordination_content = r"# Coordination
 
 Cross-agent discoveries and broadcasts. Only planners use this.
 
 <!-- Format: [timestamp] [agent_id]: message -->
-"#;
+";
         fs::write(loop_dir.join("coordination.md"), coordination_content)?;
     }
 
@@ -1023,12 +1023,12 @@ fn add_guardrail(loop_dir: &Path, sign: &str, trigger: &str, instruction: &str) 
     let guardrails_path = loop_dir.join("guardrails.md");
 
     let entry = format!(
-        r#"
+        r"
 ### Sign: {sign}
 - **Trigger:** {trigger}
 - **Instruction:** {instruction}
 - **Added:** Iteration {iteration}
-"#,
+",
         sign = sign,
         trigger = trigger,
         instruction = instruction,
@@ -1487,7 +1487,7 @@ pub fn build_loop_context(loop_dir: &Path) -> Result<String> {
     };
 
     Ok(format!(
-        r#"## Rehoboam Loop Context
+        r"## Rehoboam Loop Context
 
 **Iteration:** {}/{} | **Role:** {} | **Stop Word:** {}
 
@@ -1504,7 +1504,7 @@ pub fn build_loop_context(loop_dir: &Path) -> Result<String> {
 
 ### Guardrails
 {}
-"#,
+",
         state.iteration + 1,
         state.max_iterations,
         state.role,

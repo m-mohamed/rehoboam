@@ -1,4 +1,32 @@
 //! Spawn dialog state and agent spawning logic
+//!
+//! Manages the spawn dialog UI state and handles agent creation across
+//! different execution environments.
+//!
+//! # Spawn Workflow
+//!
+//! 1. User presses `s` to open spawn dialog
+//! 2. Configure agent settings:
+//!    - **Project**: Local path or GitHub repo (e.g., `owner/repo`)
+//!    - **Prompt**: Initial task for the agent
+//!    - **Branch**: Optional git worktree isolation
+//!    - **Loop Mode**: Enable Rehoboam's Loop for autonomous iteration
+//!    - **Role**: Planner, Worker, or Auto (affects system prompt)
+//!    - **Sprite**: Enable for remote VM execution (cloud)
+//! 3. Press `Enter` to spawn or `Esc` to cancel
+//!
+//! # Execution Environments
+//!
+//! - **Local (Tmux)**: Spawns Claude Code in a new tmux pane
+//! - **Sprite (Cloud)**: Spawns on remote Fly.io VM with checkpoint support
+//!
+//! # Loop Mode (Rehoboam's Loop)
+//!
+//! When loop mode is enabled:
+//! - Fresh Claude session spawned for each iteration
+//! - State persisted in `.rehoboam/` directory
+//! - Automatic continuation until stop word or max iterations
+//! - Role-specific prompts for Planner/Worker workflows
 
 use crate::git::GitController;
 use crate::rehoboam_loop::{self, LoopRole, RehoboamConfig};

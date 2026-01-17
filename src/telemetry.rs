@@ -17,7 +17,9 @@ use tracing::Subscriber;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::registry::LookupSpan;
 
-/// Configuration for OTEL telemetry
+/// Configuration for OTEL telemetry.
+/// Reserved for Phase 1: Full OTEL integration with Jaeger/Honeycomb.
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TelemetryConfig {
     /// OTLP endpoint (e.g., "http://localhost:4317")
@@ -38,8 +40,9 @@ impl Default for TelemetryConfig {
     }
 }
 
+#[allow(dead_code)]
 impl TelemetryConfig {
-    /// Create a new config with the given endpoint
+    /// Create a new config with the given endpoint.
     pub fn with_endpoint(endpoint: impl Into<String>) -> Self {
         Self {
             endpoint: endpoint.into(),
@@ -48,9 +51,11 @@ impl TelemetryConfig {
     }
 }
 
-/// Initialize OTEL tracer provider
+/// Initialize OTEL tracer provider.
 ///
 /// Returns a tracer that can be used with tracing-opentelemetry.
+/// Reserved for Phase 1: Full OTEL integration.
+#[allow(dead_code)]
 fn init_tracer(config: &TelemetryConfig) -> Result<Tracer> {
     use opentelemetry::KeyValue;
     use opentelemetry_sdk::trace::Config;
@@ -75,9 +80,11 @@ fn init_tracer(config: &TelemetryConfig) -> Result<Tracer> {
     Ok(tracer)
 }
 
-/// Create an OpenTelemetry layer for tracing-subscriber
+/// Create an OpenTelemetry layer for tracing-subscriber.
 ///
 /// This bridges tracing spans to OTEL traces.
+/// Reserved for Phase 1: Full OTEL integration.
+#[allow(dead_code)]
 pub fn otel_layer<S>(config: &TelemetryConfig) -> Result<OpenTelemetryLayer<S, Tracer>>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
@@ -86,18 +93,22 @@ where
     Ok(tracing_opentelemetry::layer().with_tracer(tracer))
 }
 
-/// Shutdown OTEL tracer provider gracefully
+/// Shutdown OTEL tracer provider gracefully.
 ///
 /// Should be called before application exit to flush pending traces.
+/// Reserved for Phase 1: Full OTEL integration.
+#[allow(dead_code)]
 pub fn shutdown() {
     global::shutdown_tracer_provider();
     tracing::debug!("OTEL tracer provider shut down");
 }
 
-/// Check if an OTEL endpoint is reachable
+/// Check if an OTEL endpoint is reachable.
 ///
 /// Returns true if the endpoint responds, false otherwise.
 /// This is a non-blocking check that times out after 1 second.
+/// Reserved for Phase 1: Full OTEL integration.
+#[allow(dead_code)]
 pub async fn check_endpoint(endpoint: &str) -> bool {
     use std::time::Duration;
     use tokio::time::timeout;
@@ -138,10 +149,12 @@ pub async fn check_endpoint(endpoint: &str) -> bool {
     }
 }
 
-/// Get trace context for propagation to remote agents
+/// Get trace context for propagation to remote agents.
 ///
 /// Returns W3C Trace Context headers (traceparent, tracestate).
 /// Used when spawning Sprites to correlate their traces with the parent.
+/// Reserved for Phase 1: Cross-agent trace propagation.
+#[allow(dead_code)]
 pub fn extract_trace_context() -> Option<String> {
     use opentelemetry::trace::TraceContextExt;
     use opentelemetry::Context;
@@ -200,7 +213,9 @@ pub mod metrics {
         );
     }
 
-    /// Record iteration duration histogram
+    /// Record iteration duration histogram.
+    /// Reserved for Phase 1: Per-iteration timing metrics.
+    #[allow(dead_code)]
     pub fn record_iteration_duration(iteration: u32, duration_secs: u64) {
         tracing::info!(
             histogram.iteration_duration_secs = duration_secs,

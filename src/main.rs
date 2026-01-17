@@ -48,7 +48,6 @@ mod reconcile;
 mod rehoboam_loop;
 mod sprite;
 mod state;
-#[allow(dead_code)]
 mod telemetry;
 mod tmux;
 mod tui;

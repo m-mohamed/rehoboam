@@ -1,4 +1,44 @@
 //! Keyboard input handling for all modes
+//!
+//! Routes keyboard events to mode-specific handlers based on [`InputMode`].
+//!
+//! # Keyboard Shortcuts (Normal Mode)
+//!
+//! ## Navigation
+//! - `h`/`←` - Move to left column
+//! - `l`/`→` - Move to right column
+//! - `j`/`↓` - Move to next card in column
+//! - `k`/`↑` - Move to previous card in column
+//! - `Enter` - Jump to selected agent's tmux pane
+//! - `/` - Enter search mode
+//!
+//! ## View Controls
+//! - `?`/`H` - Toggle help overlay
+//! - `d` - Toggle progress dashboard
+//! - `D` - Toggle diff view for selected agent
+//! - `v` - Cycle view modes (Kanban → Project → Split)
+//! - `f` - Freeze/unfreeze display updates
+//! - `t` - Toggle subagent tree panel
+//!
+//! ## Agent Actions
+//! - `y` - Approve permission request
+//! - `n` - Reject permission request
+//! - `c` - Enter custom input mode
+//! - `Space` - Toggle agent selection (for bulk ops)
+//! - `s` - Open spawn dialog
+//!
+//! ## Loop Mode Controls
+//! - `X` - Cancel loop for selected agent
+//! - `R` - Restart loop for selected agent
+//!
+//! ## Git Operations
+//! - `g` - Git commit checkpoint
+//! - `G` - Git push to remote
+//!
+//! ## Application
+//! - `q` - Quit application
+//! - `Esc` - Close overlays or quit
+//! - `Ctrl+C` - Force quit
 
 use super::{agent_control, navigation, operations, spawn, App, InputMode, ViewMode};
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -489,7 +529,7 @@ impl App {
 
         match key.code {
             // Close diff
-            KeyCode::Esc | KeyCode::Char('D') | KeyCode::Char('q') => {
+            KeyCode::Esc | KeyCode::Char('D' | 'q') => {
                 self.show_diff = false;
             }
 
@@ -609,5 +649,388 @@ impl App {
         }
 
         self.show_checkpoint_timeline = false;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::ReconciliationConfig;
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+
+    /// Create a test App instance
+    fn test_app() -> App {
+        App::new(false, None, None, &ReconciliationConfig::default())
+    }
+
+    /// Create a key event from a character
+    fn key(c: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Create a key event from a KeyCode
+    fn key_code(code: KeyCode) -> KeyEvent {
+        KeyEvent {
+            code,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    /// Create a Ctrl+key event
+    fn ctrl_key(c: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    #[test]
+    fn test_quit_on_q() {
+        let mut app = test_app();
+        assert!(!app.should_quit);
+
+        app.handle_key(key('q'));
+        assert!(app.should_quit, "pressing 'q' should quit");
+    }
+
+    #[test]
+    fn test_quit_on_ctrl_c() {
+        let mut app = test_app();
+        assert!(!app.should_quit);
+
+        app.handle_key(ctrl_key('c'));
+        assert!(app.should_quit, "Ctrl+C should quit");
+    }
+
+    #[test]
+    fn test_help_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_help);
+
+        app.handle_key(key('?'));
+        assert!(app.show_help, "'?' should toggle help on");
+
+        app.handle_key(key('?'));
+        assert!(!app.show_help, "'?' should toggle help off");
+    }
+
+    #[test]
+    fn test_view_mode_cycling() {
+        let mut app = test_app();
+        assert_eq!(app.view_mode, ViewMode::Kanban);
+
+        app.handle_key(key('v'));
+        assert_eq!(
+            app.view_mode,
+            ViewMode::Project,
+            "'v' should cycle to Project"
+        );
+
+        app.handle_key(key('v'));
+        assert_eq!(app.view_mode, ViewMode::Split, "'v' should cycle to Split");
+
+        app.handle_key(key('v'));
+        assert_eq!(
+            app.view_mode,
+            ViewMode::Kanban,
+            "'v' should cycle back to Kanban"
+        );
+    }
+
+    #[test]
+    fn test_spawn_mode_entry() {
+        let mut app = test_app();
+        assert_eq!(app.input_mode, InputMode::Normal);
+
+        app.handle_key(key('s'));
+        assert_eq!(
+            app.input_mode,
+            InputMode::Spawn,
+            "'s' should enter spawn mode"
+        );
+    }
+
+    #[test]
+    fn test_spawn_mode_escape() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Spawn;
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert_eq!(
+            app.input_mode,
+            InputMode::Normal,
+            "Esc should exit spawn mode"
+        );
+    }
+
+    #[test]
+    fn test_freeze_toggle() {
+        let mut app = test_app();
+        assert!(!app.frozen);
+
+        app.handle_key(key('f'));
+        assert!(app.frozen, "'f' should freeze display");
+
+        app.handle_key(key('f'));
+        assert!(!app.frozen, "'f' should unfreeze display");
+    }
+
+    #[test]
+    fn test_dashboard_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_dashboard);
+
+        app.handle_key(key('d'));
+        assert!(app.show_dashboard, "'d' should toggle dashboard on");
+
+        app.handle_key(key('d'));
+        assert!(!app.show_dashboard, "'d' should toggle dashboard off");
+    }
+
+    #[test]
+    fn test_search_mode_entry() {
+        let mut app = test_app();
+        assert_eq!(app.input_mode, InputMode::Normal);
+
+        app.handle_key(key('/'));
+        assert_eq!(
+            app.input_mode,
+            InputMode::Search,
+            "'/' should enter search mode"
+        );
+    }
+
+    #[test]
+    fn test_search_mode_typing() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Search;
+
+        app.handle_key(key('t'));
+        app.handle_key(key('e'));
+        app.handle_key(key('s'));
+        app.handle_key(key('t'));
+
+        assert_eq!(app.search_query, "test", "characters should be appended");
+    }
+
+    #[test]
+    fn test_search_mode_backspace() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Search;
+        app.search_query = "test".to_string();
+
+        app.handle_key(key_code(KeyCode::Backspace));
+        assert_eq!(app.search_query, "tes", "backspace should remove last char");
+    }
+
+    #[test]
+    fn test_search_mode_escape() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Search;
+        app.search_query = "test".to_string();
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert_eq!(app.input_mode, InputMode::Normal, "Esc should exit search");
+        assert!(app.search_query.is_empty(), "Esc should clear query");
+    }
+
+    #[test]
+    fn test_esc_closes_help_first() {
+        let mut app = test_app();
+        app.show_help = true;
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(!app.show_help, "Esc should close help overlay");
+        assert!(!app.should_quit, "Esc should not quit when help is open");
+    }
+
+    #[test]
+    fn test_esc_closes_dashboard_first() {
+        let mut app = test_app();
+        app.show_dashboard = true;
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(!app.show_dashboard, "Esc should close dashboard");
+        assert!(
+            !app.should_quit,
+            "Esc should not quit when dashboard is open"
+        );
+    }
+
+    #[test]
+    fn test_navigation_h_l_columns() {
+        let mut app = test_app();
+        let initial_col = app.state.selected_column;
+
+        app.handle_key(key('l'));
+        assert_eq!(
+            app.state.selected_column,
+            (initial_col + 1) % 3,
+            "'l' should move right"
+        );
+
+        app.handle_key(key('h'));
+        assert_eq!(
+            app.state.selected_column, initial_col,
+            "'h' should move left"
+        );
+    }
+
+    #[test]
+    fn test_diff_view_key_close() {
+        let mut app = test_app();
+        app.show_diff = true;
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(!app.show_diff, "Esc should close diff view");
+    }
+
+    #[test]
+    fn test_diff_view_scroll() {
+        let mut app = test_app();
+        app.show_diff = true;
+        app.diff_scroll = 5;
+
+        app.handle_key(key('j'));
+        assert_eq!(app.diff_scroll, 6, "'j' should scroll down in diff view");
+
+        app.handle_key(key('k'));
+        assert_eq!(app.diff_scroll, 5, "'k' should scroll up in diff view");
+    }
+
+    #[test]
+    fn test_auto_accept_toggle() {
+        let mut app = test_app();
+        assert!(!app.auto_accept);
+
+        app.handle_key(key('A'));
+        assert!(app.auto_accept, "'A' should enable auto-accept");
+
+        app.handle_key(key('A'));
+        assert!(!app.auto_accept, "'A' should disable auto-accept");
+    }
+
+    #[test]
+    fn test_subagent_panel_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_subagents);
+
+        app.handle_key(key('T'));
+        assert!(app.show_subagents, "'T' should toggle subagent panel on");
+
+        app.handle_key(key('T'));
+        assert!(!app.show_subagents, "'T' should toggle subagent panel off");
+    }
+
+    #[test]
+    fn test_spawn_field_navigation() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Spawn;
+        assert_eq!(app.spawn_state.active_field, 0);
+
+        app.handle_key(key_code(KeyCode::Tab));
+        assert_eq!(
+            app.spawn_state.active_field, 1,
+            "Tab should move to next field"
+        );
+
+        app.handle_key(key_code(KeyCode::BackTab));
+        assert_eq!(
+            app.spawn_state.active_field, 0,
+            "Shift+Tab should move to previous field"
+        );
+    }
+
+    #[test]
+    fn test_input_mode_typing() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Input;
+
+        app.handle_key(key('h'));
+        app.handle_key(key('i'));
+
+        assert_eq!(
+            app.input_buffer, "hi",
+            "characters should be appended to input buffer"
+        );
+    }
+
+    #[test]
+    fn test_input_mode_backspace() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Input;
+        app.input_buffer = "hello".to_string();
+
+        app.handle_key(key_code(KeyCode::Backspace));
+        assert_eq!(
+            app.input_buffer, "hell",
+            "backspace should remove last char"
+        );
+    }
+
+    #[test]
+    fn test_input_mode_escape() {
+        let mut app = test_app();
+        app.input_mode = InputMode::Input;
+        app.input_buffer = "test".to_string();
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert_eq!(
+            app.input_mode,
+            InputMode::Normal,
+            "Esc should exit input mode"
+        );
+        assert!(app.input_buffer.is_empty(), "Esc should clear input buffer");
+    }
+
+    /// Create a test checkpoint record
+    fn test_checkpoint() -> crate::sprite::CheckpointRecord {
+        crate::sprite::CheckpointRecord {
+            id: "test".to_string(),
+            comment: "test checkpoint".to_string(),
+            created_at: 0,
+            iteration: 0,
+        }
+    }
+
+    #[test]
+    fn test_checkpoint_timeline_navigation() {
+        let mut app = test_app();
+        app.show_checkpoint_timeline = true;
+        app.checkpoint_timeline = vec![test_checkpoint(), test_checkpoint(), test_checkpoint()];
+        app.selected_checkpoint = 1;
+
+        app.handle_key(key('k'));
+        assert_eq!(
+            app.selected_checkpoint, 0,
+            "'k' should select previous checkpoint"
+        );
+
+        app.handle_key(key('j'));
+        assert_eq!(
+            app.selected_checkpoint, 1,
+            "'j' should select next checkpoint"
+        );
+    }
+
+    #[test]
+    fn test_checkpoint_timeline_close() {
+        let mut app = test_app();
+        app.show_checkpoint_timeline = true;
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(
+            !app.show_checkpoint_timeline,
+            "Esc should close checkpoint timeline"
+        );
     }
 }

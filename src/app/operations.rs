@@ -1,4 +1,31 @@
 //! Git operations and checkpoint management
+//!
+//! Provides git-based workflow operations for agents running in worktrees.
+//!
+//! # Available Operations
+//!
+//! ## Checkpoint Operations (`g` key)
+//! - Stages all changes in agent's worktree
+//! - Creates timestamped commit: "Checkpoint from Rehoboam ({timestamp})"
+//! - Safe to call repeatedly (no-op if no changes)
+//!
+//! ## Push Operations (`G` key)
+//! - Pushes current branch to remote origin
+//! - Sets upstream tracking if not already set
+//!
+//! ## Diff Viewing (`D` key)
+//! - Shows uncommitted changes as structured diff
+//! - Supports session-scoped diffs (changes since session start)
+//! - Collapsible hunks for large diffs
+//!
+//! ## Checkpoint Timeline (Sprite agents only)
+//! - Fetches checkpoint history from sprite API
+//! - Displays timeline with restore capability
+//!
+//! # Worktree Context
+//!
+//! Operations require `agent.working_dir` to be set. This is automatically
+//! configured when spawning agents with the worktree option enabled.
 
 use crate::diff::{parse_diff, ParsedDiff};
 use crate::event::Event;
