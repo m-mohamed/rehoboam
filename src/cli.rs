@@ -58,11 +58,11 @@ pub struct Cli {
     pub install: bool,
 
     // Sprites integration options
-    /// Enable remote sprite support (run Claude Code in sandboxed VMs)
+    /// Disable remote sprite support (sprites auto-enable when SPRITES_TOKEN is set)
     #[arg(long, default_value_t = false, global = true)]
-    pub enable_sprites: bool,
+    pub no_sprites: bool,
 
-    /// Sprites API token (required if --enable-sprites)
+    /// Sprites API token (enables sprite support when set)
     #[arg(long, env = "SPRITES_TOKEN", global = true)]
     pub sprites_token: Option<String>,
 
@@ -92,9 +92,9 @@ pub enum Commands {
     /// Reads hook event JSON piped from Claude Code hooks, parses all fields,
     /// and sends enriched event to the TUI via Unix socket.
     Hook {
-        /// Send desktop notification (for attention and stop events)
-        #[arg(short = 'N', long, default_value_t = false)]
-        notify: bool,
+        /// Disable desktop notifications (notifications are ON by default)
+        #[arg(long, default_value_t = false)]
+        no_notify: bool,
 
         /// Output additionalContext for loop mode (Claude Code 2.1.x)
         ///
