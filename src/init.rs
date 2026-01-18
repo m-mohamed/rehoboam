@@ -49,15 +49,15 @@ fn hook_template() -> String {
     }}],
     "PermissionRequest": [{{
       "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook -N", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
     }}],
     "Stop": [{{
       "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook -N", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
     }}],
     "Notification": [{{
       "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook -N", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
     }}],
     "PreToolUse": [{{
       "matcher": "",
@@ -457,10 +457,9 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
 
     init_project(&project, force)?;
 
-    println!("\nHooks enabled (11):");
-    println!("  SessionStart, UserPromptSubmit, PermissionRequest, Stop, Notification,");
-    println!("  PreToolUse, PostToolUse, SessionEnd, PreCompact,");
-    println!("  SubagentStart, SubagentStop");
+    println!("\nHooks enabled (12):");
+    println!("  SessionStart, Setup, UserPromptSubmit, PermissionRequest, Stop, Notification,");
+    println!("  PreToolUse, PostToolUse, SessionEnd, PreCompact, SubagentStart, SubagentStop");
     println!("\nTest with: claude /hooks");
 
     Ok(())
