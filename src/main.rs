@@ -499,6 +499,9 @@ async fn main() -> Result<()> {
     // Initialize error handling
     color_eyre::install()?;
 
+    // Load configuration early (needed for OTEL setup)
+    let app_config = config::RehoboamConfig::load();
+
     // Setup file logging with rotation
     let log_dir = get_log_dir();
     std::fs::create_dir_all(&log_dir)?;
@@ -506,16 +509,54 @@ async fn main() -> Result<()> {
     let file_appender = tracing_appender::rolling::daily(&log_dir, "rehoboam.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
-    // Initialize logging with both file and stderr
+    // Check OTEL configuration: CLI takes precedence over config file
+    let otel_endpoint = cli.otel_endpoint.clone().or_else(|| {
+        if app_config.telemetry.enabled {
+            Some(app_config.telemetry.endpoint.clone())
+        } else {
+            None
+        }
+    });
+
+    // Initialize logging with both file and optional OTEL layer
     let log_filter = format!("rehoboam={}", cli.log_level);
-    tracing_subscriber::registry()
+    let subscriber = tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(&log_filter))
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
                 .with_writer(non_blocking),
-        )
-        .init();
+        );
+
+    // Optionally add OTEL layer if endpoint is configured
+    let otel_enabled = if let Some(ref endpoint) = otel_endpoint {
+        // Check endpoint reachability (non-blocking timeout)
+        if telemetry::check_endpoint(endpoint).await {
+            let otel_config = telemetry::TelemetryConfig::with_endpoint(endpoint);
+            match telemetry::otel_layer(&otel_config) {
+                Ok(layer) => {
+                    subscriber.with(layer).init();
+                    eprintln!("OTEL tracing enabled: {}", endpoint);
+                    true
+                }
+                Err(e) => {
+                    eprintln!("OTEL init failed: {} (continuing without tracing)", e);
+                    subscriber.init();
+                    false
+                }
+            }
+        } else {
+            eprintln!(
+                "OTEL endpoint {} not reachable (continuing without tracing)",
+                endpoint
+            );
+            subscriber.init();
+            false
+        }
+    } else {
+        subscriber.init();
+        false
+    };
 
     tracing::info!("Starting rehoboam v{}", env!("CARGO_PKG_VERSION"));
     tracing::info!("Log directory: {:?}", log_dir);
@@ -647,12 +688,12 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Load configuration from file
-    let config = config::RehoboamConfig::load();
+    // Log configuration (already loaded earlier for OTEL)
     tracing::info!(
-        "Loaded config: sprites.enabled = {}, reconciliation.enabled = {}",
-        config.sprites.enabled,
-        config.reconciliation.enabled
+        "Loaded config: sprites.enabled = {}, reconciliation.enabled = {}, telemetry.enabled = {}",
+        app_config.sprites.enabled,
+        app_config.reconciliation.enabled,
+        app_config.telemetry.enabled
     );
 
     // Create SpritesClient if token is provided
@@ -669,7 +710,7 @@ async fn main() -> Result<()> {
         cli.tick_rate,
         cli.frame_rate,
         sprites_client,
-        &config,
+        &app_config,
     )
     .await;
 
@@ -687,6 +728,12 @@ async fn main() -> Result<()> {
     // Remove socket file
     if cli.socket.exists() {
         let _ = std::fs::remove_file(&cli.socket);
+    }
+
+    // Shutdown OTEL if enabled (flush pending traces)
+    if otel_enabled {
+        telemetry::shutdown();
+        tracing::debug!("OTEL tracing shut down");
     }
 
     result

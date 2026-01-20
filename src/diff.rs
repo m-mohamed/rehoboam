@@ -45,28 +45,36 @@ pub struct FileDiff {
 pub struct Hunk {
     /// The @@ header line (e.g., "@@ -10,5 +10,7 @@")
     pub header: String,
-    /// Starting line in old file.
-    /// Reserved for Phase 1: Line navigation and jump-to-line features.
-    #[allow(dead_code)]
+    /// Starting line in old file (used for line navigation)
     pub old_start: u32,
-    /// Number of lines in old file.
-    /// Reserved for Phase 1: Hunk size indicators.
-    #[allow(dead_code)]
+    /// Number of lines in old file (used for hunk size indicators)
     pub old_count: u32,
-    /// Starting line in new file.
-    /// Reserved for Phase 1: Line navigation and jump-to-line features.
-    #[allow(dead_code)]
+    /// Starting line in new file (used for line navigation)
     pub new_start: u32,
-    /// Number of lines in new file.
-    /// Reserved for Phase 1: Hunk size indicators.
-    #[allow(dead_code)]
+    /// Number of lines in new file (used for hunk size indicators)
     pub new_count: u32,
     /// Lines in this hunk
     pub lines: Vec<DiffLine>,
-    /// Whether this hunk is collapsed in the UI.
-    /// Reserved for Phase 1: Collapsible hunks for large diffs.
-    #[allow(dead_code)]
+    /// Whether this hunk is collapsed in the UI
     pub collapsed: bool,
+}
+
+impl Hunk {
+    /// Returns true if this is a large hunk (>100 lines)
+    pub fn is_large(&self) -> bool {
+        self.new_count > 100
+    }
+
+    /// Returns size indicator for large hunks
+    pub fn size_indicator(&self) -> Option<String> {
+        if self.new_count > 100 {
+            Some(format!("[LARGE: {} lines]", self.new_count))
+        } else if self.new_count > 50 {
+            Some(format!("[{} lines]", self.new_count))
+        } else {
+            None
+        }
+    }
 }
 
 /// A single line in a diff

@@ -1,5 +1,7 @@
 pub mod input;
 pub mod socket;
+pub mod status;
+
 
 use serde::{Deserialize, Serialize};
 
@@ -273,64 +275,18 @@ impl ClaudeHookInput {
     ///
     /// # Returns
     /// Tuple of (status, optional attention_type)
-    pub fn derive_status(&self) -> (&str, Option<&str>) {
-        match self.hook_event_name.as_str() {
-            // WORKING: Claude is actively doing something
-            "UserPromptSubmit" => ("working", None), // User sent message, Claude processing
-            "PreToolUse" => ("working", None),       // About to run a tool
-            "PostToolUse" => ("working", None),      // Just finished a tool, may continue
-            "SubagentStart" => ("working", None),    // Spawned a subagent
-            "SubagentStop" => ("working", None),     // Subagent finished, may continue
-            "Setup" => ("working", None), // Claude Code 2.1.x: initialization/setup phase
-
-            // ATTENTION: Claude needs user attention
-            "PermissionRequest" => ("attention", Some("permission")),
-
-            // ATTENTION(Waiting): Claude is waiting for user input (was idle)
-            "SessionStart" => ("attention", Some("waiting")), // Session started, waiting for prompt
-            "Stop" => ("attention", Some("waiting")),         // Claude finished responding
-            "SessionEnd" => ("attention", Some("waiting")),   // Session ended
-            "Notification" => ("attention", Some("notification")), // Informational message
-
-            // COMPACTING: Context maintenance
-            "PreCompact" => ("compacting", None),
-
-            // Unknown hooks default to attention(waiting)
-            _ => ("attention", Some("waiting")),
-        }
+    pub fn derive_status(&self) -> (&'static str, Option<&'static str>) {
+        status::derive_status_from_event(&self.hook_event_name)
     }
 }
 
-/// Derive rehoboam status from a hook event name string
-///
-/// Standalone function for use by remote event processing (sprites)
-/// where we only have the hook event name as a string.
-///
-/// # Returns
-/// Tuple of (status, optional attention_type) as owned Strings
+// NOTE: derive_status functions are now in event/status.rs
+// Use derive_status_owned() for owned strings or derive_status_from_event() for references
+
+/// Backward compatibility alias for derive_status_owned
+#[inline]
 pub fn derive_status_from_hook_name(hook_name: &str) -> (String, Option<String>) {
-    match hook_name {
-        // WORKING: Claude is actively doing something
-        "UserPromptSubmit" | "PreToolUse" | "PostToolUse" | "SubagentStart" | "SubagentStop"
-        | "Setup" => ("working".to_string(), None),
-
-        // ATTENTION: Claude is BLOCKED waiting for explicit user approval
-        "PermissionRequest" => ("attention".to_string(), Some("permission".to_string())),
-
-        // ATTENTION(Waiting): Claude is waiting for user input (was "idle")
-        "SessionStart" | "Stop" | "SessionEnd" => {
-            ("attention".to_string(), Some("waiting".to_string()))
-        }
-
-        // ATTENTION(Notification): Informational alert
-        "Notification" => ("attention".to_string(), Some("notification".to_string())),
-
-        // COMPACTING: Context maintenance
-        "PreCompact" => ("compacting".to_string(), None),
-
-        // Unknown hooks default to attention(waiting) (conservative)
-        _ => ("attention".to_string(), Some("waiting".to_string())),
-    }
+    status::derive_status_owned(hook_name)
 }
 
 #[cfg(test)]

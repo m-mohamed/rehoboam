@@ -19,7 +19,6 @@ use tracing_subscriber::registry::LookupSpan;
 
 /// Configuration for OTEL telemetry.
 /// Reserved for Phase 1: Full OTEL integration with Jaeger/Honeycomb.
-#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct TelemetryConfig {
     /// OTLP endpoint (e.g., "http://localhost:4317")
@@ -40,7 +39,6 @@ impl Default for TelemetryConfig {
     }
 }
 
-#[allow(dead_code)]
 impl TelemetryConfig {
     /// Create a new config with the given endpoint.
     pub fn with_endpoint(endpoint: impl Into<String>) -> Self {
@@ -54,8 +52,6 @@ impl TelemetryConfig {
 /// Initialize OTEL tracer provider.
 ///
 /// Returns a tracer that can be used with tracing-opentelemetry.
-/// Reserved for Phase 1: Full OTEL integration.
-#[allow(dead_code)]
 fn init_tracer(config: &TelemetryConfig) -> Result<Tracer> {
     use opentelemetry::KeyValue;
     use opentelemetry_sdk::trace::Config;
@@ -83,8 +79,6 @@ fn init_tracer(config: &TelemetryConfig) -> Result<Tracer> {
 /// Create an OpenTelemetry layer for tracing-subscriber.
 ///
 /// This bridges tracing spans to OTEL traces.
-/// Reserved for Phase 1: Full OTEL integration.
-#[allow(dead_code)]
 pub fn otel_layer<S>(config: &TelemetryConfig) -> Result<OpenTelemetryLayer<S, Tracer>>
 where
     S: Subscriber + for<'span> LookupSpan<'span>,
@@ -96,8 +90,6 @@ where
 /// Shutdown OTEL tracer provider gracefully.
 ///
 /// Should be called before application exit to flush pending traces.
-/// Reserved for Phase 1: Full OTEL integration.
-#[allow(dead_code)]
 pub fn shutdown() {
     global::shutdown_tracer_provider();
     tracing::debug!("OTEL tracer provider shut down");
@@ -107,8 +99,6 @@ pub fn shutdown() {
 ///
 /// Returns true if the endpoint responds, false otherwise.
 /// This is a non-blocking check that times out after 1 second.
-/// Reserved for Phase 1: Full OTEL integration.
-#[allow(dead_code)]
 pub async fn check_endpoint(endpoint: &str) -> bool {
     use std::time::Duration;
     use tokio::time::timeout;

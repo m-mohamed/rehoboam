@@ -162,6 +162,15 @@ impl App {
                 );
             }
 
+            // Toggle sprite pool management modal
+            KeyCode::Char('P') => {
+                self.show_pool_management = !self.show_pool_management;
+                tracing::debug!(
+                    show_pool_management = self.show_pool_management,
+                    "Toggled pool management"
+                );
+            }
+
             // Scroll output (in split view)
             KeyCode::PageUp => {
                 if self.view_mode == ViewMode::Split {
@@ -348,19 +357,17 @@ impl App {
                 _ => {}
             },
             KeyCode::Left => {
-                if self.spawn_state.active_field == 7 {
-                    // Cycle role backward
-                    self.spawn_state.loop_role = self.spawn_state.loop_role.prev();
-                } else if self.spawn_state.active_field == 9 {
-                    self.spawn_state.network_preset = self.spawn_state.network_preset.prev();
+                match self.spawn_state.active_field {
+                    7 => self.spawn_state.loop_role = self.spawn_state.loop_role.prev(),
+                    9 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
+                    _ => {}
                 }
             }
             KeyCode::Right => {
-                if self.spawn_state.active_field == 7 {
-                    // Cycle role forward
-                    self.spawn_state.loop_role = self.spawn_state.loop_role.next();
-                } else if self.spawn_state.active_field == 9 {
-                    self.spawn_state.network_preset = self.spawn_state.network_preset.next();
+                match self.spawn_state.active_field {
+                    7 => self.spawn_state.loop_role = self.spawn_state.loop_role.next(),
+                    9 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
+                    _ => {}
                 }
             }
             KeyCode::Backspace => match self.spawn_state.active_field {
@@ -418,19 +425,20 @@ impl App {
                         self.spawn_state.loop_enabled = false;
                     }
                 }
-                8 => {
-                    if c == 'y' || c == 'Y' {
-                        self.spawn_state.use_sprite = true;
-                    } else if c == 'n' || c == 'N' {
-                        self.spawn_state.use_sprite = false;
-                    }
-                }
                 5 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.loop_max_iterations.push(c);
                     }
                 }
                 6 => self.spawn_state.loop_stop_word.push(c),
+                8 => {
+                    // Sprite toggle - y/n to toggle
+                    if c == 'y' || c == 'Y' {
+                        self.spawn_state.use_sprite = true;
+                    } else if c == 'n' || c == 'N' {
+                        self.spawn_state.use_sprite = false;
+                    }
+                }
                 10 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.ram_mb.push(c);
@@ -561,12 +569,38 @@ impl App {
             KeyCode::Char('n') | KeyCode::Tab => {
                 if file_count > 0 {
                     self.diff_selected_file = (self.diff_selected_file + 1) % file_count;
+                    self.diff_selected_hunk = 0; // Reset hunk selection
                 }
             }
             KeyCode::Char('p') | KeyCode::BackTab => {
                 if file_count > 0 {
                     self.diff_selected_file =
                         (self.diff_selected_file + file_count - 1) % file_count;
+                    self.diff_selected_hunk = 0; // Reset hunk selection
+                }
+            }
+
+            // Next/previous hunk within current file
+            KeyCode::Char(']') => {
+                if let Some(diff) = &self.parsed_diff {
+                    if let Some(file) = diff.files.get(self.diff_selected_file) {
+                        let hunk_count = file.hunks.len();
+                        if hunk_count > 0 {
+                            self.diff_selected_hunk =
+                                (self.diff_selected_hunk + 1) % hunk_count;
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('[') => {
+                if let Some(diff) = &self.parsed_diff {
+                    if let Some(file) = diff.files.get(self.diff_selected_file) {
+                        let hunk_count = file.hunks.len();
+                        if hunk_count > 0 {
+                            self.diff_selected_hunk =
+                                (self.diff_selected_hunk + hunk_count - 1) % hunk_count;
+                        }
+                    }
                 }
             }
 

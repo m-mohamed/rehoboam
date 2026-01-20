@@ -36,7 +36,8 @@ use sprites::SpritesClient;
 use std::path::PathBuf;
 
 /// Number of fields in spawn dialog
-/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=role, 8=sprite, 9=network, 10=ram, 11=cpus, 12=clone_dest
+/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=role,
+/// 8=sprite, 9=network, 10=ram, 11=cpus, 12=clone_dest
 pub const SPAWN_FIELD_COUNT: usize = 13;
 
 /// State for the spawn dialog
@@ -81,12 +82,6 @@ pub struct SpawnState {
     pub clone_destination: String,
     /// Validation error to display in the dialog
     pub validation_error: Option<String>,
-    // v1.4: Judge mode fields
-    /// Whether to enable judge evaluation after each iteration
-    pub judge_enabled: bool,
-    /// Custom prompt for judge evaluation (optional)
-    /// If empty, uses default heuristic-based evaluation
-    pub judge_prompt: String,
 }
 
 /// Check if a string looks like a GitHub repository reference
@@ -151,9 +146,6 @@ impl Default for SpawnState {
             cpus: "2".to_string(),
             clone_destination: String::new(),
             validation_error: None,
-            // v1.4: Judge mode defaults
-            judge_enabled: false,
-            judge_prompt: String::new(),
         }
     }
 }
@@ -544,23 +536,11 @@ fn spawn_tmux_agent(
             // Register loop config if loop mode is enabled
             if spawn_state.loop_enabled {
                 let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
-                // v1.4: Judge mode - pass custom prompt if enabled, otherwise None for heuristics
-                let judge_prompt =
-                    if spawn_state.judge_enabled && !spawn_state.judge_prompt.is_empty() {
-                        Some(spawn_state.judge_prompt.clone())
-                    } else if spawn_state.judge_enabled {
-                        // Judge enabled but no custom prompt - use default heuristic mode
-                        Some(String::new())
-                    } else {
-                        None
-                    };
                 state.register_loop_config(
                     &pane_id,
                     max_iter,
                     &spawn_state.loop_stop_word,
                     loop_dir.clone(),
-                    judge_prompt,
-                    None, // judge_model (future: expose in UI)
                 );
             }
 

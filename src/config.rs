@@ -25,6 +25,44 @@ pub struct RehoboamConfig {
     /// Reconciliation configuration
     #[serde(default)]
     pub reconciliation: ReconciliationConfig,
+
+    /// OpenTelemetry configuration
+    #[serde(default)]
+    pub telemetry: OtelConfig,
+}
+
+/// OpenTelemetry configuration for distributed tracing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OtelConfig {
+    /// Enable OTEL telemetry (default: false)
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// OTLP endpoint (e.g., "http://localhost:4317")
+    #[serde(default = "default_otel_endpoint")]
+    pub endpoint: String,
+
+    /// Service name for traces (default: "rehoboam")
+    #[serde(default = "default_otel_service_name")]
+    pub service_name: String,
+}
+
+impl Default for OtelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: default_otel_endpoint(),
+            service_name: default_otel_service_name(),
+        }
+    }
+}
+
+fn default_otel_endpoint() -> String {
+    "http://localhost:4317".to_string()
+}
+
+fn default_otel_service_name() -> String {
+    "rehoboam".to_string()
 }
 
 /// Timeout configuration for state transitions

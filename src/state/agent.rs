@@ -67,12 +67,10 @@ pub struct Subagent {
 
     // v1.3: Parent-child relationship tracking
     /// Parent pane ID (the agent that spawned this subagent).
-    /// Reserved for Phase 1: Hierarchical subagent tree visualization.
-    #[allow(dead_code)]
+    /// Used for hierarchical subagent tree visualization.
     pub parent_pane_id: String,
     /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.).
-    /// Reserved for Phase 1: Hierarchical subagent tree visualization.
-    #[allow(dead_code)]
+    /// Used for hierarchical subagent tree visualization.
     pub depth: u8,
     /// Inferred role based on subagent description
     pub role: AgentRole,
@@ -250,14 +248,6 @@ pub struct Agent {
     /// Recent tool names for role inference (last 10 tools)
     pub tool_history: VecDeque<String>,
 
-    // v1.4 Judge mode (Cursor-inspired evaluation phase)
-    /// Optional judge prompt for completion evaluation.
-    pub judge_prompt: Option<String>,
-    /// Model override for judge (defaults to haiku for speed).
-    /// Reserved for Phase 1: LLM-based judge enhancement with configurable model.
-    #[allow(dead_code)]
-    pub judge_model: Option<String>,
-
     // v2.0 Per-agent file tracking (Phase 7)
     /// Files modified by this agent (tracked from Edit/Write tool_input)
     pub modified_files: HashSet<PathBuf>,
@@ -318,9 +308,6 @@ impl Agent {
             // v1.2 Agent role classification
             role: AgentRole::General,
             tool_history: VecDeque::with_capacity(10),
-            // v1.4 Judge mode
-            judge_prompt: None,
-            judge_model: None,
             // v2.0 Per-agent file tracking
             modified_files: HashSet::new(),
             session_start_commit: None,
