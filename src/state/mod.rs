@@ -332,6 +332,7 @@ impl AppState {
     ///
     /// When the agent sends its first hook event, the config will be applied.
     /// If `loop_dir` is Some, the agent will use proper Rehoboam mode (fresh sessions).
+    /// Judge always runs when loop mode is active (no toggle needed).
     pub fn register_loop_config(
         &mut self,
         pane_id: &str,
@@ -352,7 +353,7 @@ impl AppState {
             max = max_iterations,
             stop_word = %stop_word,
             loop_dir = ?loop_dir,
-            "Registered pending loop config"
+            "Registered pending loop config (Judge is automatic)"
         );
     }
 

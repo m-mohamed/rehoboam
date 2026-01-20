@@ -213,41 +213,10 @@ mod tests {
     }
 
     // Judge mode tests
-
-    #[test]
-    fn test_judge_completion_decisions() {
-        use std::fs;
-
-        // Table-driven test for judge decision logic based on progress.md content
-        let cases: Vec<(&str, JudgeDecision, &str)> = vec![
-            // (progress_content, expected_decision, description)
-            (
-                "All tasks completed successfully.",
-                JudgeDecision::Complete,
-                "completion indicator triggers Complete",
-            ),
-            (
-                "Blocked by missing API credentials.",
-                JudgeDecision::Stalled,
-                "stall indicator triggers Stalled",
-            ),
-            (
-                "Working on implementing the feature.",
-                JudgeDecision::Continue,
-                "no indicators defaults to Continue",
-            ),
-        ];
-
-        for (progress_content, expected_decision, desc) in cases {
-            let temp = TempDir::new().unwrap();
-            let config = RehoboamConfig::default();
-            let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-            fs::write(loop_dir.join("progress.md"), progress_content).unwrap();
-            let (decision, _, _) = judge_completion(&loop_dir).unwrap();
-            assert_eq!(decision, expected_decision, "{}", desc);
-        }
-    }
+    //
+    // Note: judge_completion() now always uses Claude Code (no heuristics).
+    // Unit testing the full function would require Claude Code to be installed.
+    // The JudgeDecision enum is still tested via other integration tests.
 
     // Multi-Agent Coordination tests
 

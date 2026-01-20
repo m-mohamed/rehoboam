@@ -533,7 +533,7 @@ fn spawn_tmux_agent(
                 None
             };
 
-            // Register loop config if loop mode is enabled
+            // Register loop config if loop mode is enabled (Judge is automatic)
             if spawn_state.loop_enabled {
                 let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
                 state.register_loop_config(

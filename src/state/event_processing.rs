@@ -249,7 +249,7 @@ impl AppState {
                     max = loop_config.max_iterations,
                     stop_word = %loop_config.stop_word,
                     loop_dir = ?loop_config.loop_dir,
-                    "Loop mode applied from spawn config"
+                    "Loop mode applied (Judge is automatic)"
                 );
             }
 
@@ -502,7 +502,7 @@ impl AppState {
                     Some("Basso"),
                 );
             } else {
-                // Evaluate completion using heuristics
+                // Evaluate completion using Judge (Claude Code)
                 if let Some(ref loop_dir) = agent.loop_dir {
                     match rehoboam_loop::judge_completion(loop_dir) {
                         Ok((decision, confidence, explanation)) => match decision {

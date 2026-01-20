@@ -22,6 +22,7 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     // Field indices:
     // 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=role,
     // 8=sprite, 9=network, 10=ram, 11=cpus, 12=clone_dest
+    // Note: Judge is automatic in loop mode (no toggle needed)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

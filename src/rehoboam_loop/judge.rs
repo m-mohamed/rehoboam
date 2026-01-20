@@ -2,37 +2,15 @@
 //!
 //! Evaluates loop progress to determine if the task is complete,
 //! should continue, or is stalled.
+//!
+//! Judge = Claude Code. No heuristics, no fallback.
+//! An ephemeral Claude session evaluates anchor.md + progress.md.
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use std::path::Path;
+use std::process::{Command, Stdio};
 
 use super::state::read_file_content;
-
-/// Completion indicators in progress.md that suggest task is done
-const COMPLETION_INDICATORS: &[&str] = &[
-    "all tasks completed",
-    "implementation complete",
-    "successfully implemented",
-    "task is done",
-    "work is complete",
-    "finished implementing",
-    "all requirements met",
-    "nothing left to do",
-    "ready for review",
-    "all tests pass",
-];
-
-/// Stall indicators that suggest the task is blocked
-const STALL_INDICATORS: &[&str] = &[
-    "blocked by",
-    "need clarification",
-    "cannot proceed",
-    "stuck on",
-    "waiting for",
-    "unclear requirements",
-    "need more information",
-    "error persists",
-];
 
 /// Judge decision type
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -45,85 +23,101 @@ pub enum JudgeDecision {
     Stalled,
 }
 
-/// Evaluate completion using judge heuristics
+/// Build judge evaluation prompt from loop state files
 ///
-/// Analyzes progress.md against anchor.md to determine if the task is complete.
-/// This is a simple heuristic-based judge - a full implementation would spawn
-/// a separate Claude session to evaluate.
-///
-/// Returns (decision, confidence, reason)
-pub fn judge_completion(loop_dir: &Path) -> Result<(JudgeDecision, f64, String)> {
-    let progress = read_file_content(loop_dir, "progress.md")?;
+/// Creates a structured prompt for Claude Code to evaluate task completion
+/// based on anchor.md (task spec) and progress.md (work done).
+fn build_judge_prompt(loop_dir: &Path) -> Result<String> {
     let anchor = read_file_content(loop_dir, "anchor.md")?;
-    let progress_lower = progress.to_lowercase();
+    let progress = read_file_content(loop_dir, "progress.md")?;
 
-    // Check for explicit completion indicators
-    for indicator in COMPLETION_INDICATORS {
-        if progress_lower.contains(indicator) {
-            return Ok((
-                JudgeDecision::Complete,
-                0.8,
-                format!("Found completion indicator: '{}'", indicator),
-            ));
-        }
-    }
+    Ok(format!(
+        r#"You are a judge evaluating whether a coding task is complete.
 
-    // Check for stall indicators
-    for indicator in STALL_INDICATORS {
-        if progress_lower.contains(indicator) {
-            return Ok((
-                JudgeDecision::Stalled,
-                0.7,
-                format!("Found stall indicator: '{}'", indicator),
-            ));
-        }
-    }
+TASK SPECIFICATION:
+{anchor}
 
-    // Check if progress mentions all anchor requirements
-    let anchor_lower = anchor.to_lowercase();
-    let requirements: Vec<&str> = anchor_lower
-        .lines()
-        .filter(|l| l.starts_with("- ") || l.starts_with("* ") || l.starts_with("1."))
-        .collect();
+PROGRESS REPORT:
+{progress}
 
-    if !requirements.is_empty() {
-        // Simple heuristic: if progress is long and mentions most requirement keywords
-        let progress_word_count = progress.split_whitespace().count();
-        let requirement_keywords: Vec<&str> = requirements
-            .iter()
-            .flat_map(|r| r.split_whitespace())
-            .filter(|w| w.len() > 4)
-            .take(10)
-            .collect();
+Evaluate the progress against the task specification.
 
-        let keywords_found = requirement_keywords
-            .iter()
-            .filter(|kw| progress_lower.contains(*kw))
-            .count();
+Respond with EXACTLY ONE LINE containing only one of:
+CONTINUE
+COMPLETE
+STALLED
 
-        let coverage = if requirement_keywords.is_empty() {
-            0.0
-        } else {
-            keywords_found as f64 / requirement_keywords.len() as f64
-        };
-
-        // If progress is substantial and covers most requirements, likely complete
-        if progress_word_count > 200 && coverage > 0.7 {
-            return Ok((
-                JudgeDecision::Complete,
-                coverage * 0.8,
-                format!(
-                    "Progress covers {:.0}% of requirement keywords",
-                    coverage * 100.0
-                ),
-            ));
-        }
-    }
-
-    // Default: continue
-    Ok((
-        JudgeDecision::Continue,
-        0.5,
-        "No completion or stall indicators found".to_string(),
+No explanation needed - just the single word decision."#
     ))
+}
+
+/// Parse judge response from LLM output
+///
+/// Looks for CONTINUE, COMPLETE, or STALLED keywords in the response.
+/// Defaults to Continue if no clear decision is found.
+fn parse_judge_response(response: &str) -> Result<JudgeDecision> {
+    let response_upper = response.to_uppercase();
+
+    // Look for keywords in the response
+    if response_upper.contains("COMPLETE") {
+        Ok(JudgeDecision::Complete)
+    } else if response_upper.contains("STALLED") {
+        Ok(JudgeDecision::Stalled)
+    } else if response_upper.contains("CONTINUE") {
+        Ok(JudgeDecision::Continue)
+    } else {
+        // Default to continue if no clear decision
+        tracing::warn!(
+            response = %response.trim(),
+            "Judge response unclear, defaulting to Continue"
+        );
+        Ok(JudgeDecision::Continue)
+    }
+}
+
+/// Evaluate task completion via Claude Code
+///
+/// Judge = Claude Code. Spawns an ephemeral Claude session to evaluate
+/// the current loop state (anchor.md + progress.md).
+///
+/// # Arguments
+/// * `loop_dir` - Path to the .rehoboam/ directory containing state files
+///
+/// # Returns
+/// * `Ok((decision, confidence, explanation))` - The Judge's evaluation
+/// * `Err` - If Claude Code fails to spawn or returns an error
+pub fn judge_completion(loop_dir: &Path) -> Result<(JudgeDecision, f64, String)> {
+    let prompt = build_judge_prompt(loop_dir)?;
+
+    tracing::debug!(
+        prompt_len = prompt.len(),
+        "Running Judge via Claude Code"
+    );
+
+    // Run Claude Code with -p flag for non-interactive execution
+    let output = Command::new("claude")
+        .arg("-p")
+        .arg(&prompt)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| eyre!("Failed to spawn claude for Judge: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(eyre!(
+            "Judge (Claude Code) exited with error: {}",
+            stderr.trim()
+        ));
+    }
+
+    let response = String::from_utf8_lossy(&output.stdout);
+    tracing::debug!(response = %response.trim(), "Judge response");
+
+    let decision = parse_judge_response(&response)?;
+    let explanation = format!("Judge: {:?}", decision);
+
+    tracing::info!(decision = ?decision, "Judge evaluation complete");
+    Ok((decision, 0.9, explanation))
 }
