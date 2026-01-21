@@ -3,7 +3,6 @@ mod event_processing;
 pub mod loop_handling;
 
 pub use agent::{Agent, AgentRole, AttentionType, LoopMode, Status, Subagent};
-pub use event_processing::infer_role_from_description;
 
 use crate::event::HookEvent;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -448,6 +447,7 @@ fn current_timestamp() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use super::event_processing::infer_role_from_description;
     use super::*;
     use crate::event::HookEvent;
 
@@ -644,7 +644,7 @@ mod tests {
         ];
         for (desc, expected) in cases {
             assert_eq!(
-                super::infer_role_from_description(desc),
+                infer_role_from_description(desc),
                 expected,
                 "description: {}",
                 desc

@@ -3,6 +3,8 @@
 //! Provides coordination between multiple agents working on the same loop.
 //! Includes broadcast messaging and worker registration.
 
+#![allow(dead_code)]
+
 use chrono::{DateTime, Utc};
 use color_eyre::eyre::{eyre, Result};
 use std::fs;

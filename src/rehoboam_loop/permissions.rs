@@ -2,6 +2,8 @@
 //!
 //! Provides auto-approval rules for tools and bash commands in loop mode.
 
+#![allow(dead_code)]
+
 use chrono::Utc;
 use color_eyre::eyre::Result;
 use serde::{Deserialize, Serialize};

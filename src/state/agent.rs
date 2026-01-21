@@ -55,6 +55,7 @@ pub enum AgentRole {
 /// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
 /// v1.3: Extended with parent tracking for hierarchical visualization.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Subagent {
     /// Subagent session ID (for correlation)
     pub id: String,

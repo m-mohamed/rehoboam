@@ -10,6 +10,8 @@
 //!
 //! These APIs support hybrid mode with local planner and remote sprite workers.
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 

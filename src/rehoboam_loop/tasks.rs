@@ -17,6 +17,8 @@
 //! - `complete_task()` - Move task from "In Progress" to "Completed"
 //! - `add_task()` - Programmatically add a task to the queue
 
+#![allow(dead_code)]
+
 use color_eyre::eyre::Result;
 use std::fs;
 use std::path::Path;

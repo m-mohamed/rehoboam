@@ -23,16 +23,8 @@ mod tasks;
 
 // Re-export state types
 pub use state::{
-    check_max_iterations, find_rehoboam_dir, increment_iteration, init_loop_dir, load_state,
-    LoopRole, LoopState, RehoboamConfig,
-};
-
-// Re-export task queue types and functions
-pub use tasks::{add_task, claim_task, complete_task, read_next_task, read_pending_tasks, Task};
-
-// Re-export coordination functions
-pub use coordination::{
-    broadcast, join_existing_loop, list_workers, read_broadcasts, register_worker,
+    check_max_iterations, find_rehoboam_dir, increment_iteration, init_loop_dir, LoopRole,
+    RehoboamConfig,
 };
 
 // Re-export judge types and functions
@@ -51,12 +43,16 @@ pub use activity::{
 pub use git_checkpoint::create_git_checkpoint;
 
 // Re-export permission policy types and functions
-pub use permissions::{
-    check_approval_memory, evaluate_permission, record_approval, PermissionDecision,
-};
+pub use permissions::evaluate_permission;
 
 #[cfg(test)]
 mod tests {
+    use super::coordination::{
+        broadcast, join_existing_loop, list_workers, read_broadcasts, register_worker,
+    };
+    use super::permissions::{check_approval_memory, record_approval, PermissionDecision};
+    use super::state::load_state;
+    use super::tasks::{add_task, claim_task, complete_task, read_next_task, read_pending_tasks};
     use super::*;
     use tempfile::TempDir;
 

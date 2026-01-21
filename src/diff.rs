@@ -3,6 +3,8 @@
 //! Parses raw `git diff` output into structured data for enhanced TUI display.
 //! Supports file navigation, line numbers, and collapsible hunks.
 
+#![allow(dead_code)]
+
 /// Structured representation of a complete git diff
 #[derive(Debug, Clone, Default)]
 pub struct ParsedDiff {
