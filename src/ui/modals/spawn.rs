@@ -26,11 +26,11 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Project path (0)
-            Constraint::Length(3), // Prompt (1)
-            Constraint::Length(3), // Branch name (2)
-            Constraint::Length(3), // Worktree toggle (3)
-            Constraint::Length(3), // Loop mode toggle (4)
+            Constraint::Length(3),                                   // Project path (0)
+            Constraint::Length(3),                                   // Prompt (1)
+            Constraint::Length(3),                                   // Branch name (2)
+            Constraint::Length(3),                                   // Worktree toggle (3)
+            Constraint::Length(3),                                   // Loop mode toggle (4)
             Constraint::Length(3), // Loop options (5=max_iter, 6=stop_word, 7=role)
             Constraint::Length(3), // Sprite toggle (8)
             Constraint::Length(3), // Network policy (9)
@@ -355,12 +355,12 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     let instructions = Paragraph::new(
         "[Tab] Navigate  [Space] Toggle  [←/→] Selector  [Enter] Spawn  [Esc] Cancel",
     )
-        .style(
-            Style::default()
-                .fg(colors::IDLE)
-                .add_modifier(Modifier::DIM),
-        )
-        .alignment(Alignment::Center);
+    .style(
+        Style::default()
+            .fg(colors::IDLE)
+            .add_modifier(Modifier::DIM),
+    )
+    .alignment(Alignment::Center);
 
     // Main dialog block
     let dialog = Block::default()

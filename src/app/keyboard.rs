@@ -356,20 +356,16 @@ impl App {
                 6 => self.spawn_state.loop_stop_word.push(' '),
                 _ => {}
             },
-            KeyCode::Left => {
-                match self.spawn_state.active_field {
-                    7 => self.spawn_state.loop_role = self.spawn_state.loop_role.prev(),
-                    9 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
-                    _ => {}
-                }
-            }
-            KeyCode::Right => {
-                match self.spawn_state.active_field {
-                    7 => self.spawn_state.loop_role = self.spawn_state.loop_role.next(),
-                    9 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
-                    _ => {}
-                }
-            }
+            KeyCode::Left => match self.spawn_state.active_field {
+                7 => self.spawn_state.loop_role = self.spawn_state.loop_role.prev(),
+                9 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
+                _ => {}
+            },
+            KeyCode::Right => match self.spawn_state.active_field {
+                7 => self.spawn_state.loop_role = self.spawn_state.loop_role.next(),
+                9 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
+                _ => {}
+            },
             KeyCode::Backspace => match self.spawn_state.active_field {
                 0 => {
                     if self.spawn_state.use_sprite {
@@ -586,8 +582,7 @@ impl App {
                     if let Some(file) = diff.files.get(self.diff_selected_file) {
                         let hunk_count = file.hunks.len();
                         if hunk_count > 0 {
-                            self.diff_selected_hunk =
-                                (self.diff_selected_hunk + 1) % hunk_count;
+                            self.diff_selected_hunk = (self.diff_selected_hunk + 1) % hunk_count;
                         }
                     }
                 }

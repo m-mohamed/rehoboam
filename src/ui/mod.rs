@@ -17,8 +17,8 @@ use crate::config::colors;
 use crate::state::Status;
 use helpers::{status_base_color, truncate};
 use modals::{
-    render_checkpoint_timeline, render_dashboard, render_diff_modal, render_event_log,
-    render_help, render_input_dialog, render_pool_management, render_spawn_dialog,
+    render_checkpoint_timeline, render_dashboard, render_diff_modal, render_event_log, render_help,
+    render_input_dialog, render_pool_management, render_spawn_dialog,
 };
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},

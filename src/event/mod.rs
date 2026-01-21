@@ -2,7 +2,6 @@ pub mod input;
 pub mod socket;
 pub mod status;
 
-
 use serde::{Deserialize, Serialize};
 
 /// Context window usage information from Claude Code 2.1.x

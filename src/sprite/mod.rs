@@ -15,6 +15,4 @@ pub mod manager;
 pub use manager::CheckpointRecord;
 
 // v1.5: Sprite pool management (integrated in Phase 4)
-pub use manager::{
-    SpritePool, SpriteWorkerStatus,
-};
+pub use manager::{SpritePool, SpriteWorkerStatus};

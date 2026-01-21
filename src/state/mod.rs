@@ -79,7 +79,6 @@ pub fn status_to_column(status: &Status) -> usize {
     }
 }
 
-
 impl AppState {
     pub fn new() -> Self {
         Self::default()

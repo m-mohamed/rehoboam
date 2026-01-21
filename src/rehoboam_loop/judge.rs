@@ -89,10 +89,7 @@ fn parse_judge_response(response: &str) -> Result<JudgeDecision> {
 pub fn judge_completion(loop_dir: &Path) -> Result<(JudgeDecision, f64, String)> {
     let prompt = build_judge_prompt(loop_dir)?;
 
-    tracing::debug!(
-        prompt_len = prompt.len(),
-        "Running Judge via Claude Code"
-    );
+    tracing::debug!(prompt_len = prompt.len(), "Running Judge via Claude Code");
 
     // Run Claude Code with -p flag for non-interactive execution
     let output = Command::new("claude")

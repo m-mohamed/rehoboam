@@ -57,17 +57,11 @@ pub fn render_pool_management(f: &mut Frame, app: &App) {
                 let status_style = match worker.status {
                     SpriteWorkerStatus::Idle => Style::default().fg(colors::IDLE),
                     SpriteWorkerStatus::Working => Style::default().fg(colors::WORKING),
-                    SpriteWorkerStatus::Provisioning => {
-                        Style::default().fg(colors::COMPACTING)
-                    }
-                    SpriteWorkerStatus::Checkpointing => {
-                        Style::default().fg(colors::COMPACTING)
-                    }
+                    SpriteWorkerStatus::Provisioning => Style::default().fg(colors::COMPACTING),
+                    SpriteWorkerStatus::Checkpointing => Style::default().fg(colors::COMPACTING),
                     SpriteWorkerStatus::Completed => Style::default().fg(Color::Green),
                     SpriteWorkerStatus::Failed => Style::default().fg(Color::Red),
-                    SpriteWorkerStatus::Terminating => {
-                        Style::default().fg(colors::ATTENTION)
-                    }
+                    SpriteWorkerStatus::Terminating => Style::default().fg(colors::ATTENTION),
                 };
 
                 let status_str = match worker.status {
@@ -150,10 +144,7 @@ pub fn render_pool_management(f: &mut Frame, app: &App) {
                 Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
             ),
             Line::from(""),
-            Line::styled(
-                "To create a sprite pool:",
-                Style::default().fg(colors::FG),
-            ),
+            Line::styled("To create a sprite pool:", Style::default().fg(colors::FG)),
             Line::from(""),
             Line::styled(
                 "1. Press 's' to open spawn dialog",

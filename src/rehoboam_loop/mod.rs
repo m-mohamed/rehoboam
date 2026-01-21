@@ -43,8 +43,8 @@ pub use prompts::{build_iteration_prompt, build_loop_context};
 
 // Re-export activity logging
 pub use activity::{
-    check_completion, get_iteration_duration,
-    log_activity, log_session_transition, mark_iteration_start, track_error_pattern,
+    check_completion, get_iteration_duration, log_activity, log_session_transition,
+    mark_iteration_start, track_error_pattern,
 };
 
 // Re-export git checkpoint

@@ -108,20 +108,21 @@ fn build_tree_lines(subagents: &[Subagent], lines: &mut Vec<Line<'static>>, max_
             ),
             Span::styled(
                 format!("[{}]", role_badge),
-                Style::default()
-                    .fg(role_color)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(role_color).add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
-            Span::styled(format!("{} ", status_icon), Style::default().fg(status_color)),
             Span::styled(
-                truncate(&subagent.id, 12),
-                Style::default().fg(colors::FG),
+                format!("{} ", status_icon),
+                Style::default().fg(status_color),
             ),
+            Span::styled(truncate(&subagent.id, 12), Style::default().fg(colors::FG)),
         ]));
 
         // Description line (indented)
-        let desc = truncate(&subagent.description, max_width.saturating_sub(indent.len() + 4));
+        let desc = truncate(
+            &subagent.description,
+            max_width.saturating_sub(indent.len() + 4),
+        );
         lines.push(Line::from(vec![
             Span::styled(cont_indent.clone(), Style::default().fg(colors::BORDER)),
             Span::styled(desc, Style::default().fg(colors::IDLE)),
@@ -138,9 +139,9 @@ fn build_tree_lines(subagents: &[Subagent], lines: &mut Vec<Line<'static>>, max_
 /// Get role badge and color for display
 fn role_badge(role: &AgentRole) -> (&'static str, Color) {
     match role {
-        AgentRole::Planner => ("P", colors::HIGHLIGHT),  // Purple for Planner
-        AgentRole::Worker => ("W", colors::WORKING),     // Blue for Worker
-        AgentRole::Reviewer => ("R", Color::Green),      // Green for Reviewer
-        AgentRole::General => ("G", colors::IDLE),       // Gray for General
+        AgentRole::Planner => ("P", colors::HIGHLIGHT), // Purple for Planner
+        AgentRole::Worker => ("W", colors::WORKING),    // Blue for Worker
+        AgentRole::Reviewer => ("R", Color::Green),     // Green for Reviewer
+        AgentRole::General => ("G", colors::IDLE),      // Gray for General
     }
 }

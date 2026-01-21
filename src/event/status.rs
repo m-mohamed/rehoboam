@@ -25,7 +25,7 @@ pub fn derive_status_from_event(hook_name: &str) -> (&'static str, Option<&'stat
         "PostToolUse" => ("working", None),      // Just finished a tool, may continue
         "SubagentStart" => ("working", None),    // Spawned a subagent
         "SubagentStop" => ("working", None),     // Subagent finished, may continue
-        "Setup" => ("working", None), // Claude Code 2.1.x: initialization/setup phase
+        "Setup" => ("working", None),            // Claude Code 2.1.x: initialization/setup phase
 
         // ATTENTION: Claude is BLOCKED waiting for explicit user approval
         "PermissionRequest" => ("attention", Some("permission")),

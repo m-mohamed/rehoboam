@@ -159,8 +159,7 @@ fn build_enhanced_diff_lines(parsed: &crate::diff::ParsedDiff, app: &App) -> Vec
         // Render hunks
         for (hunk_idx, hunk) in file.hunks.iter().enumerate() {
             let hunk_collapsed = app.diff_collapsed_hunks.contains(&(file_idx, hunk_idx));
-            let is_selected_hunk =
-                is_selected && hunk_idx == app.diff_selected_hunk;
+            let is_selected_hunk = is_selected && hunk_idx == app.diff_selected_hunk;
 
             // Hunk header with size indicator and selection marker
             let hunk_marker = if is_selected_hunk { "►" } else { " " };
