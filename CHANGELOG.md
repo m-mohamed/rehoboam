@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.9] - 2026-01-21
+
+### Changed
+
+- Apply cargo fmt formatting
+- Make Judge mandatory in loop mode
+- Modularize codebase and remove JudgeModel
+
+### Fixed
+
+- Resolve clippy dead_code warnings
+[0.9.9]: https://github.com/m-mohamed/rehoboam/compare/v0.9.8...v0.9.9
+
+
 ## [0.9.8] - 2026-01-18
 
 ### Fixed
