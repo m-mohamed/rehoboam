@@ -29,6 +29,8 @@ pub struct LoopConfig {
     pub stop_word: String,
     /// Path to .rehoboam/ directory for Rehoboam loops (fresh sessions)
     pub loop_dir: Option<std::path::PathBuf>,
+    /// Working directory for git operations (worktree path for workers)
+    pub working_dir: Option<std::path::PathBuf>,
     /// Auto-spawn workers when Planner completes (Cursor model)
     pub auto_spawn_workers: bool,
     /// Maximum concurrent workers for auto-spawn
@@ -337,6 +339,7 @@ impl AppState {
     ///
     /// When the agent sends its first hook event, the config will be applied.
     /// If `loop_dir` is Some, the agent will use proper Rehoboam mode (fresh sessions).
+    /// If `working_dir` is Some, it will be set as the agent's git working directory.
     /// Judge always runs when loop mode is active (no toggle needed).
     #[allow(clippy::too_many_arguments)]
     pub fn register_loop_config(
@@ -345,6 +348,7 @@ impl AppState {
         max_iterations: u32,
         stop_word: &str,
         loop_dir: Option<std::path::PathBuf>,
+        working_dir: Option<std::path::PathBuf>,
         auto_spawn_workers: bool,
         max_workers: usize,
         role: crate::rehoboam_loop::LoopRole,
@@ -355,6 +359,7 @@ impl AppState {
                 max_iterations,
                 stop_word: stop_word.to_string(),
                 loop_dir: loop_dir.clone(),
+                working_dir: working_dir.clone(),
                 auto_spawn_workers,
                 max_workers,
                 role,
@@ -365,6 +370,7 @@ impl AppState {
             max = max_iterations,
             stop_word = %stop_word,
             loop_dir = ?loop_dir,
+            working_dir = ?working_dir,
             auto_spawn = auto_spawn_workers,
             max_workers = max_workers,
             role = ?role,

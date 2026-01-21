@@ -244,6 +244,7 @@ impl AppState {
                 agent.loop_max = loop_config.max_iterations;
                 agent.loop_stop_word = loop_config.stop_word.clone();
                 agent.loop_dir = loop_config.loop_dir.clone();
+                agent.working_dir = loop_config.working_dir.clone();
                 agent.loop_role = loop_config.role;
                 agent.auto_spawn_workers = loop_config.auto_spawn_workers;
                 agent.max_workers = loop_config.max_workers;
@@ -252,6 +253,7 @@ impl AppState {
                     max = loop_config.max_iterations,
                     stop_word = %loop_config.stop_word,
                     loop_dir = ?loop_config.loop_dir,
+                    working_dir = ?loop_config.working_dir,
                     auto_spawn = loop_config.auto_spawn_workers,
                     max_workers = loop_config.max_workers,
                     role = ?loop_config.role,
@@ -613,6 +615,7 @@ impl AppState {
                                                 10, // max_iterations for workers
                                                 "DONE",
                                                 Some(worker.worker_loop_dir),
+                                                Some(worker.worktree_path), // git worktree for worker
                                                 false, // workers don't auto-spawn more workers
                                                 0,
                                                 rehoboam_loop::LoopRole::Worker,

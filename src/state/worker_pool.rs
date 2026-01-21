@@ -3,12 +3,20 @@
 //! When a Planner writes "PLANNING COMPLETE" to progress.md, the TUI
 //! automatically spawns Worker agents to execute tasks in parallel.
 //!
-//! Each Worker operates in complete isolation:
+//! Each Worker operates in complete isolation via git worktrees:
 //! - Gets ONE pre-assigned task (via assigned_task.md)
-//! - Works in its own loop directory (.rehoboam-worker-{task_id}/)
+//! - Works in its own git worktree (branch: worker/{task_id})
+//! - Each worktree has its own .rehoboam/ directory
 //! - No shared tasks.md - prevents race conditions
 //! - Judge evaluates completion → next iteration or done
+//!
+//! Git worktrees provide:
+//! - Full git capabilities per worker
+//! - Workers can commit to their own branch
+//! - Standard .rehoboam/ discovery (no REHOBOAM_LOOP_DIR needed)
+//! - Clean isolation with easy cleanup
 
+use crate::git::GitController;
 use crate::rehoboam_loop::{self, LoopRole, LoopState, Task};
 use crate::tmux::TmuxController;
 use color_eyre::eyre::{eyre, Result};
@@ -47,8 +55,12 @@ pub struct WorkerInfo {
     pub pane_id: String,
     /// Pre-assigned task ID
     pub task_id: String,
-    /// Worker's isolated loop directory
+    /// Worker's git worktree directory (contains .rehoboam/)
+    pub worktree_path: PathBuf,
+    /// Worker's loop directory (.rehoboam/ inside worktree)
     pub worker_loop_dir: PathBuf,
+    /// Git branch name for this worker
+    pub branch: String,
     /// Current status
     pub status: WorkerStatus,
 }
@@ -132,10 +144,11 @@ impl WorkerPool {
     }
 }
 
-/// Spawn a single isolated worker for a task
+/// Spawn a single isolated worker for a task using git worktrees
 ///
 /// Creates:
-/// - Worker-specific loop directory: .rehoboam-worker-{task_id}/
+/// - Git worktree with branch: worker/{task_id}
+/// - .rehoboam/ directory inside the worktree
 /// - assigned_task.md with only this worker's task
 /// - state.json with role=Worker and assigned_task set
 fn spawn_worker(parent_loop_dir: &Path, task: &Task) -> Result<WorkerInfo> {
@@ -143,53 +156,78 @@ fn spawn_worker(parent_loop_dir: &Path, task: &Task) -> Result<WorkerInfo> {
         .parent()
         .ok_or_else(|| eyre!("Invalid parent loop directory"))?;
 
-    // Create worker-specific loop directory
-    let worker_dir = project_dir.join(format!(".rehoboam-worker-{}", task.id.to_lowercase()));
+    // Create git worktree for this worker
+    let git = GitController::new(project_dir.to_path_buf());
+
+    // Branch name: worker/{task_id} (lowercase, sanitized)
+    let branch_name = format!("worker/{}", task.id.to_lowercase());
 
     debug!(
-        worker_dir = %worker_dir.display(),
+        branch = %branch_name,
         task_id = %task.id,
-        "Initializing worker directory"
+        "Creating git worktree for worker"
+    );
+
+    // Create worktree (this creates a sibling directory)
+    let worktree_path = git.create_worktree(&branch_name)?;
+
+    // Worker's .rehoboam/ is inside the worktree (standard location)
+    let worker_loop_dir = worktree_path.join(".rehoboam");
+
+    debug!(
+        worktree = %worktree_path.display(),
+        loop_dir = %worker_loop_dir.display(),
+        "Git worktree created for worker"
     );
 
     // Initialize worker state with pre-assigned task
-    init_worker_dir(&worker_dir, parent_loop_dir, task)?;
+    init_worker_dir(&worker_loop_dir, parent_loop_dir, &worktree_path, task)?;
 
     // Build iteration prompt for worker
-    let prompt_file = rehoboam_loop::build_iteration_prompt(&worker_dir)?;
+    let prompt_file = rehoboam_loop::build_iteration_prompt(&worker_loop_dir)?;
 
-    // Spawn tmux pane with Claude, setting REHOBOAM_LOOP_DIR for worker isolation
-    let project_dir_str = project_dir.to_string_lossy().to_string();
-    let pane_id = TmuxController::respawn_claude_with_loop_dir(
-        &project_dir_str,
-        &prompt_file,
-        Some(&worker_dir),
-    )?;
+    // Spawn tmux pane with Claude in the worktree directory
+    // No REHOBOAM_LOOP_DIR needed - standard .rehoboam/ discovery works
+    let worktree_str = worktree_path.to_string_lossy().to_string();
+    let pane_id = TmuxController::respawn_claude(&worktree_str, &prompt_file)?;
 
     Ok(WorkerInfo {
         pane_id,
         task_id: task.id.clone(),
-        worker_loop_dir: worker_dir,
+        worktree_path,
+        worker_loop_dir,
+        branch: branch_name,
         status: WorkerStatus::Provisioning,
     })
 }
 
-/// Initialize a worker's isolated loop directory
+/// Initialize a worker's isolated loop directory inside a git worktree
 ///
 /// Copies context from parent Planner but creates isolated assigned_task.md
-fn init_worker_dir(worker_dir: &Path, parent_dir: &Path, assigned_task: &Task) -> Result<()> {
-    // Create directory (may already exist from previous run)
-    fs::create_dir_all(worker_dir)?;
+///
+/// # Arguments
+/// * `worker_loop_dir` - The .rehoboam/ directory inside the worker's worktree
+/// * `parent_loop_dir` - The parent Planner's .rehoboam/ directory
+/// * `worktree_path` - The worker's git worktree directory (project_dir for worker)
+/// * `assigned_task` - The task assigned to this worker
+fn init_worker_dir(
+    worker_loop_dir: &Path,
+    parent_loop_dir: &Path,
+    worktree_path: &Path,
+    assigned_task: &Task,
+) -> Result<()> {
+    // Create .rehoboam/ inside the worktree
+    fs::create_dir_all(worker_loop_dir)?;
 
     // Copy shared context (read-only for worker)
-    let anchor_src = parent_dir.join("anchor.md");
-    let guardrails_src = parent_dir.join("guardrails.md");
+    let anchor_src = parent_loop_dir.join("anchor.md");
+    let guardrails_src = parent_loop_dir.join("guardrails.md");
 
     if anchor_src.exists() {
-        fs::copy(&anchor_src, worker_dir.join("anchor.md"))?;
+        fs::copy(&anchor_src, worker_loop_dir.join("anchor.md"))?;
     }
     if guardrails_src.exists() {
-        fs::copy(&guardrails_src, worker_dir.join("guardrails.md"))?;
+        fs::copy(&guardrails_src, worker_loop_dir.join("guardrails.md"))?;
     }
 
     // Create worker-specific assigned_task.md (NOT shared tasks.md)
@@ -207,28 +245,24 @@ Do NOT coordinate with other workers.
 "#,
         assigned_task.id, assigned_task.description
     );
-    fs::write(worker_dir.join("assigned_task.md"), task_content)?;
+    fs::write(worker_loop_dir.join("assigned_task.md"), task_content)?;
 
-    // Create worker state.json with assigned task ID
-    let project_dir = parent_dir
-        .parent()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("."));
-
+    // Create worker state.json with worktree as project_dir
+    // This enables git operations in the worker's worktree
     let state = LoopState {
         iteration: 0,
         max_iterations: 10, // Workers should finish in fewer iterations
         stop_word: "DONE".to_string(),
         started_at: chrono::Utc::now(),
-        pane_id: String::new(), // Will be set when we spawn
-        project_dir,
+        pane_id: String::new(),                   // Will be set when we spawn
+        project_dir: worktree_path.to_path_buf(), // Worker's git worktree
         iteration_started_at: Some(chrono::Utc::now()),
         error_counts: std::collections::HashMap::new(),
         last_commit: None,
         role: LoopRole::Worker,
         assigned_task: Some(assigned_task.id.clone()),
     };
-    rehoboam_loop::save_state(worker_dir, &state)?;
+    rehoboam_loop::save_state(worker_loop_dir, &state)?;
 
     // Create empty progress.md
     let progress_content = format!(
@@ -241,17 +275,18 @@ Starting...
 "#,
         assigned_task.id, assigned_task.description
     );
-    fs::write(worker_dir.join("progress.md"), progress_content)?;
+    fs::write(worker_loop_dir.join("progress.md"), progress_content)?;
 
     // Create empty logs
-    fs::write(worker_dir.join("errors.log"), "")?;
-    fs::write(worker_dir.join("activity.log"), "")?;
-    fs::write(worker_dir.join("session_history.log"), "")?;
+    fs::write(worker_loop_dir.join("errors.log"), "")?;
+    fs::write(worker_loop_dir.join("activity.log"), "")?;
+    fs::write(worker_loop_dir.join("session_history.log"), "")?;
 
     debug!(
-        worker_dir = %worker_dir.display(),
+        worker_loop_dir = %worker_loop_dir.display(),
+        worktree = %worktree_path.display(),
         task_id = %assigned_task.id,
-        "Worker directory initialized"
+        "Worker directory initialized in git worktree"
     );
 
     Ok(())
@@ -328,38 +363,48 @@ mod tests {
     #[test]
     fn test_init_worker_dir() {
         let temp = TempDir::new().unwrap();
-        let parent_dir = temp.path().join(".rehoboam");
-        fs::create_dir_all(&parent_dir).unwrap();
+
+        // Simulate parent Planner's .rehoboam/ directory
+        let parent_loop_dir = temp.path().join(".rehoboam");
+        fs::create_dir_all(&parent_loop_dir).unwrap();
 
         // Create parent files
-        fs::write(parent_dir.join("anchor.md"), "# Task\nBuild API").unwrap();
-        fs::write(parent_dir.join("guardrails.md"), "# Guardrails").unwrap();
+        fs::write(parent_loop_dir.join("anchor.md"), "# Task\nBuild API").unwrap();
+        fs::write(parent_loop_dir.join("guardrails.md"), "# Guardrails").unwrap();
 
-        let worker_dir = temp.path().join(".rehoboam-worker-task-001");
+        // Simulate worker's worktree directory (sibling to main project)
+        let worktree_path = temp.path().join("project-worker-task-001");
+        fs::create_dir_all(&worktree_path).unwrap();
+
+        // Worker's .rehoboam/ inside the worktree
+        let worker_loop_dir = worktree_path.join(".rehoboam");
+
         let task = Task {
             id: "TASK-001".to_string(),
             description: "Implement auth endpoint".to_string(),
             worker: None,
         };
 
-        init_worker_dir(&worker_dir, &parent_dir, &task).unwrap();
+        init_worker_dir(&worker_loop_dir, &parent_loop_dir, &worktree_path, &task).unwrap();
 
-        // Check files created
-        assert!(worker_dir.join("anchor.md").exists());
-        assert!(worker_dir.join("guardrails.md").exists());
-        assert!(worker_dir.join("assigned_task.md").exists());
-        assert!(worker_dir.join("state.json").exists());
-        assert!(worker_dir.join("progress.md").exists());
+        // Check files created in worker's .rehoboam/
+        assert!(worker_loop_dir.join("anchor.md").exists());
+        assert!(worker_loop_dir.join("guardrails.md").exists());
+        assert!(worker_loop_dir.join("assigned_task.md").exists());
+        assert!(worker_loop_dir.join("state.json").exists());
+        assert!(worker_loop_dir.join("progress.md").exists());
 
         // Check assigned_task.md content
-        let content = fs::read_to_string(worker_dir.join("assigned_task.md")).unwrap();
+        let content = fs::read_to_string(worker_loop_dir.join("assigned_task.md")).unwrap();
         assert!(content.contains("TASK-001"));
         assert!(content.contains("Implement auth endpoint"));
 
         // Check state.json
-        let state = rehoboam_loop::load_state(&worker_dir).unwrap();
+        let state = rehoboam_loop::load_state(&worker_loop_dir).unwrap();
         assert_eq!(state.role, LoopRole::Worker);
         assert_eq!(state.assigned_task, Some("TASK-001".to_string()));
         assert_eq!(state.max_iterations, 10);
+        // Verify project_dir points to the worktree
+        assert_eq!(state.project_dir, worktree_path);
     }
 }

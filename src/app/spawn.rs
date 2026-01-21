@@ -549,13 +549,14 @@ fn spawn_tmux_agent(
                     max_iter,
                     &spawn_state.loop_stop_word,
                     loop_dir.clone(),
+                    Some(working_dir.clone()), // git working directory
                     spawn_state.auto_spawn_workers,
                     max_workers,
                     spawn_state.loop_role,
                 );
             }
 
-            // Store working directory for git operations
+            // Store working directory for git operations (redundant but kept for non-loop agents)
             state.set_agent_working_dir(&pane_id, working_dir.clone());
 
             // Start Claude Code in the new pane

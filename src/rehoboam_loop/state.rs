@@ -283,22 +283,15 @@ pub fn save_state(loop_dir: &Path, state: &LoopState) -> Result<()> {
 
 /// Find the Rehoboam loop directory
 ///
-/// Search order:
-/// 1. `REHOBOAM_LOOP_DIR` environment variable (set for isolated workers)
-/// 2. `.rehoboam/` directory (main Planner/Auto loop) - search up from cwd
+/// Searches for `.rehoboam/` directory starting from cwd and going up.
 ///
-/// Workers are spawned with REHOBOAM_LOOP_DIR pointing to their isolated
-/// `.rehoboam-worker-{task_id}/` directory, ensuring they find the right state.
+/// With git worktrees, workers run in their own isolated worktree directories,
+/// each with its own `.rehoboam/` folder. Standard discovery works for all roles:
+/// - Planner: main repo's `.rehoboam/`
+/// - Worker: worktree's `.rehoboam/` (created during auto-spawn)
+/// - Auto: main repo's `.rehoboam/`
 pub fn find_rehoboam_dir() -> Option<std::path::PathBuf> {
-    // First, check REHOBOAM_LOOP_DIR environment variable (worker isolation)
-    if let Ok(loop_dir) = std::env::var("REHOBOAM_LOOP_DIR") {
-        let path = std::path::PathBuf::from(&loop_dir);
-        if path.is_dir() && path.join("state.json").exists() {
-            return Some(path);
-        }
-    }
-
-    // Fall back to searching for .rehoboam/ directory
+    // Search for .rehoboam/ directory starting from cwd
     let mut current = std::env::current_dir().ok()?;
     loop {
         let candidate = current.join(".rehoboam");
