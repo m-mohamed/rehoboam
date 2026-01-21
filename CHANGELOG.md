@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.10] - 2026-01-21
+
+### Added
+
+- Add auto-spawn workers when Planner completes
+
+### Changed
+
+- Use git worktrees for worker isolation
+[0.9.10]: https://github.com/m-mohamed/rehoboam/compare/v0.9.9...v0.9.10
+
+
 ## [0.9.9] - 2026-01-21
 
 ### Changed
