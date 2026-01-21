@@ -1,6 +1,6 @@
 [package]
 name = "rehoboam"
-version = "0.9.9"
+version = "0.9.10"
 edition = "2021"
 description = "Real-time observability TUI for Claude Code agents - tracks all, predicts needs"
 license = "MIT"
