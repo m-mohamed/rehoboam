@@ -37,8 +37,8 @@ use std::path::PathBuf;
 
 /// Number of fields in spawn dialog
 /// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=role,
-/// 8=sprite, 9=network, 10=ram, 11=cpus, 12=clone_dest
-pub const SPAWN_FIELD_COUNT: usize = 13;
+/// 8=auto_spawn, 9=max_workers, 10=sprite, 11=network, 12=ram, 13=cpus, 14=clone_dest
+pub const SPAWN_FIELD_COUNT: usize = 15;
 
 /// State for the spawn dialog
 #[derive(Debug, Clone)]
@@ -67,6 +67,11 @@ pub struct SpawnState {
     pub loop_stop_word: String,
     /// Role for the agent in loop mode (Planner, Worker, or Auto)
     pub loop_role: LoopRole,
+    /// Auto-spawn workers when Planner completes (Cursor model)
+    /// Only shown when role=Planner
+    pub auto_spawn_workers: bool,
+    /// Maximum concurrent workers for auto-spawn (default: 3)
+    pub max_workers: String,
     /// Whether to spawn on a remote sprite (cloud VM)
     pub use_sprite: bool,
     /// Network policy for sprite (only applies when use_sprite is true)
@@ -140,6 +145,8 @@ impl Default for SpawnState {
             loop_max_iterations: "20".to_string(),
             loop_stop_word: "COMPLETE".to_string(),
             loop_role: LoopRole::Auto,
+            auto_spawn_workers: true, // Default: auto-spawn when Planner completes
+            max_workers: "3".to_string(),
             use_sprite: false,
             network_preset: NetworkPreset::ClaudeOnly,
             ram_mb: "2048".to_string(),
@@ -536,11 +543,15 @@ fn spawn_tmux_agent(
             // Register loop config if loop mode is enabled (Judge is automatic)
             if spawn_state.loop_enabled {
                 let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
+                let max_workers = spawn_state.max_workers.parse::<usize>().unwrap_or(3);
                 state.register_loop_config(
                     &pane_id,
                     max_iter,
                     &spawn_state.loop_stop_word,
                     loop_dir.clone(),
+                    spawn_state.auto_spawn_workers,
+                    max_workers,
+                    spawn_state.loop_role,
                 );
             }
 

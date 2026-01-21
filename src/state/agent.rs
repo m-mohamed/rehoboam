@@ -249,6 +249,14 @@ pub struct Agent {
     /// Recent tool names for role inference (last 10 tools)
     pub tool_history: VecDeque<String>,
 
+    // v1.3 Auto-spawn workers (Cursor model)
+    /// Loop role from spawn config (Planner/Worker/Auto)
+    pub loop_role: crate::rehoboam_loop::LoopRole,
+    /// Auto-spawn workers when Planner completes
+    pub auto_spawn_workers: bool,
+    /// Maximum concurrent workers for auto-spawn
+    pub max_workers: usize,
+
     // v2.0 Per-agent file tracking (Phase 7)
     /// Files modified by this agent (tracked from Edit/Write tool_input)
     pub modified_files: HashSet<PathBuf>,
@@ -309,6 +317,10 @@ impl Agent {
             // v1.2 Agent role classification
             role: AgentRole::General,
             tool_history: VecDeque::with_capacity(10),
+            // v1.3 Auto-spawn workers
+            loop_role: crate::rehoboam_loop::LoopRole::Auto,
+            auto_spawn_workers: false,
+            max_workers: 3,
             // v2.0 Per-agent file tracking
             modified_files: HashSet::new(),
             session_start_commit: None,

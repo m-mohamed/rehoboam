@@ -70,35 +70,54 @@ Remember: Your job is PLANNING, not IMPLEMENTING. Explore thoroughly, create cle
 ///
 /// Workers pick ONE task from the queue, execute it in isolation,
 /// and mark it complete. They do NOT coordinate with other workers.
+///
+/// Two modes:
+/// 1. **Auto-spawned workers** (Cursor isolation model): Read from assigned_task.md
+///    - Task is pre-assigned during worker spawn
+///    - No shared tasks.md - complete isolation
+/// 2. **Manual workers**: Read from shared tasks.md and claim next task
 fn build_worker_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
     let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
     let guardrails = fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
 
-    // Get next available task
-    let next_task = read_next_task(loop_dir)?;
-    let task_section = if let Some(task) = &next_task {
-        format!(
-            "## Your Assigned Task\n**[{}]** {}\n",
-            task.id, task.description
-        )
+    // Check for assigned_task.md (auto-spawned isolated worker)
+    let assigned_task_path = loop_dir.join("assigned_task.md");
+    let (task_section, is_isolated) = if assigned_task_path.exists() {
+        // Isolated worker mode: read pre-assigned task
+        let assigned_task = fs::read_to_string(&assigned_task_path).unwrap_or_default();
+        (assigned_task, true)
     } else {
-        "## Your Assigned Task\nNo tasks available in queue. Check with planner or wait.\n"
-            .to_string()
+        // Manual worker mode: read from shared tasks.md
+        let next_task = read_next_task(loop_dir)?;
+        let section = if let Some(task) = &next_task {
+            format!(
+                "## Your Assigned Task\n**[{}]** {}\n",
+                task.id, task.description
+            )
+        } else {
+            "## Your Assigned Task\nNo tasks available in queue. Check with planner or wait.\n"
+                .to_string()
+        };
+        (section, false)
     };
 
-    let prompt = format!(
-        r#"# Rehoboam Loop - WORKER - Iteration {iteration}
+    // Different rules for isolated vs. shared workers
+    let rules = if is_isolated {
+        format!(
+            r#"## Rules for Workers (Isolated Mode)
+1. Focus ONLY on your assigned task - you have ONE task
+2. Do NOT coordinate with other workers - they work in isolation
+3. Do NOT explore unrelated code or add scope
+4. Update progress.md with what you accomplished
+5. If blocked, note it in progress.md and write "{stop_word}"
+6. When done, write "{stop_word}" to progress.md
 
-You are a WORKER. Your job is to complete ONE assigned task.
-
-{task_section}
-## Context (for reference only)
-{anchor}
-
-## Guardrails
-{guardrails}
-
-## Rules for Workers
+Remember: One task, complete isolation, then exit."#,
+            stop_word = state.stop_word
+        )
+    } else {
+        format!(
+            r#"## Rules for Workers
 1. **Mark task "In Progress" FIRST** - Before starting, move your task from Pending to In Progress:
    `- [~] [TASK-XXX] description (worker: YOUR_ID)`
 2. Focus ONLY on your assigned task - ignore other work
@@ -125,13 +144,30 @@ Pending → In Progress → Completed
 - [ ] Progress.md updated with summary
 - [ ] Stop word written if fully complete
 
-Remember: Complete YOUR task, then exit. Don't do extra work.
+Remember: Complete YOUR task, then exit. Don't do extra work."#,
+            stop_word = state.stop_word
+        )
+    };
+
+    let prompt = format!(
+        r#"# Rehoboam Loop - WORKER - Iteration {iteration}
+
+You are a WORKER. Your job is to complete ONE assigned task.
+
+{task_section}
+## Context (for reference only)
+{anchor}
+
+## Guardrails
+{guardrails}
+
+{rules}
 "#,
         iteration = state.iteration + 1,
         task_section = task_section,
         anchor = anchor,
         guardrails = guardrails,
-        stop_word = state.stop_word,
+        rules = rules,
     );
 
     Ok(prompt)

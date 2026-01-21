@@ -1,6 +1,7 @@
 mod agent;
 mod event_processing;
 pub mod loop_handling;
+pub mod worker_pool;
 
 pub use agent::{Agent, AgentRole, AttentionType, LoopMode, Status, Subagent};
 
@@ -28,6 +29,12 @@ pub struct LoopConfig {
     pub stop_word: String,
     /// Path to .rehoboam/ directory for Rehoboam loops (fresh sessions)
     pub loop_dir: Option<std::path::PathBuf>,
+    /// Auto-spawn workers when Planner completes (Cursor model)
+    pub auto_spawn_workers: bool,
+    /// Maximum concurrent workers for auto-spawn
+    pub max_workers: usize,
+    /// Agent role (Planner/Worker/Auto)
+    pub role: crate::rehoboam_loop::LoopRole,
 }
 
 /// Application state
@@ -331,12 +338,16 @@ impl AppState {
     /// When the agent sends its first hook event, the config will be applied.
     /// If `loop_dir` is Some, the agent will use proper Rehoboam mode (fresh sessions).
     /// Judge always runs when loop mode is active (no toggle needed).
+    #[allow(clippy::too_many_arguments)]
     pub fn register_loop_config(
         &mut self,
         pane_id: &str,
         max_iterations: u32,
         stop_word: &str,
         loop_dir: Option<std::path::PathBuf>,
+        auto_spawn_workers: bool,
+        max_workers: usize,
+        role: crate::rehoboam_loop::LoopRole,
     ) {
         self.pending_loop_configs.insert(
             pane_id.to_string(),
@@ -344,6 +355,9 @@ impl AppState {
                 max_iterations,
                 stop_word: stop_word.to_string(),
                 loop_dir: loop_dir.clone(),
+                auto_spawn_workers,
+                max_workers,
+                role,
             },
         );
         tracing::info!(
@@ -351,6 +365,9 @@ impl AppState {
             max = max_iterations,
             stop_word = %stop_word,
             loop_dir = ?loop_dir,
+            auto_spawn = auto_spawn_workers,
+            max_workers = max_workers,
+            role = ?role,
             "Registered pending loop config (Judge is automatic)"
         );
     }

@@ -394,10 +394,33 @@ impl TmuxController {
     /// # Returns
     /// The pane ID of the newly created pane
     pub fn respawn_claude(cwd: &str, prompt_file: &str) -> Result<String> {
+        Self::respawn_claude_with_loop_dir(cwd, prompt_file, None)
+    }
+
+    /// Respawn Claude in a new tmux pane with optional loop directory override
+    ///
+    /// The `loop_dir` parameter sets REHOBOAM_LOOP_DIR environment variable,
+    /// which `find_rehoboam_dir()` checks first. This is critical for workers
+    /// running in the same project directory but with isolated loop directories.
+    pub fn respawn_claude_with_loop_dir(
+        cwd: &str,
+        prompt_file: &str,
+        loop_dir: Option<&std::path::Path>,
+    ) -> Result<String> {
         // Escape the prompt file path for safe shell usage
         // Replace single quotes with '\'' (end quote, escaped quote, start quote)
         let escaped_path = prompt_file.replace('\'', "'\\''");
-        let cmd = format!("cat '{}' | claude", escaped_path);
+
+        // Build command with optional REHOBOAM_LOOP_DIR env var
+        let cmd = if let Some(dir) = loop_dir {
+            let escaped_dir = dir.to_string_lossy().replace('\'', "'\\''");
+            format!(
+                "export REHOBOAM_LOOP_DIR='{}' && cat '{}' | claude",
+                escaped_dir, escaped_path
+            )
+        } else {
+            format!("cat '{}' | claude", escaped_path)
+        };
 
         let output = Command::new("tmux")
             .args([
@@ -425,6 +448,7 @@ impl TmuxController {
             pane_id = %pane_id,
             cwd = %cwd,
             prompt_file = %prompt_file,
+            loop_dir = ?loop_dir,
             "Respawned Claude in new pane"
         );
         Ok(pane_id)

@@ -46,6 +46,11 @@ pub struct LoopState {
     /// Role for the agent (Planner, Worker, or Auto)
     #[serde(default)]
     pub role: LoopRole,
+
+    /// Assigned task ID for Workers (Cursor isolation model)
+    /// Workers only see their pre-assigned task, not shared tasks.md
+    #[serde(default)]
+    pub assigned_task: Option<String>,
 }
 
 // ============================================================================
@@ -249,6 +254,7 @@ Cross-agent discoveries and broadcasts. Only planners use this.
         error_counts: HashMap::new(),
         last_commit: None,
         role: config.role,
+        assigned_task: None,
     };
     let state_json = serde_json::to_string_pretty(&state)?;
     fs::write(loop_dir.join("state.json"), state_json)?;
@@ -275,12 +281,25 @@ pub fn save_state(loop_dir: &Path, state: &LoopState) -> Result<()> {
     Ok(())
 }
 
-/// Find .rehoboam/ directory by searching up from cwd
+/// Find the Rehoboam loop directory
 ///
-/// Searches current directory and parents for .rehoboam/ directory.
+/// Search order:
+/// 1. `REHOBOAM_LOOP_DIR` environment variable (set for isolated workers)
+/// 2. `.rehoboam/` directory (main Planner/Auto loop) - search up from cwd
+///
+/// Workers are spawned with REHOBOAM_LOOP_DIR pointing to their isolated
+/// `.rehoboam-worker-{task_id}/` directory, ensuring they find the right state.
 pub fn find_rehoboam_dir() -> Option<std::path::PathBuf> {
-    let mut current = std::env::current_dir().ok()?;
+    // First, check REHOBOAM_LOOP_DIR environment variable (worker isolation)
+    if let Ok(loop_dir) = std::env::var("REHOBOAM_LOOP_DIR") {
+        let path = std::path::PathBuf::from(&loop_dir);
+        if path.is_dir() && path.join("state.json").exists() {
+            return Some(path);
+        }
+    }
 
+    // Fall back to searching for .rehoboam/ directory
+    let mut current = std::env::current_dir().ok()?;
     loop {
         let candidate = current.join(".rehoboam");
         if candidate.is_dir() && candidate.join("state.json").exists() {

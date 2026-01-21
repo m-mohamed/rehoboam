@@ -22,10 +22,14 @@ mod state;
 mod tasks;
 
 // Re-export state types
+#[allow(unused_imports)] // load_state is used in tests and worker_pool module
 pub use state::{
-    check_max_iterations, find_rehoboam_dir, increment_iteration, init_loop_dir, LoopRole,
-    RehoboamConfig,
+    check_max_iterations, find_rehoboam_dir, increment_iteration, init_loop_dir, load_state,
+    save_state, LoopRole, LoopState, RehoboamConfig,
 };
+
+// Re-export task types and functions
+pub use tasks::{read_pending_tasks, Task};
 
 // Re-export judge types and functions
 pub use judge::{judge_completion, JudgeDecision};
@@ -41,6 +45,21 @@ pub use activity::{
 
 // Re-export git checkpoint
 pub use git_checkpoint::create_git_checkpoint;
+
+use std::fs;
+use std::path::Path;
+
+/// Check if the Planner has completed planning
+///
+/// Returns true if progress.md contains "PLANNING COMPLETE" (case-insensitive)
+pub fn is_planning_complete(loop_dir: &Path) -> bool {
+    let progress = loop_dir.join("progress.md");
+    if let Ok(content) = fs::read_to_string(&progress) {
+        content.to_uppercase().contains("PLANNING COMPLETE")
+    } else {
+        false
+    }
+}
 
 // Re-export permission policy types and functions
 pub use permissions::evaluate_permission;

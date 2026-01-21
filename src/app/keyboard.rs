@@ -313,11 +313,12 @@ impl App {
                         % spawn::SPAWN_FIELD_COUNT;
             }
             KeyCode::Enter => {
-                // Toggle fields (3 = worktree, 4 = loop mode, 8 = sprite)
+                // Toggle fields (3 = worktree, 4 = loop mode, 8 = auto_spawn, 10 = sprite)
                 match self.spawn_state.active_field {
                     3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                     4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                    8 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                    8 => self.spawn_state.auto_spawn_workers = !self.spawn_state.auto_spawn_workers,
+                    10 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                     _ => match spawn::validate_spawn(
                         &self.spawn_state,
                         self.sprites_client.is_some(),
@@ -343,7 +344,8 @@ impl App {
             KeyCode::Char(' ') => match self.spawn_state.active_field {
                 3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                 4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                8 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                8 => self.spawn_state.auto_spawn_workers = !self.spawn_state.auto_spawn_workers,
+                10 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                 0 => {
                     if self.spawn_state.use_sprite {
                         self.spawn_state.github_repo.push(' ');
@@ -358,12 +360,12 @@ impl App {
             },
             KeyCode::Left => match self.spawn_state.active_field {
                 7 => self.spawn_state.loop_role = self.spawn_state.loop_role.prev(),
-                9 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
+                11 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
                 _ => {}
             },
             KeyCode::Right => match self.spawn_state.active_field {
                 7 => self.spawn_state.loop_role = self.spawn_state.loop_role.next(),
-                9 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
+                11 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
                 _ => {}
             },
             KeyCode::Backspace => match self.spawn_state.active_field {
@@ -386,13 +388,16 @@ impl App {
                 6 => {
                     self.spawn_state.loop_stop_word.pop();
                 }
-                10 => {
-                    self.spawn_state.ram_mb.pop();
-                }
-                11 => {
-                    self.spawn_state.cpus.pop();
+                9 => {
+                    self.spawn_state.max_workers.pop();
                 }
                 12 => {
+                    self.spawn_state.ram_mb.pop();
+                }
+                13 => {
+                    self.spawn_state.cpus.pop();
+                }
+                14 => {
                     self.spawn_state.clone_destination.pop();
                 }
                 _ => {}
@@ -428,6 +433,20 @@ impl App {
                 }
                 6 => self.spawn_state.loop_stop_word.push(c),
                 8 => {
+                    // Auto-spawn toggle - y/n to toggle
+                    if c == 'y' || c == 'Y' {
+                        self.spawn_state.auto_spawn_workers = true;
+                    } else if c == 'n' || c == 'N' {
+                        self.spawn_state.auto_spawn_workers = false;
+                    }
+                }
+                9 => {
+                    // Max workers - only digits
+                    if c.is_ascii_digit() {
+                        self.spawn_state.max_workers.push(c);
+                    }
+                }
+                10 => {
                     // Sprite toggle - y/n to toggle
                     if c == 'y' || c == 'Y' {
                         self.spawn_state.use_sprite = true;
@@ -435,17 +454,17 @@ impl App {
                         self.spawn_state.use_sprite = false;
                     }
                 }
-                10 => {
+                12 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.ram_mb.push(c);
                     }
                 }
-                11 => {
+                13 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.cpus.push(c);
                     }
                 }
-                12 => {
+                14 => {
                     self.spawn_state.clone_destination.push(c);
                 }
                 _ => {}

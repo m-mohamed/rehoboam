@@ -244,11 +244,17 @@ impl AppState {
                 agent.loop_max = loop_config.max_iterations;
                 agent.loop_stop_word = loop_config.stop_word.clone();
                 agent.loop_dir = loop_config.loop_dir.clone();
+                agent.loop_role = loop_config.role;
+                agent.auto_spawn_workers = loop_config.auto_spawn_workers;
+                agent.max_workers = loop_config.max_workers;
                 tracing::info!(
                     pane_id = %pane_id,
                     max = loop_config.max_iterations,
                     stop_word = %loop_config.stop_word,
                     loop_dir = ?loop_config.loop_dir,
+                    auto_spawn = loop_config.auto_spawn_workers,
+                    max_workers = loop_config.max_workers,
+                    role = ?loop_config.role,
                     "Loop mode applied (Judge is automatic)"
                 );
             }
@@ -537,6 +543,85 @@ impl AppState {
                                     confidence = confidence,
                                     "Continuing loop"
                                 );
+
+                                // Auto-spawn workers when Planner completes planning
+                                if agent.loop_role == rehoboam_loop::LoopRole::Planner
+                                    && agent.auto_spawn_workers
+                                    && rehoboam_loop::is_planning_complete(loop_dir)
+                                {
+                                    let pending_tasks = rehoboam_loop::read_pending_tasks(loop_dir)
+                                        .unwrap_or_default();
+
+                                    if !pending_tasks.is_empty() {
+                                        tracing::info!(
+                                            pane_id = %pane_id,
+                                            pending_tasks = pending_tasks.len(),
+                                            max_workers = agent.max_workers,
+                                            "Planning complete, auto-spawning workers"
+                                        );
+
+                                        // Mark planner as complete
+                                        agent.loop_mode = LoopMode::Complete;
+
+                                        // Spawn workers and collect info for registration
+                                        let spawn_result =
+                                            crate::state::worker_pool::spawn_worker_pool_for_planner(
+                                                loop_dir,
+                                                agent.max_workers,
+                                            );
+
+                                        // Store worker info for registration after the borrow ends
+                                        let workers_to_register: Vec<_> = match spawn_result {
+                                            Ok(workers) => {
+                                                let count = workers.len();
+                                                tracing::info!(
+                                                    spawned = count,
+                                                    "Workers spawned successfully"
+                                                );
+                                                notify::send(
+                                                    "Workers Spawned",
+                                                    &format!(
+                                                        "{}: {} workers for {} tasks",
+                                                        agent.project,
+                                                        count,
+                                                        pending_tasks.len()
+                                                    ),
+                                                    Some("Glass"),
+                                                );
+                                                workers
+                                            }
+                                            Err(e) => {
+                                                tracing::error!(
+                                                    pane_id = %pane_id,
+                                                    error = %e,
+                                                    "Failed to spawn workers"
+                                                );
+                                                notify::send(
+                                                    "Worker Spawn Failed",
+                                                    &format!("{}: {}", agent.project, e),
+                                                    Some("Basso"),
+                                                );
+                                                Vec::new()
+                                            }
+                                        };
+
+                                        // Register each worker's loop config
+                                        // (must be done after releasing the agent borrow)
+                                        for worker in workers_to_register {
+                                            self.register_loop_config(
+                                                &worker.pane_id,
+                                                10, // max_iterations for workers
+                                                "DONE",
+                                                Some(worker.worker_loop_dir),
+                                                false, // workers don't auto-spawn more workers
+                                                0,
+                                                rehoboam_loop::LoopRole::Worker,
+                                            );
+                                        }
+
+                                        return false;
+                                    }
+                                }
                             }
                         },
                         Err(e) => {
