@@ -431,12 +431,20 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
         }
 
         println!("\nInitializing {} project(s)...\n", projects.len());
+        let mut success_count = 0;
         for project in &projects {
             if let Err(e) = init_project(project, force) {
                 eprintln!("  ✗ {e}");
+            } else {
+                success_count += 1;
             }
         }
-        println!("\nDone!");
+        println!("\n✓ Initialized {} project(s)", success_count);
+
+        println!("\nNext steps:");
+        println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
+        println!("  2. Run 'claude' in Terminal 2 (in any initialized project)");
+
         return Ok(());
     }
 
@@ -457,10 +465,15 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
 
     init_project(&project, force)?;
 
-    println!("\nHooks enabled (12):");
-    println!("  SessionStart, Setup, UserPromptSubmit, PermissionRequest, Stop, Notification,");
-    println!("  PreToolUse, PostToolUse, SessionEnd, PreCompact, SubagentStart, SubagentStop");
-    println!("\nTest with: claude /hooks");
+    let settings_path = project.join(".claude").join("settings.json");
+    println!("✓ Installed hooks to {}", settings_path.display());
+    println!("✓ Configured 12 hook events");
+
+    println!("\nNext steps:");
+    println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
+    println!("  2. Run 'claude' in Terminal 2 (agent)");
+
+    println!("\nVerify with: claude /hooks");
 
     Ok(())
 }

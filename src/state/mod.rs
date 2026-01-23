@@ -1,3 +1,11 @@
+//! Agent state management and event processing
+//!
+//! Core state machine for tracking Claude Code agents:
+//! - Status tracking (Attention, Working, Compacting)
+//! - Loop mode orchestration for autonomous iterations
+//! - Session lifecycle management
+//! - Status count caching for efficient UI rendering
+
 mod agent;
 mod event_processing;
 pub mod loop_handling;
@@ -455,6 +463,18 @@ impl AppState {
     pub fn set_agent_working_dir(&mut self, pane_id: &str, working_dir: std::path::PathBuf) {
         if let Some(agent) = self.agents.get_mut(pane_id) {
             agent.working_dir = Some(working_dir);
+        }
+    }
+
+    /// Set the task list ID for an agent (Claude Code Tasks API)
+    pub fn set_agent_task_list_id(&mut self, pane_id: &str, task_list_id: String) {
+        if let Some(agent) = self.agents.get_mut(pane_id) {
+            agent.task_list_id = Some(task_list_id);
+            tracing::info!(
+                pane_id = %pane_id,
+                task_list_id = ?agent.task_list_id,
+                "Set agent task list ID"
+            );
         }
     }
 }

@@ -86,7 +86,7 @@ pub fn render_agent_card(
         .style(Style::default().fg(colors::FG).add_modifier(Modifier::BOLD)),
     ];
 
-    // Line 2: Loop mode indicator OR subagent count OR tool display
+    // Line 2: Loop mode indicator OR task info OR subagent count OR tool display
     match &agent.loop_mode {
         LoopMode::Active => {
             content.push(
@@ -110,8 +110,20 @@ pub fn render_agent_card(
             );
         }
         LoopMode::None => {
-            // Show subagent info if any, otherwise tool display
-            if !agent.subagents.is_empty() {
+            // v2.2: Show current task info if working on a Claude Code Task
+            if let Some(ref task_subject) = agent.current_task_subject {
+                // Show task subject (truncated)
+                let task_display = format!(
+                    "📋 {}",
+                    truncate(task_subject, area.width.saturating_sub(6) as usize)
+                );
+                content.push(Line::from(task_display).style(Style::default().fg(colors::WORKING)));
+            } else if let Some(ref task_id) = agent.current_task_id {
+                // Show task ID if no subject available
+                let task_display = format!("📋 Task #{}", task_id);
+                content.push(Line::from(task_display).style(Style::default().fg(colors::WORKING)));
+            } else if !agent.subagents.is_empty() {
+                // Show subagent info if any
                 let running: Vec<_> = agent
                     .subagents
                     .iter()
@@ -172,11 +184,8 @@ pub fn render_agent_card(
 
     // Line 3: Elapsed time OR context usage warning (when context is high)
     // v2.1.x: Show context usage bar when context is getting full (>= 80%)
-    let show_context_warning = agent.context_usage_percent.is_some_and(|pct| pct >= 80.0);
-
-    if show_context_warning {
+    if let Some(pct) = agent.context_usage_percent.filter(|&p| p >= 80.0) {
         // Show context usage bar instead of elapsed time when context is high
-        let pct = agent.context_usage_percent.unwrap();
         let bar_width = 10_usize;
         let filled = ((pct / 100.0) * bar_width as f64) as usize;
         let empty = bar_width.saturating_sub(filled);

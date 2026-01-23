@@ -1,3 +1,8 @@
+//! Keyboard input handling for TUI interaction
+//!
+//! Polls for keyboard events using crossterm and forwards them
+//! to the main event loop via an async channel.
+
 use super::Event;
 use crossterm::event::{self, Event as CrosstermEvent};
 use std::time::Duration;

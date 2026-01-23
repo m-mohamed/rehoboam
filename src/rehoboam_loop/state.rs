@@ -60,16 +60,18 @@ pub struct LoopState {
 /// Role for a loop agent (Cursor-aligned)
 ///
 /// Different roles get different prompts and behaviors:
-/// - Planner: Explores, decomposes tasks, writes to tasks.md
-/// - Worker: Picks task from queue, works in isolation, marks complete
-/// - Auto: Legacy behavior, generic prompt
+/// - Planner: Explores, decomposes tasks, uses TaskCreate to add tasks
+/// - Worker: Uses TaskList to find tasks, TaskUpdate to claim/complete
+/// - Auto: General autonomous loop, uses TaskCreate/TaskUpdate as needed
+///
+/// **REQUIRES**: `CLAUDE_CODE_TASK_LIST_ID` environment variable for all roles.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum LoopRole {
-    /// Planner: Explores and creates tasks (doesn't implement)
+    /// Planner: Explores and creates tasks with TaskCreate (doesn't implement)
     Planner,
-    /// Worker: Executes single task in isolation
+    /// Worker: Claims tasks via TaskUpdate, executes in isolation
     Worker,
-    /// Auto: Legacy behavior with generic prompt
+    /// Auto: General autonomous loop with TaskCreate/TaskUpdate
     #[default]
     Auto,
 }
@@ -216,19 +218,9 @@ Starting iteration 1...
     // Create empty session_history.log
     fs::write(loop_dir.join("session_history.log"), "")?;
 
-    // Create tasks.md for task queue (Cursor-aligned)
-    let tasks_content = r"# Task Queue
-
-## Pending
-<!-- Planners add tasks here -->
-
-## In Progress
-<!-- Workers claim tasks here -->
-
-## Completed
-<!-- Completed tasks move here -->
-";
-    fs::write(loop_dir.join("tasks.md"), tasks_content)?;
+    // NOTE: tasks.md is NO LONGER CREATED
+    // Tasks are managed via Claude Code Tasks API (CLAUDE_CODE_TASK_LIST_ID)
+    // Agents use TaskCreate/TaskUpdate/TaskList/TaskGet tools
 
     // Create coordination.md only if enabled (opt-in)
     // Per Cursor: "Workers never coordinate with each other"

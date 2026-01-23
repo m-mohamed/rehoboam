@@ -3,6 +3,9 @@
 //! Implements proper Rehoboam loops with fresh sessions per iteration.
 //! State persists in `.rehoboam/` directory, context stays fresh.
 //!
+//! **REQUIRES**: `CLAUDE_CODE_TASK_LIST_ID` environment variable for task management.
+//! Agents use Claude Code native Tasks API (TaskCreate/TaskUpdate/TaskList/TaskGet).
+//!
 //! Files:
 //! - anchor.md: Task spec, success criteria (read every iteration)
 //! - guardrails.md: Learned constraints/signs (append-only)
@@ -11,6 +14,8 @@
 //! - activity.log: Timing/metrics per iteration
 //! - session_history.log: State transitions for debugging
 //! - state.json: Iteration counter, config
+//!
+//! NOTE: tasks.md is NO LONGER USED. Tasks are managed via Claude Code Tasks API.
 
 mod activity;
 mod coordination;
@@ -19,7 +24,6 @@ mod judge;
 mod permissions;
 mod prompts;
 mod state;
-mod tasks;
 
 // Re-export state types
 #[allow(unused_imports)] // load_state is used in tests and worker_pool module
@@ -27,9 +31,6 @@ pub use state::{
     check_max_iterations, find_rehoboam_dir, increment_iteration, init_loop_dir, load_state,
     save_state, LoopRole, LoopState, RehoboamConfig,
 };
-
-// Re-export task types and functions
-pub use tasks::{read_pending_tasks, Task};
 
 // Re-export judge types and functions
 pub use judge::{judge_completion, JudgeDecision};
@@ -71,7 +72,6 @@ mod tests {
     };
     use super::permissions::{check_approval_memory, record_approval, PermissionDecision};
     use super::state::load_state;
-    use super::tasks::{add_task, claim_task, complete_task, read_next_task, read_pending_tasks};
     use super::*;
     use tempfile::TempDir;
 
@@ -340,104 +340,16 @@ mod tests {
         assert!(join_existing_loop(other_temp.path()).is_err());
     }
 
-    // Task Queue tests
-
-    #[test]
-    fn test_tasks_file_created() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        assert!(loop_dir.join("tasks.md").exists());
-    }
-
-    #[test]
-    fn test_add_and_read_tasks() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Add tasks (newest first - LIFO order)
-        add_task(&loop_dir, "TASK-001", "Implement user auth").unwrap();
-        add_task(&loop_dir, "TASK-002", "Add API validation").unwrap();
-
-        // Read pending tasks - newest task is at top
-        let tasks = read_pending_tasks(&loop_dir).unwrap();
-        assert_eq!(tasks.len(), 2);
-        // Most recently added task is first
-        assert_eq!(tasks[0].id, "TASK-002");
-        assert_eq!(tasks[0].description, "Add API validation");
-        assert_eq!(tasks[1].id, "TASK-001");
-    }
-
-    #[test]
-    fn test_read_next_task() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // No tasks initially
-        let task = read_next_task(&loop_dir).unwrap();
-        assert!(task.is_none());
-
-        // Add a task
-        add_task(&loop_dir, "TASK-001", "First task").unwrap();
-
-        // Should return the first task
-        let task = read_next_task(&loop_dir).unwrap();
-        assert!(task.is_some());
-        assert_eq!(task.unwrap().id, "TASK-001");
-    }
-
-    #[test]
-    fn test_claim_task() {
-        use std::fs;
-
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Add a task
-        add_task(&loop_dir, "TASK-001", "Auth endpoint").unwrap();
-
-        // Claim it
-        claim_task(&loop_dir, "TASK-001", "%42").unwrap();
-
-        // Should no longer be in pending
-        let pending = read_pending_tasks(&loop_dir).unwrap();
-        assert!(pending.is_empty());
-
-        // Check the file content
-        let content = fs::read_to_string(loop_dir.join("tasks.md")).unwrap();
-        assert!(content.contains("In Progress"));
-        assert!(content.contains("[TASK-001]"));
-        assert!(content.contains("worker: %42"));
-    }
-
-    #[test]
-    fn test_complete_task() {
-        use std::fs;
-
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Add and claim a task
-        add_task(&loop_dir, "TASK-001", "Auth endpoint").unwrap();
-        claim_task(&loop_dir, "TASK-001", "%42").unwrap();
-
-        // Complete it
-        complete_task(&loop_dir, "TASK-001").unwrap();
-
-        // Check the file content
-        let content = fs::read_to_string(loop_dir.join("tasks.md")).unwrap();
-        assert!(content.contains("Completed"));
-        assert!(content.contains("[x] [TASK-001]"));
-    }
+    // NOTE: Legacy tasks.md tests removed - now using Claude Code Tasks API
+    // Tests for TaskCreate/TaskUpdate/TaskList/TaskGet are integration tests
+    // that require CLAUDE_CODE_TASK_LIST_ID to be set.
 
     #[test]
     fn test_role_specific_prompts() {
         use std::fs;
+
+        // Set CLAUDE_CODE_TASK_LIST_ID for prompt generation
+        std::env::set_var("CLAUDE_CODE_TASK_LIST_ID", "test-task-list");
 
         let temp = TempDir::new().unwrap();
 
@@ -451,6 +363,7 @@ mod tests {
         let prompt = fs::read_to_string(&prompt_file).unwrap();
         assert!(prompt.contains("PLANNER"));
         assert!(prompt.contains("Do NOT implement anything yourself"));
+        assert!(prompt.contains("TaskCreate")); // Uses Tasks API
 
         // Test Worker role
         let temp2 = TempDir::new().unwrap();
@@ -459,13 +372,13 @@ mod tests {
             ..Default::default()
         };
         let loop_dir2 = init_loop_dir(temp2.path(), "Build API", &worker_config).unwrap();
-        add_task(&loop_dir2, "TASK-001", "Build auth").unwrap();
         let prompt_file2 = build_iteration_prompt(&loop_dir2).unwrap();
         let prompt2 = fs::read_to_string(&prompt_file2).unwrap();
         assert!(prompt2.contains("WORKER"));
-        assert!(prompt2.contains("TASK-001"));
+        assert!(prompt2.contains("TaskList")); // Uses Tasks API
+        assert!(prompt2.contains("TaskUpdate")); // Uses Tasks API
 
-        // Test Auto role (backward compatible)
+        // Test Auto role
         let temp3 = TempDir::new().unwrap();
         let auto_config = RehoboamConfig::default();
         let loop_dir3 = init_loop_dir(temp3.path(), "Build API", &auto_config).unwrap();
@@ -474,6 +387,10 @@ mod tests {
         assert!(prompt3.contains("Rehoboam Loop - Iteration"));
         assert!(!prompt3.contains("PLANNER"));
         assert!(!prompt3.contains("WORKER"));
+        assert!(prompt3.contains("TaskCreate")); // Uses Tasks API
+
+        // Clean up
+        std::env::remove_var("CLAUDE_CODE_TASK_LIST_ID");
     }
 
     // Permission Policy Tests

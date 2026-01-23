@@ -454,6 +454,135 @@ impl TmuxController {
         tracing::debug!(pane_id = %pane_id, "Sent Ctrl+C to pane");
         Ok(())
     }
+
+    /// Respawn Claude with environment variables set
+    ///
+    /// Creates a new pane with the specified environment variables.
+    /// Used by Rehoboam loops to spawn agents with CLAUDE_CODE_TASK_LIST_ID.
+    ///
+    /// # Arguments
+    /// * `cwd` - Working directory for the new pane
+    /// * `prompt_file` - Path to the iteration prompt file
+    /// * `env_vars` - Environment variables to set (name=value pairs)
+    ///
+    /// # Returns
+    /// The pane ID of the newly created pane
+    #[allow(dead_code)] // Will be used for worker pool task_list_id propagation
+    pub fn respawn_claude_with_env(
+        cwd: &str,
+        prompt_file: &str,
+        env_vars: &[(&str, &str)],
+    ) -> Result<String> {
+        let escaped_path = prompt_file.replace('\'', "'\\''");
+
+        // Build env prefix: export VAR1=val1; export VAR2=val2; ...
+        let env_prefix = if env_vars.is_empty() {
+            String::new()
+        } else {
+            let exports: Vec<String> = env_vars
+                .iter()
+                .map(|(k, v)| format!("export {}='{}'", k, v.replace('\'', "'\\''")))
+                .collect();
+            format!("{}; ", exports.join("; "))
+        };
+
+        let cmd = format!("{}cat '{}' | claude", env_prefix, escaped_path);
+
+        let output = Command::new("tmux")
+            .args([
+                "split-window",
+                "-h",
+                "-c",
+                cwd,
+                "-P",
+                "-F",
+                "#{pane_id}",
+                &cmd,
+            ])
+            .output()
+            .wrap_err("Failed to execute tmux split-window for respawn with env")?;
+
+        if !output.status.success() {
+            bail!(
+                "tmux split-window failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        tracing::info!(
+            pane_id = %pane_id,
+            cwd = %cwd,
+            prompt_file = %prompt_file,
+            env_count = env_vars.len(),
+            "Respawned Claude with environment variables"
+        );
+        Ok(pane_id)
+    }
+
+    /// Split pane with environment variables set
+    ///
+    /// Creates a new pane with the specified environment variables.
+    ///
+    /// # Arguments
+    /// * `horizontal` - true for horizontal split
+    /// * `cwd` - Working directory for the new pane
+    /// * `env_vars` - Environment variables to set
+    ///
+    /// # Returns
+    /// The pane ID of the newly created pane
+    pub fn split_pane_with_env(
+        horizontal: bool,
+        cwd: &str,
+        env_vars: &[(&str, &str)],
+    ) -> Result<String> {
+        let flag = if horizontal { "-h" } else { "-v" };
+
+        // If no env vars, use simple split
+        if env_vars.is_empty() {
+            return Self::split_pane(horizontal, cwd);
+        }
+
+        // Build env prefix for the shell command
+        let exports: Vec<String> = env_vars
+            .iter()
+            .map(|(k, v)| format!("export {}='{}'", k, v.replace('\'', "'\\''")))
+            .collect();
+        let env_prefix = exports.join("; ");
+
+        // Use bash -c to set env vars before dropping to interactive shell
+        let cmd = format!("bash -c '{}; exec bash'", env_prefix);
+
+        let output = Command::new("tmux")
+            .args([
+                "split-window",
+                flag,
+                "-c",
+                cwd,
+                "-P",
+                "-F",
+                "#{pane_id}",
+                &cmd,
+            ])
+            .output()
+            .wrap_err("Failed to execute tmux split-window with env")?;
+
+        if !output.status.success() {
+            bail!(
+                "tmux split-window failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+
+        let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        tracing::info!(
+            pane_id = %pane_id,
+            cwd = %cwd,
+            env_count = env_vars.len(),
+            "Created new tmux pane with environment variables"
+        );
+        Ok(pane_id)
+    }
 }
 
 #[cfg(test)]

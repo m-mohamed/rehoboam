@@ -81,6 +81,31 @@ fn extract_file_path(input: &Option<serde_json::Value>) -> Option<String> {
     input.as_ref()?.get("file_path")?.as_str().map(String::from)
 }
 
+/// Check if a tool is a Claude Code Tasks API tool
+fn is_task_tool(tool_name: &str) -> bool {
+    matches!(
+        tool_name,
+        "TaskCreate" | "TaskUpdate" | "TaskList" | "TaskGet"
+    )
+}
+
+/// Extract task subject from TaskCreate tool_input
+/// Example: {"subject": "Implement user auth", "description": "..."}
+fn extract_task_subject(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("subject")?.as_str().map(String::from)
+}
+
+/// Extract task ID from TaskUpdate/TaskGet tool_input
+/// Example: {"taskId": "1", "status": "in_progress"}
+fn extract_task_id(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("taskId")?.as_str().map(String::from)
+}
+
+/// Extract task status from TaskUpdate tool_input
+fn extract_task_status(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("status")?.as_str().map(String::from)
+}
+
 /// Get human-readable name for column index
 fn column_name(col: usize) -> &'static str {
     match col {
@@ -334,6 +359,57 @@ impl AppState {
                         }
                     }
 
+                    // v2.2: Track Claude Code Tasks API usage
+                    if is_task_tool(tool) {
+                        agent.last_task_tool = Some(tool.clone());
+
+                        match tool.as_str() {
+                            "TaskCreate" => {
+                                // Extract subject from TaskCreate input
+                                if let Some(subject) = extract_task_subject(&event.tool_input) {
+                                    agent.current_task_subject = Some(subject.clone());
+                                    tracing::info!(
+                                        pane_id = %pane_id,
+                                        tool = %tool,
+                                        subject = %subject,
+                                        "TaskCreate detected"
+                                    );
+                                }
+                            }
+                            "TaskUpdate" => {
+                                // Extract task ID and status from TaskUpdate input
+                                if let Some(task_id) = extract_task_id(&event.tool_input) {
+                                    let status = extract_task_status(&event.tool_input);
+                                    if status.as_deref() == Some("in_progress") {
+                                        // Worker claiming a task
+                                        agent.current_task_id = Some(task_id.clone());
+                                    } else if status.as_deref() == Some("completed") {
+                                        // Task completed, clear current task
+                                        if agent.current_task_id.as_deref() == Some(&task_id) {
+                                            agent.current_task_id = None;
+                                            agent.current_task_subject = None;
+                                        }
+                                    }
+                                    tracing::info!(
+                                        pane_id = %pane_id,
+                                        tool = %tool,
+                                        task_id = %task_id,
+                                        status = ?status,
+                                        "TaskUpdate detected"
+                                    );
+                                }
+                            }
+                            "TaskList" | "TaskGet" => {
+                                tracing::debug!(
+                                    pane_id = %pane_id,
+                                    tool = %tool,
+                                    "Task read operation"
+                                );
+                            }
+                            _ => {}
+                        }
+                    }
+
                     // AskUserQuestion immediately needs user input - transition now
                     // (PostToolUse won't fire until user responds)
                     if tool == "AskUserQuestion" {
@@ -547,83 +623,77 @@ impl AppState {
                                 );
 
                                 // Auto-spawn workers when Planner completes planning
+                                // Workers will use Claude Code Tasks API to claim tasks
                                 if agent.loop_role == rehoboam_loop::LoopRole::Planner
                                     && agent.auto_spawn_workers
                                     && rehoboam_loop::is_planning_complete(loop_dir)
                                 {
-                                    let pending_tasks = rehoboam_loop::read_pending_tasks(loop_dir)
-                                        .unwrap_or_default();
+                                    tracing::info!(
+                                        pane_id = %pane_id,
+                                        max_workers = agent.max_workers,
+                                        "Planning complete, auto-spawning workers (will claim tasks via TaskList)"
+                                    );
 
-                                    if !pending_tasks.is_empty() {
-                                        tracing::info!(
-                                            pane_id = %pane_id,
-                                            pending_tasks = pending_tasks.len(),
-                                            max_workers = agent.max_workers,
-                                            "Planning complete, auto-spawning workers"
+                                    // Mark planner as complete
+                                    agent.loop_mode = LoopMode::Complete;
+
+                                    // Spawn workers - they will claim tasks via TaskList/TaskUpdate
+                                    let spawn_result =
+                                        crate::state::worker_pool::spawn_worker_pool_for_planner(
+                                            loop_dir,
+                                            agent.max_workers,
                                         );
 
-                                        // Mark planner as complete
-                                        agent.loop_mode = LoopMode::Complete;
-
-                                        // Spawn workers and collect info for registration
-                                        let spawn_result =
-                                            crate::state::worker_pool::spawn_worker_pool_for_planner(
-                                                loop_dir,
-                                                agent.max_workers,
+                                    // Store worker info for registration after the borrow ends
+                                    let workers_to_register: Vec<_> = match spawn_result {
+                                        Ok(workers) => {
+                                            let count = workers.len();
+                                            tracing::info!(
+                                                spawned = count,
+                                                "Workers spawned successfully (will claim tasks via TaskList)"
                                             );
-
-                                        // Store worker info for registration after the borrow ends
-                                        let workers_to_register: Vec<_> = match spawn_result {
-                                            Ok(workers) => {
-                                                let count = workers.len();
-                                                tracing::info!(
-                                                    spawned = count,
-                                                    "Workers spawned successfully"
-                                                );
-                                                notify::send(
-                                                    "Workers Spawned",
-                                                    &format!(
-                                                        "{}: {} workers for {} tasks",
-                                                        agent.project,
-                                                        count,
-                                                        pending_tasks.len()
-                                                    ),
-                                                    Some("Glass"),
-                                                );
-                                                workers
-                                            }
-                                            Err(e) => {
-                                                tracing::error!(
-                                                    pane_id = %pane_id,
-                                                    error = %e,
-                                                    "Failed to spawn workers"
-                                                );
-                                                notify::send(
-                                                    "Worker Spawn Failed",
-                                                    &format!("{}: {}", agent.project, e),
-                                                    Some("Basso"),
-                                                );
-                                                Vec::new()
-                                            }
-                                        };
-
-                                        // Register each worker's loop config
-                                        // (must be done after releasing the agent borrow)
-                                        for worker in workers_to_register {
-                                            self.register_loop_config(
-                                                &worker.pane_id,
-                                                10, // max_iterations for workers
-                                                "DONE",
-                                                Some(worker.worker_loop_dir),
-                                                Some(worker.worktree_path), // git worktree for worker
-                                                false, // workers don't auto-spawn more workers
-                                                0,
-                                                rehoboam_loop::LoopRole::Worker,
+                                            notify::send(
+                                                "Workers Spawned",
+                                                &format!(
+                                                    "{}: {} workers spawned (claiming tasks via TaskList)",
+                                                    agent.project,
+                                                    count
+                                                ),
+                                                Some("Glass"),
                                             );
+                                            workers
                                         }
+                                        Err(e) => {
+                                            tracing::error!(
+                                                pane_id = %pane_id,
+                                                error = %e,
+                                                "Failed to spawn workers"
+                                            );
+                                            notify::send(
+                                                "Worker Spawn Failed",
+                                                &format!("{}: {}", agent.project, e),
+                                                Some("Basso"),
+                                            );
+                                            Vec::new()
+                                        }
+                                    };
 
-                                        return false;
+                                    // Register each worker's loop config
+                                    // (must be done after releasing the agent borrow)
+                                    for worker in workers_to_register {
+                                        self.register_loop_config(
+                                            &worker.pane_id,
+                                            10, // max_iterations for workers
+                                            "DONE",
+                                            Some(worker.worker_loop_dir),
+                                            Some(worker.worktree_path), // git worktree for worker
+                                            false, // workers don't auto-spawn more workers
+                                            0,
+                                            rehoboam_loop::LoopRole::Worker,
+                                        );
                                     }
+
+                                    return false;
                                 }
                             }
                         },

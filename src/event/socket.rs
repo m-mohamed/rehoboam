@@ -1,3 +1,9 @@
+//! Unix socket event handling for Claude Code hooks
+//!
+//! Receives JSON hook events from Claude Code via Unix domain socket.
+//! The socket is created at `/tmp/rehoboam.sock` and listens for connections
+//! from the `rehoboam hook` command invoked by Claude Code hooks.
+
 use super::{Event, HookEvent};
 use color_eyre::Result;
 use std::os::unix::io::{FromRawFd, IntoRawFd};

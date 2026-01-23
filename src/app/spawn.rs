@@ -37,8 +37,8 @@ use std::path::PathBuf;
 
 /// Number of fields in spawn dialog
 /// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=role,
-/// 8=auto_spawn, 9=max_workers, 10=sprite, 11=network, 12=ram, 13=cpus, 14=clone_dest
-pub const SPAWN_FIELD_COUNT: usize = 15;
+/// 8=auto_spawn, 9=max_workers, 10=claude_tasks, 11=task_list_id, 12=sprite, 13=network, 14=ram, 15=cpus, 16=clone_dest
+pub const SPAWN_FIELD_COUNT: usize = 17;
 
 /// State for the spawn dialog
 #[derive(Debug, Clone)]
@@ -72,6 +72,12 @@ pub struct SpawnState {
     pub auto_spawn_workers: bool,
     /// Maximum concurrent workers for auto-spawn (default: 3)
     pub max_workers: String,
+    /// Use Claude Code native Tasks API for task management
+    /// When enabled, agents use TaskCreate/TaskUpdate instead of tasks.md
+    pub use_claude_tasks: bool,
+    /// Shared task list ID for multi-agent coordination
+    /// Set as CLAUDE_CODE_TASK_LIST_ID env var when spawning
+    pub task_list_id: String,
     /// Whether to spawn on a remote sprite (cloud VM)
     pub use_sprite: bool,
     /// Network policy for sprite (only applies when use_sprite is true)
@@ -147,6 +153,8 @@ impl Default for SpawnState {
             loop_role: LoopRole::Auto,
             auto_spawn_workers: true, // Default: auto-spawn when Planner completes
             max_workers: "3".to_string(),
+            use_claude_tasks: true, // Default: use Claude Code native Tasks API
+            task_list_id: String::new(),
             use_sprite: false,
             network_preset: NetworkPreset::ClaudeOnly,
             ram_mb: "2048".to_string(),
@@ -447,6 +455,22 @@ fn spawn_sprite_agent(spawn_state: &SpawnState, client: &SpritesClient) {
     });
 }
 
+/// Generate a task list ID if not provided
+fn generate_task_list_id(project_path: &str) -> String {
+    // Use project name + timestamp for uniqueness
+    let project_name = std::path::Path::new(project_path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("project");
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    format!("{}-{}", project_name, timestamp)
+}
+
 /// Spawn agent in local tmux pane
 fn spawn_tmux_agent(
     project_path: &str,
@@ -490,17 +514,44 @@ fn spawn_tmux_agent(
         PathBuf::from(project_path)
     };
 
+    // Generate or use provided task list ID
+    let task_list_id = if spawn_state.loop_enabled && spawn_state.use_claude_tasks {
+        if spawn_state.task_list_id.is_empty() {
+            Some(generate_task_list_id(project_path))
+        } else {
+            Some(spawn_state.task_list_id.clone())
+        }
+    } else {
+        None
+    };
+
     tracing::info!(
         project = %project_path,
         working_dir = %working_dir.display(),
         use_worktree = use_worktree,
+        use_claude_tasks = spawn_state.use_claude_tasks,
+        task_list_id = ?task_list_id,
         prompt_len = prompt.len(),
         "Spawning new Claude agent"
     );
 
+    // Build environment variables
+    let env_vars: Vec<(&str, String)> = if let Some(ref id) = task_list_id {
+        vec![("CLAUDE_CODE_TASK_LIST_ID", id.clone())]
+    } else {
+        vec![]
+    };
+    let env_refs: Vec<(&str, &str)> = env_vars.iter().map(|(k, v)| (*k, v.as_str())).collect();
+
     // Create new tmux pane in the working directory
     let working_dir_str = working_dir.to_string_lossy().to_string();
-    match TmuxController::split_pane(true, &working_dir_str) {
+    let pane_result = if env_refs.is_empty() {
+        TmuxController::split_pane(true, &working_dir_str)
+    } else {
+        TmuxController::split_pane_with_env(true, &working_dir_str, &env_refs)
+    };
+
+    match pane_result {
         Ok(pane_id) => {
             tracing::info!(pane_id = %pane_id, "Created new tmux pane");
 
@@ -554,6 +605,11 @@ fn spawn_tmux_agent(
                     max_workers,
                     spawn_state.loop_role,
                 );
+
+                // Store task list ID on agent if using Claude Tasks
+                if let Some(ref id) = task_list_id {
+                    state.set_agent_task_list_id(&pane_id, id.clone());
+                }
             }
 
             // Store working directory for git operations (redundant but kept for non-loop agents)

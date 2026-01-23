@@ -1,46 +1,67 @@
 //! Role-Specific Prompts (Cursor-aligned)
 //!
-//! Generates iteration prompts based on the agent's role.
+//! Generates iteration prompts based on the agent's role using a unified template system.
+//! Uses Claude Code native Tasks API exclusively.
+//!
+//! **REQUIRES**: `CLAUDE_CODE_TASK_LIST_ID` environment variable must be set.
+//! Agents use TaskCreate/TaskUpdate/TaskList/TaskGet tools for task management.
 
-use color_eyre::eyre::Result;
+use color_eyre::eyre::{eyre, Result};
 use std::fs;
 use std::path::Path;
 use tracing::debug;
 
 use super::coordination::{list_workers, read_broadcasts};
 use super::state::{load_state, LoopRole, LoopState};
-use super::tasks::read_next_task;
 
-/// Build a planner-specific prompt
-///
-/// Planners explore, decompose tasks, and write to tasks.md.
-/// They do NOT implement anything themselves.
-fn build_planner_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
-    let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
-    let progress = fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default();
-    let tasks = fs::read_to_string(loop_dir.join("tasks.md")).unwrap_or_default();
+// =============================================================================
+// Shared Context Loading
+// =============================================================================
 
-    let prompt = format!(
-        r#"# Rehoboam Loop - PLANNER - Iteration {iteration}
+/// Get the Claude Code Task List ID, or error if not set
+fn require_task_list_id() -> Result<String> {
+    std::env::var("CLAUDE_CODE_TASK_LIST_ID").map_err(|_| {
+        eyre!("CLAUDE_CODE_TASK_LIST_ID not set. Loop mode requires Claude Code Tasks API.")
+    })
+}
 
-You are a PLANNER. Your job is to explore and decompose work into tasks.
+/// Shared context loaded once for all prompt types
+struct PromptContext {
+    task_list_id: String,
+    iteration: u32,
+    stop_word: String,
+    anchor: String,
+    progress: String,
+    guardrails: String,
+}
 
-## Your Goal
-{anchor}
+impl PromptContext {
+    /// Load all context files once
+    fn load(loop_dir: &Path, state: &LoopState) -> Result<Self> {
+        Ok(Self {
+            task_list_id: require_task_list_id()?,
+            iteration: state.iteration + 1,
+            stop_word: state.stop_word.clone(),
+            anchor: fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default(),
+            progress: fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default(),
+            guardrails: fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default(),
+        })
+    }
+}
 
-## Current Tasks Queue
-{tasks}
+// =============================================================================
+// Prompt Templates (Role-Specific Sections)
+// =============================================================================
 
-## Progress So Far
-{progress}
-
-## Rules for Planners
+/// Planner-specific rules section
+const PLANNER_RULES: &str = r#"## Rules for Planners (Claude Code Tasks API)
 1. **Explore first** - Read the codebase to understand structure and patterns
-2. **Check existing tasks** - Read tasks.md before creating new tasks to avoid duplicates
+2. **Check existing tasks** - Use `TaskList` before creating new tasks to avoid duplicates
 3. Break down the goal into discrete, independent tasks
 4. Each task should be completable by a single worker in ONE iteration
-5. Write tasks to tasks.md in the Pending section using format:
-   `- [ ] [TASK-XXX] Description of the task`
+5. **Create tasks with TaskCreate** - Use clear subjects and detailed descriptions:
+   - subject: Brief imperative title (e.g., "Implement user authentication endpoint")
+   - description: Full context a worker needs to complete the task
 6. Do NOT implement anything yourself
 7. Do NOT coordinate with workers - they work in isolation
 8. When planning is complete, write "PLANNING COMPLETE" to progress.md
@@ -48,113 +69,98 @@ You are a PLANNER. Your job is to explore and decompose work into tasks.
 10. Update progress.md with your exploration findings
 
 ## Task Guidelines
-- **No duplicates** - Check tasks.md before adding; skip if similar task exists
+- **No duplicates** - Use `TaskList` to check before creating; skip if similar task exists
 - Tasks should be atomic and independent
 - Include enough context in the description for a worker to understand
-- Prefix related tasks with common identifiers (e.g., TASK-AUTH-001, TASK-AUTH-002)
-- Order tasks by dependency (simpler tasks first)
-- Mark your exploration progress in progress.md so future iterations don't repeat
+- Create related tasks in logical order (dependencies first)
 
-Remember: Your job is PLANNING, not IMPLEMENTING. Explore thoroughly, create clear tasks.
-"#,
-        iteration = state.iteration + 1,
-        anchor = anchor,
-        tasks = tasks,
-        progress = progress,
-    );
+Remember: Your job is PLANNING, not IMPLEMENTING. Explore thoroughly, create clear tasks with TaskCreate."#;
 
-    Ok(prompt)
-}
+/// Worker-specific rules section
+const WORKER_RULES: &str = r#"## How to Get Your Task (Claude Code Tasks API)
+1. Use `TaskList` to see all pending tasks
+2. Pick ONE task that is `pending` with no owner
+3. Use `TaskUpdate` to claim it: set status to `in_progress`
+4. Complete the task
+5. Use `TaskUpdate` to mark it `completed` when done
 
-/// Build a worker-specific prompt
-///
-/// Workers pick ONE task from the queue, execute it in isolation,
-/// and mark it complete. They do NOT coordinate with other workers.
-///
-/// Two modes:
-/// 1. **Auto-spawned workers** (Cursor isolation model): Read from assigned_task.md
-///    - Task is pre-assigned during worker spawn
-///    - No shared tasks.md - complete isolation
-/// 2. **Manual workers**: Read from shared tasks.md and claim next task
-fn build_worker_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
-    let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
-    let guardrails = fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
-
-    // Check for assigned_task.md (auto-spawned isolated worker)
-    let assigned_task_path = loop_dir.join("assigned_task.md");
-    let (task_section, is_isolated) = if assigned_task_path.exists() {
-        // Isolated worker mode: read pre-assigned task
-        let assigned_task = fs::read_to_string(&assigned_task_path).unwrap_or_default();
-        (assigned_task, true)
-    } else {
-        // Manual worker mode: read from shared tasks.md
-        let next_task = read_next_task(loop_dir)?;
-        let section = if let Some(task) = &next_task {
-            format!(
-                "## Your Assigned Task\n**[{}]** {}\n",
-                task.id, task.description
-            )
-        } else {
-            "## Your Assigned Task\nNo tasks available in queue. Check with planner or wait.\n"
-                .to_string()
-        };
-        (section, false)
-    };
-
-    // Different rules for isolated vs. shared workers
-    let rules = if is_isolated {
-        format!(
-            r#"## Rules for Workers (Isolated Mode)
-1. Focus ONLY on your assigned task - you have ONE task
-2. Do NOT coordinate with other workers - they work in isolation
-3. Do NOT explore unrelated code or add scope
-4. Update progress.md with what you accomplished
-5. If blocked, note it in progress.md and write "{stop_word}"
-6. When done, write "{stop_word}" to progress.md
-
-Remember: One task, complete isolation, then exit."#,
-            stop_word = state.stop_word
-        )
-    } else {
-        format!(
-            r#"## Rules for Workers
-1. **Mark task "In Progress" FIRST** - Before starting, move your task from Pending to In Progress:
-   `- [~] [TASK-XXX] description (worker: YOUR_ID)`
-2. Focus ONLY on your assigned task - ignore other work
+## Rules for Workers (Claude Code Tasks API)
+1. **Claim a task FIRST** - Use `TaskUpdate` with status: "in_progress" before starting
+2. Focus ONLY on your claimed task - ignore other work
 3. Do NOT coordinate with other workers - they handle their own tasks
 4. Do NOT explore unrelated code or add scope
-5. When done, **mark task "Completed"** - Move from In Progress to Completed section:
-   `- [x] [TASK-XXX] description`
+5. When done, use `TaskUpdate` with status: "completed"
 6. Update progress.md with what you accomplished
 7. If blocked by something outside your task, note it in progress.md and exit
 8. Do NOT try to solve blockers that require other tasks
 9. Write "{stop_word}" when your task is fully complete
 
-## Task Status Flow
+## Task Workflow
 ```
-Pending → In Progress → Completed
-- [ ]   → - [~]       → - [x]
+Use TaskList → Find pending task → TaskUpdate(in_progress) → Do work → TaskUpdate(completed)
 ```
 
-## Task Completion Checklist
-- [ ] Task marked "In Progress" at start
-- [ ] Task implemented as described
-- [ ] Tests pass (if applicable)
-- [ ] Task marked "Completed" in tasks.md
-- [ ] Progress.md updated with summary
-- [ ] Stop word written if fully complete
+Remember: Claim ONE task with TaskUpdate, complete it, mark completed, then exit."#;
 
-Remember: Complete YOUR task, then exit. Don't do extra work."#,
-            stop_word = state.stop_word
-        )
-    };
+/// Auto-mode instructions section
+const AUTO_RULES: &str = r#"## Instructions for This Iteration
+1. Read the anchor to understand your task
+2. Check guardrails before taking actions
+3. Use `TaskList` to check current tasks and their status
+4. Continue from where progress.md left off
+5. Update progress.md with your work
+6. Use `TaskCreate` to track sub-tasks if needed
+7. Use `TaskUpdate` to mark tasks completed as you finish them
+8. If you hit a repeating problem, add a SIGN to guardrails.md
+9. When ALL criteria are met, write either:
+   - "{stop_word}" anywhere in progress.md, OR
+   - <promise>COMPLETE</promise> tag (more explicit)
+10. Exit when you've made progress (don't try to finish everything)
 
-    let prompt = format!(
+Remember: Progress persists, failures evaporate. Make incremental progress.
+Git commits are created between iterations for easy rollback."#;
+
+// =============================================================================
+// Unified Prompt Builder
+// =============================================================================
+
+/// Build a planner-specific prompt using shared context
+fn build_planner_prompt(ctx: &PromptContext) -> String {
+    format!(
+        r#"# Rehoboam Loop - PLANNER - Iteration {iteration}
+
+You are a PLANNER. Your job is to explore and decompose work into tasks.
+
+## Task List ID
+{task_list_id}
+
+## Your Goal
+{anchor}
+
+## Progress So Far
+{progress}
+
+{rules}
+"#,
+        iteration = ctx.iteration,
+        task_list_id = ctx.task_list_id,
+        anchor = ctx.anchor,
+        progress = ctx.progress,
+        rules = PLANNER_RULES,
+    )
+}
+
+/// Build a worker-specific prompt using shared context
+fn build_worker_prompt(ctx: &PromptContext) -> String {
+    let rules = WORKER_RULES.replace("{stop_word}", &ctx.stop_word);
+    format!(
         r#"# Rehoboam Loop - WORKER - Iteration {iteration}
 
-You are a WORKER. Your job is to complete ONE assigned task.
+You are a WORKER. Your job is to complete ONE task from the shared task list.
 
-{task_section}
+## Task List ID
+{task_list_id}
+
 ## Context (for reference only)
 {anchor}
 
@@ -163,22 +169,16 @@ You are a WORKER. Your job is to complete ONE assigned task.
 
 {rules}
 "#,
-        iteration = state.iteration + 1,
-        task_section = task_section,
-        anchor = anchor,
-        guardrails = guardrails,
+        iteration = ctx.iteration,
+        task_list_id = ctx.task_list_id,
+        anchor = ctx.anchor,
+        guardrails = ctx.guardrails,
         rules = rules,
-    );
-
-    Ok(prompt)
+    )
 }
 
-/// Build the legacy "Auto" prompt (backward compatible)
-fn build_auto_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
-    let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
-    let guardrails = fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
-    let progress = fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default();
-
+/// Build auto-mode prompt with optional coordination context
+fn build_auto_prompt(loop_dir: &Path, ctx: &PromptContext) -> String {
     // Get recent iteration context (last 5 iterations)
     let recent = super::activity::get_recent_progress_summary(loop_dir, 5).unwrap_or_default();
     let recent_section = if recent.is_empty() {
@@ -213,10 +213,15 @@ fn build_auto_prompt(loop_dir: &Path, state: &LoopState) -> Result<String> {
         )
     };
 
-    let prompt = format!(
+    let rules = AUTO_RULES.replace("{stop_word}", &ctx.stop_word);
+
+    format!(
         r#"# Rehoboam Loop - Iteration {iteration}
 
 You are in a Rehoboam loop. Each iteration starts fresh - make incremental progress.
+
+## Task List ID
+{task_list_id}
 
 {recent_section}{coordination_section}{workers_section}## Your Task (Anchor)
 {anchor}
@@ -227,34 +232,23 @@ You are in a Rehoboam loop. Each iteration starts fresh - make incremental progr
 ## Progress So Far
 {progress}
 
-## Instructions for This Iteration
-1. Read the anchor to understand your task
-2. Check guardrails before taking actions
-3. Check coordination section for discoveries from other workers
-4. Continue from where progress.md left off
-5. Update progress.md with your work
-6. If you discover something useful for other workers, use broadcast
-7. If you hit a repeating problem, add a SIGN to guardrails.md
-8. When ALL criteria are met, write either:
-   - "{stop_word}" anywhere in progress.md, OR
-   - <promise>COMPLETE</promise> tag (more explicit)
-9. Exit when you've made progress (don't try to finish everything)
-
-Remember: Progress persists, failures evaporate. Make incremental progress.
-Git commits are created between iterations for easy rollback.
+{rules}
 "#,
-        iteration = state.iteration + 1, // Display as 1-indexed
+        iteration = ctx.iteration,
+        task_list_id = ctx.task_list_id,
         recent_section = recent_section,
         coordination_section = coordination_section,
         workers_section = workers_section,
-        anchor = anchor,
-        guardrails = guardrails,
-        progress = progress,
-        stop_word = state.stop_word,
-    );
-
-    Ok(prompt)
+        anchor = ctx.anchor,
+        guardrails = ctx.guardrails,
+        progress = ctx.progress,
+        rules = rules,
+    )
 }
+
+// =============================================================================
+// Public API
+// =============================================================================
 
 /// Build the iteration prompt that includes state files
 ///
@@ -264,15 +258,16 @@ Git commits are created between iterations for easy rollback.
 /// - Any guardrails
 /// - Progress so far
 ///
-/// Dispatches to role-specific prompts based on state.role
+/// Uses unified template system with role-specific sections.
 pub fn build_iteration_prompt(loop_dir: &Path) -> Result<String> {
     let state = load_state(loop_dir)?;
+    let ctx = PromptContext::load(loop_dir, &state)?;
 
-    // Dispatch to role-specific prompts
+    // Dispatch to role-specific prompts using shared context
     let prompt = match state.role {
-        LoopRole::Planner => build_planner_prompt(loop_dir, &state)?,
-        LoopRole::Worker => build_worker_prompt(loop_dir, &state)?,
-        LoopRole::Auto => build_auto_prompt(loop_dir, &state)?,
+        LoopRole::Planner => build_planner_prompt(&ctx),
+        LoopRole::Worker => build_worker_prompt(&ctx),
+        LoopRole::Auto => build_auto_prompt(loop_dir, &ctx),
     };
 
     // Write to a temp file for claude stdin piping
@@ -281,8 +276,7 @@ pub fn build_iteration_prompt(loop_dir: &Path) -> Result<String> {
 
     debug!(
         "Built {} iteration prompt for iteration {}",
-        state.role,
-        state.iteration + 1
+        state.role, ctx.iteration
     );
     Ok(prompt_file.to_string_lossy().to_string())
 }
@@ -296,19 +290,28 @@ pub fn build_loop_context(loop_dir: &Path) -> Result<String> {
     let anchor = std::fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
     let progress = std::fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default();
     let guardrails = std::fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
-    let tasks = std::fs::read_to_string(loop_dir.join("tasks.md")).unwrap_or_default();
+
+    // Get task list ID if set
+    let task_list_id = std::env::var("CLAUDE_CODE_TASK_LIST_ID").unwrap_or_default();
 
     // Build context based on role
     let role_context = match state.role {
-        LoopRole::Planner => "You are a PLANNER. Explore and create tasks, do NOT implement.",
-        LoopRole::Worker => "You are a WORKER. Execute ONE assigned task, then exit.",
-        LoopRole::Auto => "You are in autonomous loop mode. Make incremental progress.",
+        LoopRole::Planner => {
+            "You are a PLANNER. Explore and create tasks with TaskCreate, do NOT implement."
+        }
+        LoopRole::Worker => {
+            "You are a WORKER. Use TaskList to find tasks, claim with TaskUpdate, then execute."
+        }
+        LoopRole::Auto => {
+            "You are in autonomous loop mode. Use TaskCreate/TaskUpdate to track progress."
+        }
     };
 
     Ok(format!(
         r"## Rehoboam Loop Context
 
 **Iteration:** {}/{} | **Role:** {} | **Stop Word:** {}
+**Task List ID:** {}
 
 {}
 
@@ -318,20 +321,19 @@ pub fn build_loop_context(loop_dir: &Path) -> Result<String> {
 ### Progress (progress.md)
 {}
 
-### Tasks Queue (tasks.md)
-{}
-
 ### Guardrails
 {}
+
+Use `TaskList` to see current tasks. Use `TaskCreate`/`TaskUpdate` to manage tasks.
 ",
         state.iteration + 1,
         state.max_iterations,
         state.role,
         state.stop_word,
+        task_list_id,
         role_context,
         anchor.trim(),
         progress.trim(),
-        tasks.trim(),
         guardrails.trim()
     ))
 }

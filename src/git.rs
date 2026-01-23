@@ -142,15 +142,13 @@ impl GitController {
         }
 
         // Create worktree with new branch
+        let worktree_str = worktree_path
+            .to_str()
+            .ok_or_else(|| color_eyre::eyre::eyre!("Worktree path contains invalid UTF-8"))?;
+
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args([
-                "worktree",
-                "add",
-                worktree_path.to_str().unwrap(),
-                "-b",
-                branch,
-            ])
+            .args(["worktree", "add", worktree_str, "-b", branch])
             .output()
             .wrap_err("Failed to execute git worktree add")?;
 

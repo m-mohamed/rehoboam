@@ -278,6 +278,16 @@ pub struct Agent {
     pub cwd: Option<String>,
     /// Transcript path for linking to conversation
     pub transcript_path: Option<String>,
+
+    // Claude Code Tasks API integration (v2.2)
+    /// Last task tool used (TaskCreate, TaskUpdate, TaskList, TaskGet)
+    pub last_task_tool: Option<String>,
+    /// Current task subject being worked on
+    pub current_task_subject: Option<String>,
+    /// Current task ID if claimed (for Workers)
+    pub current_task_id: Option<String>,
+    /// Task list ID for multi-agent coordination (CLAUDE_CODE_TASK_LIST_ID)
+    pub task_list_id: Option<String>,
 }
 
 impl Agent {
@@ -332,6 +342,11 @@ impl Agent {
             permission_mode: None,
             cwd: None,
             transcript_path: None,
+            // Claude Code Tasks API integration (v2.2)
+            last_task_tool: None,
+            current_task_subject: None,
+            current_task_id: None,
+            task_list_id: None,
         }
     }
 
@@ -460,11 +475,22 @@ impl Agent {
         "ReadMcpResourceTool",
         "Task",
         "TodoRead",
+        // Claude Code Tasks API (read operations)
+        "TaskList",
+        "TaskGet",
     ];
 
     /// Mutation tools (used for Worker role detection)
-    const MUTATION_TOOLS: &'static [&'static str] =
-        &["Edit", "Write", "Bash", "NotebookEdit", "TodoWrite"];
+    const MUTATION_TOOLS: &'static [&'static str] = &[
+        "Edit",
+        "Write",
+        "Bash",
+        "NotebookEdit",
+        "TodoWrite",
+        // Claude Code Tasks API (write operations)
+        "TaskCreate",
+        "TaskUpdate",
+    ];
 
     /// Record a tool call and update role inference
     ///
