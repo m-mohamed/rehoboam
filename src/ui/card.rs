@@ -6,7 +6,7 @@
 //! - Current tool or last latency
 //! - Elapsed time (dim)
 
-use crate::config::colors;
+use crate::config::{colors, styles};
 use crate::state::{Agent, LoopMode};
 use ratatui::{
     layout::Rect,
@@ -83,7 +83,7 @@ pub fn render_agent_card(
             role_badge,
             mode_indicator
         ))
-        .style(Style::default().fg(colors::FG).add_modifier(Modifier::BOLD)),
+        .style(styles::HEADER),
     ];
 
     // Line 2: Loop mode indicator OR task info OR subagent count OR tool display
@@ -91,22 +91,15 @@ pub fn render_agent_card(
         LoopMode::Active => {
             content.push(
                 Line::from(format!("Loop {}/{}", agent.loop_iteration, agent.loop_max))
-                    .style(Style::default().fg(colors::WORKING)),
+                    .style(styles::WORKING),
             );
         }
         LoopMode::Stalled => {
-            content.push(
-                Line::from("STALLED (X/R)").style(
-                    Style::default()
-                        .fg(colors::ATTENTION)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            );
+            content.push(Line::from("STALLED (X/R)").style(styles::ATTENTION_BOLD));
         }
         LoopMode::Complete => {
             content.push(
-                Line::from(format!("DONE at {}", agent.loop_iteration))
-                    .style(Style::default().fg(colors::IDLE)),
+                Line::from(format!("DONE at {}", agent.loop_iteration)).style(styles::IDLE),
             );
         }
         LoopMode::None => {
@@ -117,11 +110,11 @@ pub fn render_agent_card(
                     "📋 {}",
                     truncate(task_subject, area.width.saturating_sub(6) as usize)
                 );
-                content.push(Line::from(task_display).style(Style::default().fg(colors::WORKING)));
+                content.push(Line::from(task_display).style(styles::WORKING));
             } else if let Some(ref task_id) = agent.current_task_id {
                 // Show task ID if no subject available
                 let task_display = format!("📋 Task #{}", task_id);
-                content.push(Line::from(task_display).style(Style::default().fg(colors::WORKING)));
+                content.push(Line::from(task_display).style(styles::WORKING));
             } else if !agent.subagents.is_empty() {
                 // Show subagent info if any
                 let running: Vec<_> = agent
@@ -173,11 +166,9 @@ pub fn render_agent_card(
                 } else {
                     format!("{} done", agent.subagents.len())
                 };
-                content.push(Line::from(display).style(Style::default().fg(colors::WORKING)));
+                content.push(Line::from(display).style(styles::WORKING));
             } else {
-                content.push(
-                    Line::from(agent.tool_display()).style(Style::default().fg(colors::IDLE)),
-                );
+                content.push(Line::from(agent.tool_display()).style(styles::IDLE));
             }
         }
     }
@@ -200,9 +191,9 @@ pub fn render_agent_card(
 
         // Build context line with spans
         let mut spans = vec![
-            Span::styled("[", Style::default().fg(colors::IDLE)),
+            Span::styled("[", styles::IDLE),
             Span::styled(bar, Style::default().fg(bar_color)),
-            Span::styled("]", Style::default().fg(colors::IDLE)),
+            Span::styled("]", styles::IDLE),
             Span::raw(format!(" {:.0}%", pct)),
         ];
         if !label.is_empty() {
@@ -230,29 +221,13 @@ pub fn render_agent_card(
                     role_badge,
                     truncate(&subagent.description, area.width.saturating_sub(8) as usize)
                 ))
-                .style(
-                    Style::default()
-                        .fg(colors::IDLE)
-                        .add_modifier(Modifier::DIM),
-                ),
+                .style(styles::DIM),
             );
         } else {
-            content.push(
-                Line::from(agent.elapsed_display()).style(
-                    Style::default()
-                        .fg(colors::IDLE)
-                        .add_modifier(Modifier::DIM),
-                ),
-            );
+            content.push(Line::from(agent.elapsed_display()).style(styles::DIM));
         }
     } else {
-        content.push(
-            Line::from(agent.elapsed_display()).style(
-                Style::default()
-                    .fg(colors::IDLE)
-                    .add_modifier(Modifier::DIM),
-            ),
-        );
+        content.push(Line::from(agent.elapsed_display()).style(styles::DIM));
     }
 
     let paragraph = Paragraph::new(content).block(block);

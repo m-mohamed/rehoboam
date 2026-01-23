@@ -8,7 +8,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
+
+/// Maximum file size for loop state files (10MB)
+/// Prevents memory exhaustion from corrupted or malicious files.
+const MAX_STATE_FILE_SIZE: u64 = 10 * 1024 * 1024;
+
+/// Maximum error patterns to track in state.json
+/// Prevents unbounded HashMap growth.
+const MAX_ERROR_PATTERNS: usize = 100;
 
 /// Rehoboam loop state persisted to state.json
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -266,11 +274,37 @@ pub fn load_state(loop_dir: &Path) -> Result<LoopState> {
 }
 
 /// Save Rehoboam state to directory
+///
+/// Trims error_counts to MAX_ERROR_PATTERNS before saving.
 pub fn save_state(loop_dir: &Path, state: &LoopState) -> Result<()> {
     let state_path = loop_dir.join("state.json");
-    let content = serde_json::to_string_pretty(state)?;
+
+    // Clone and trim error_counts if needed (security)
+    let mut state_to_save = state.clone();
+    trim_error_counts(&mut state_to_save.error_counts);
+
+    let content = serde_json::to_string_pretty(&state_to_save)?;
     fs::write(state_path, content)?;
     Ok(())
+}
+
+/// Trim error_counts to MAX_ERROR_PATTERNS entries
+///
+/// Keeps the entries with highest counts to preserve the most relevant patterns.
+fn trim_error_counts(counts: &mut HashMap<String, u32>) {
+    if counts.len() > MAX_ERROR_PATTERNS {
+        warn!(
+            count = counts.len(),
+            max = MAX_ERROR_PATTERNS,
+            "Trimming error_counts to max entries"
+        );
+
+        // Keep only the top N by count
+        let mut entries: Vec<_> = counts.drain().collect();
+        entries.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by count descending
+        entries.truncate(MAX_ERROR_PATTERNS);
+        counts.extend(entries);
+    }
 }
 
 /// Find the Rehoboam loop directory
@@ -360,9 +394,21 @@ pub fn check_max_iterations(loop_dir: &Path) -> Result<bool> {
 }
 
 /// Helper to read file content with default for missing files
+///
+/// Enforces MAX_STATE_FILE_SIZE limit to prevent memory exhaustion.
 pub fn read_file_content(loop_dir: &Path, filename: &str) -> Result<String> {
     let path = loop_dir.join(filename);
     if path.exists() {
+        // Check file size before reading (security)
+        let metadata = fs::metadata(&path)?;
+        if metadata.len() > MAX_STATE_FILE_SIZE {
+            return Err(eyre!(
+                "File '{}' exceeds max size ({} > {} bytes)",
+                filename,
+                metadata.len(),
+                MAX_STATE_FILE_SIZE
+            ));
+        }
         Ok(fs::read_to_string(path)?)
     } else {
         Ok(String::new())

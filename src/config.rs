@@ -257,9 +257,10 @@ impl RehoboamConfig {
         }
 
         match std::fs::read_to_string(&path) {
-            Ok(content) => match toml::from_str(&content) {
-                Ok(config) => {
+            Ok(content) => match toml::from_str::<Self>(&content) {
+                Ok(mut config) => {
                     tracing::info!("Loaded configuration from {:?}", path);
+                    config.validate();
                     config
                 }
                 Err(e) => {
@@ -271,6 +272,61 @@ impl RehoboamConfig {
                 tracing::warn!("Failed to read config file: {}, using defaults", e);
                 Self::default()
             }
+        }
+    }
+
+    /// Validate and clamp config values to reasonable ranges
+    ///
+    /// This prevents invalid config from causing issues at runtime.
+    fn validate(&mut self) {
+        // Clamp timeouts to reasonable ranges (5s - 1hr for idle, 1min - 1day for stale)
+        let old_idle = self.timeouts.idle_timeout_secs;
+        let old_stale = self.timeouts.stale_timeout_secs;
+        self.timeouts.idle_timeout_secs = self.timeouts.idle_timeout_secs.clamp(5, 3600);
+        self.timeouts.stale_timeout_secs = self.timeouts.stale_timeout_secs.clamp(60, 86400);
+        if old_idle != self.timeouts.idle_timeout_secs
+            || old_stale != self.timeouts.stale_timeout_secs
+        {
+            tracing::warn!(
+                "Timeout values clamped: idle {}->{}s, stale {}->{}s",
+                old_idle,
+                self.timeouts.idle_timeout_secs,
+                old_stale,
+                self.timeouts.stale_timeout_secs
+            );
+        }
+
+        // Clamp reconciliation interval (1s - 60s)
+        let old_interval = self.reconciliation.interval_secs;
+        let old_uncertain = self.reconciliation.uncertain_threshold_secs;
+        self.reconciliation.interval_secs = self.reconciliation.interval_secs.clamp(1, 60);
+        self.reconciliation.uncertain_threshold_secs =
+            self.reconciliation.uncertain_threshold_secs.clamp(1, 300);
+        if old_interval != self.reconciliation.interval_secs
+            || old_uncertain != self.reconciliation.uncertain_threshold_secs
+        {
+            tracing::warn!(
+                "Reconciliation values clamped: interval {}->{}s, uncertain {}->{}s",
+                old_interval,
+                self.reconciliation.interval_secs,
+                old_uncertain,
+                self.reconciliation.uncertain_threshold_secs
+            );
+        }
+
+        // Clamp sprite resources (512MB - 16GB RAM, 1-8 CPUs)
+        let old_ram = self.sprites.default_ram_mb;
+        let old_cpus = self.sprites.default_cpus;
+        self.sprites.default_ram_mb = self.sprites.default_ram_mb.clamp(512, 16384);
+        self.sprites.default_cpus = self.sprites.default_cpus.clamp(1, 8);
+        if old_ram != self.sprites.default_ram_mb || old_cpus != self.sprites.default_cpus {
+            tracing::warn!(
+                "Sprite values clamped: ram {}->{}MB, cpus {}->{}",
+                old_ram,
+                self.sprites.default_ram_mb,
+                old_cpus,
+                self.sprites.default_cpus
+            );
         }
     }
 }
@@ -289,4 +345,43 @@ pub mod colors {
     pub const COMPACTING: Color = Color::Rgb(224, 175, 104); // #e0af68 yellow
     pub const BORDER: Color = Color::Rgb(59, 66, 97); // #3b4261
     pub const HIGHLIGHT: Color = Color::Rgb(187, 154, 247); // #bb9af7 purple
+}
+
+/// Pre-built styles for common UI patterns
+///
+/// Using const styles avoids rebuilding Style objects on every frame.
+#[allow(dead_code)]
+pub mod styles {
+    use super::colors;
+    use ratatui::style::{Modifier, Style};
+
+    /// Bold foreground text (headers, titles)
+    pub const HEADER: Style = Style::new().fg(colors::FG).add_modifier(Modifier::BOLD);
+
+    /// Dim text (timestamps, secondary info)
+    pub const DIM: Style = Style::new()
+        .fg(colors::IDLE)
+        .add_modifier(Modifier::DIM);
+
+    /// Highlighted/selected items
+    pub const HIGHLIGHT: Style = Style::new()
+        .fg(colors::HIGHLIGHT)
+        .add_modifier(Modifier::BOLD);
+
+    /// Working status
+    pub const WORKING: Style = Style::new().fg(colors::WORKING);
+
+    /// Attention status
+    pub const ATTENTION: Style = Style::new().fg(colors::ATTENTION);
+
+    /// Attention status (bold)
+    pub const ATTENTION_BOLD: Style = Style::new()
+        .fg(colors::ATTENTION)
+        .add_modifier(Modifier::BOLD);
+
+    /// Idle/completed status
+    pub const IDLE: Style = Style::new().fg(colors::IDLE);
+
+    /// Compacting status
+    pub const COMPACTING: Style = Style::new().fg(colors::COMPACTING);
 }

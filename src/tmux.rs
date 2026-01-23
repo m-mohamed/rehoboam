@@ -16,6 +16,21 @@ use std::process::{Command, Stdio};
 
 use color_eyre::eyre::{bail, Result, WrapErr};
 
+/// Allowed environment variable names for Claude spawning (security allowlist)
+///
+/// Only these variables can be passed to spawned Claude sessions.
+/// This prevents shell injection via malicious variable names.
+const ALLOWED_ENV_VARS: &[&str] = &[
+    "CLAUDE_CODE_TASK_LIST_ID",
+    "REHOBOAM_ROLE",
+    "REHOBOAM_WORKER_INDEX",
+];
+
+/// Validate environment variable name against allowlist
+fn is_allowed_env_var(name: &str) -> bool {
+    ALLOWED_ENV_VARS.contains(&name)
+}
+
 /// Type of prompt detected in pane output via reconciliation
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PromptType {
@@ -463,16 +478,30 @@ impl TmuxController {
     /// # Arguments
     /// * `cwd` - Working directory for the new pane
     /// * `prompt_file` - Path to the iteration prompt file
-    /// * `env_vars` - Environment variables to set (name=value pairs)
+    /// * `env_vars` - Environment variables to set (name=value pairs, must be in ALLOWED_ENV_VARS)
     ///
     /// # Returns
     /// The pane ID of the newly created pane
+    ///
+    /// # Errors
+    /// Returns an error if any env var name is not in the allowlist.
     #[allow(dead_code)] // Will be used for worker pool task_list_id propagation
     pub fn respawn_claude_with_env(
         cwd: &str,
         prompt_file: &str,
         env_vars: &[(&str, &str)],
     ) -> Result<String> {
+        // Validate env var names against allowlist (security)
+        for (name, _) in env_vars {
+            if !is_allowed_env_var(name) {
+                bail!(
+                    "Environment variable '{}' not in allowlist. Allowed: {:?}",
+                    name,
+                    ALLOWED_ENV_VARS
+                );
+            }
+        }
+
         let escaped_path = prompt_file.replace('\'', "'\\''");
 
         // Build env prefix: export VAR1=val1; export VAR2=val2; ...
@@ -527,10 +556,13 @@ impl TmuxController {
     /// # Arguments
     /// * `horizontal` - true for horizontal split
     /// * `cwd` - Working directory for the new pane
-    /// * `env_vars` - Environment variables to set
+    /// * `env_vars` - Environment variables to set (must be in ALLOWED_ENV_VARS)
     ///
     /// # Returns
     /// The pane ID of the newly created pane
+    ///
+    /// # Errors
+    /// Returns an error if any env var name is not in the allowlist.
     pub fn split_pane_with_env(
         horizontal: bool,
         cwd: &str,
@@ -541,6 +573,17 @@ impl TmuxController {
         // If no env vars, use simple split
         if env_vars.is_empty() {
             return Self::split_pane(horizontal, cwd);
+        }
+
+        // Validate env var names against allowlist (security)
+        for (name, _) in env_vars {
+            if !is_allowed_env_var(name) {
+                bail!(
+                    "Environment variable '{}' not in allowlist. Allowed: {:?}",
+                    name,
+                    ALLOWED_ENV_VARS
+                );
+            }
         }
 
         // Build env prefix for the shell command

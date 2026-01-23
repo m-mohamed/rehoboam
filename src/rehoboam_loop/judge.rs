@@ -243,44 +243,76 @@ pub fn judge_completion(loop_dir: &Path) -> Result<(JudgeDecision, f64, String)>
     judge_with_claude(loop_dir)
 }
 
+/// Judge timeout in seconds (default to Continue if exceeded)
+const JUDGE_TIMEOUT_SECS: u64 = 15;
+
 /// Spawn Claude Code for Judge evaluation (fallback)
 ///
 /// Only called when heuristics don't provide a clear answer.
+/// Uses a timeout to prevent indefinite hangs.
 fn judge_with_claude(loop_dir: &Path) -> Result<(JudgeDecision, f64, String)> {
+    use std::time::{Duration, Instant};
+
     let prompt = build_judge_prompt(loop_dir)?;
 
     debug!(prompt_len = prompt.len(), "Running Judge via Claude Code");
 
-    // Run Claude Code with -p flag for non-interactive execution
-    let output = Command::new("claude")
+    // Spawn process (don't wait yet)
+    let mut child = Command::new("claude")
         .arg("-p")
         .arg(&prompt)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
+        .spawn()
         .map_err(|e| eyre!("Failed to spawn claude for Judge: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // If Claude fails, default to Continue rather than error
-        warn!(
-            stderr = %stderr.trim(),
-            "Claude Judge failed, defaulting to Continue"
-        );
-        return Ok((
-            JudgeDecision::Continue,
-            0.5,
-            "Claude error, defaulting to continue".to_string(),
-        ));
+    // Wait with timeout
+    let start = Instant::now();
+    let timeout = Duration::from_secs(JUDGE_TIMEOUT_SECS);
+
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                // Process completed
+                let output = child.wait_with_output()?;
+                if !status.success() {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    warn!(stderr = %stderr.trim(), "Claude Judge failed, defaulting to Continue");
+                    return Ok((
+                        JudgeDecision::Continue,
+                        0.5,
+                        "Claude error, defaulting to continue".to_string(),
+                    ));
+                }
+                let response = String::from_utf8_lossy(&output.stdout);
+                debug!(response = %response.trim(), "Judge response");
+
+                let decision = parse_judge_response(&response)?;
+                let explanation = format!("Claude: {:?}", decision);
+
+                info!(decision = ?decision, "Judge evaluation complete (Claude)");
+                return Ok((decision, 0.9, explanation));
+            }
+            Ok(None) => {
+                // Still running, check timeout
+                if start.elapsed() > timeout {
+                    warn!(
+                        timeout_secs = JUDGE_TIMEOUT_SECS,
+                        "Judge timed out, killing process and defaulting to Continue"
+                    );
+                    let _ = child.kill();
+                    return Ok((
+                        JudgeDecision::Continue,
+                        0.5,
+                        format!("Judge timed out after {}s", JUDGE_TIMEOUT_SECS),
+                    ));
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => {
+                return Err(eyre!("Error waiting for Judge process: {}", e));
+            }
+        }
     }
-
-    let response = String::from_utf8_lossy(&output.stdout);
-    debug!(response = %response.trim(), "Judge response");
-
-    let decision = parse_judge_response(&response)?;
-    let explanation = format!("Claude: {:?}", decision);
-
-    info!(decision = ?decision, "Judge evaluation complete (Claude)");
-    Ok((decision, 0.9, explanation))
 }

@@ -216,9 +216,20 @@ async fn handle_hook(
     use tokio::time::{timeout, Duration};
 
     // Read JSON from stdin (Claude Code pipes it)
+    // Limit to 1MB to prevent memory exhaustion from malformed input
+    const MAX_STDIN_SIZE: usize = 1_048_576; // 1MB
+
     let stdin = io::stdin();
     let mut input = String::new();
     for line in stdin.lock().lines().map_while(Result::ok) {
+        if input.len() + line.len() > MAX_STDIN_SIZE {
+            tracing::warn!(
+                size = input.len(),
+                max = MAX_STDIN_SIZE,
+                "Hook input exceeded size limit, truncating"
+            );
+            break;
+        }
         input.push_str(&line);
     }
 

@@ -10,7 +10,12 @@ use crate::rehoboam_loop;
 use crate::state::loop_handling::spawn_fresh_rehoboam_session;
 use crate::tmux::TmuxController;
 use crate::{notify, telemetry};
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Guard against concurrent respawns for the same pane
+static RESPAWN_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
 /// v1.3: Infer agent role from subagent description keywords
 ///
@@ -574,6 +579,22 @@ impl AppState {
                     );
                 }
 
+                // Kill stalled pane to prevent orphaned sessions
+                if pane_id.starts_with('%') {
+                    // Send Ctrl+C first for clean shutdown
+                    let _ = TmuxController::send_interrupt(&pane_id);
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    if let Err(e) = TmuxController::kill_pane(&pane_id) {
+                        tracing::warn!(
+                            pane_id = %pane_id,
+                            error = %e,
+                            "Failed to kill stalled pane"
+                        );
+                    } else {
+                        tracing::info!(pane_id = %pane_id, "Killed stalled loop pane");
+                    }
+                }
+
                 tracing::warn!(
                     pane_id = %pane_id,
                     iteration = agent.loop_iteration,
@@ -582,7 +603,7 @@ impl AppState {
                 );
                 notify::send(
                     "Loop Stalled",
-                    &format!("{}: {}", agent.project, reason_str),
+                    &format!("{}: {} (pane killed)", agent.project, reason_str),
                     Some("Basso"),
                 );
             } else {
@@ -723,6 +744,18 @@ impl AppState {
                     // Clone loop_dir to avoid borrow conflict with mutable agent
                     let loop_dir_clone = agent.loop_dir.clone();
                     if let Some(loop_dir) = loop_dir_clone {
+                        // Acquire respawn lock to prevent concurrent spawns
+                        let _guard = match RESPAWN_LOCK.try_lock() {
+                            Ok(guard) => guard,
+                            Err(_) => {
+                                tracing::debug!(
+                                    pane_id = %pane_id,
+                                    "Respawn already in progress, skipping"
+                                );
+                                return true; // Don't error, just skip
+                            }
+                        };
+
                         // Proper Rehoboam loop: spawn fresh session
                         match spawn_fresh_rehoboam_session(&pane_id, &loop_dir, agent) {
                             Ok(new_pane_id) => {
