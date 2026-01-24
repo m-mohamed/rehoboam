@@ -98,9 +98,8 @@ pub fn render_agent_card(
             content.push(Line::from("STALLED (X/R)").style(styles::ATTENTION_BOLD));
         }
         LoopMode::Complete => {
-            content.push(
-                Line::from(format!("DONE at {}", agent.loop_iteration)).style(styles::IDLE),
-            );
+            content
+                .push(Line::from(format!("DONE at {}", agent.loop_iteration)).style(styles::IDLE));
         }
         LoopMode::None => {
             // v2.2: Show current task info if working on a Claude Code Task

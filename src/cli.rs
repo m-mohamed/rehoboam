@@ -86,14 +86,6 @@ pub enum Commands {
         /// Disable desktop notifications (notifications are ON by default)
         #[arg(long, default_value_t = false)]
         no_notify: bool,
-
-        /// Output additionalContext for loop mode (Claude Code 2.1.x)
-        ///
-        /// When enabled and .rehoboam/ directory exists, outputs JSON with
-        /// additionalContext field that Claude Code injects into the conversation.
-        /// Only applies to PreToolUse and PostToolUse hooks.
-        #[arg(long, default_value_t = false)]
-        inject_context: bool,
     },
 
     /// Install Claude Code hooks to a project

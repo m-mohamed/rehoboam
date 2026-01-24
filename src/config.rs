@@ -320,9 +320,7 @@ pub mod styles {
     pub const HEADER: Style = Style::new().fg(colors::FG).add_modifier(Modifier::BOLD);
 
     /// Dim text (timestamps, secondary info)
-    pub const DIM: Style = Style::new()
-        .fg(colors::IDLE)
-        .add_modifier(Modifier::DIM);
+    pub const DIM: Style = Style::new().fg(colors::IDLE).add_modifier(Modifier::DIM);
 
     /// Highlighted/selected items
     #[allow(dead_code)] // API consistency: available for future UI components

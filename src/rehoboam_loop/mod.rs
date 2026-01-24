@@ -32,7 +32,6 @@ pub use state::{
 // Re-export judge types and functions
 pub use judge::{judge_completion, JudgeDecision};
 
-
 // Re-export activity logging
 pub use activity::{
     check_completion, get_iteration_duration, log_activity, log_session_transition,
@@ -101,19 +100,6 @@ pub fn build_iteration_prompt(loop_dir: &Path) -> Result<String> {
 
     Ok(prompt_file.to_string_lossy().to_string())
 }
-
-/// Check if the Planner has completed planning
-///
-/// Returns true if progress.md contains "PLANNING COMPLETE" (case-insensitive)
-pub fn is_planning_complete(loop_dir: &Path) -> bool {
-    let progress = loop_dir.join("progress.md");
-    if let Ok(content) = fs::read_to_string(&progress) {
-        content.to_uppercase().contains("PLANNING COMPLETE")
-    } else {
-        false
-    }
-}
-
 
 #[cfg(test)]
 mod tests {

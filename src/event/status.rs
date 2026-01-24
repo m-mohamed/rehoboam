@@ -40,6 +40,7 @@ pub fn derive_status_from_event(hook_name: &str) -> (&'static str, Option<&'stat
 
         // COMPACTING: Context maintenance
         "PreCompact" => ("compacting", None),
+        "PostCompact" => ("compacting", None),
 
         // Unknown hooks default to attention(waiting) (conservative)
         _ => ("attention", Some("waiting")),
@@ -101,10 +102,12 @@ mod tests {
     }
 
     #[test]
-    fn test_compacting_event() {
-        let (status, attention) = derive_status_from_event("PreCompact");
-        assert_eq!(status, "compacting");
-        assert!(attention.is_none());
+    fn test_compacting_events() {
+        for event in ["PreCompact", "PostCompact"] {
+            let (status, attention) = derive_status_from_event(event);
+            assert_eq!(status, "compacting", "event: {}", event);
+            assert!(attention.is_none(), "event: {}", event);
+        }
     }
 
     #[test]

@@ -286,7 +286,9 @@ impl AppState {
         let flat: Vec<(usize, usize)> = columns
             .iter()
             .enumerate()
-            .flat_map(|(col_idx, agents)| (0..agents.len()).map(move |card_idx| (col_idx, card_idx)))
+            .flat_map(|(col_idx, agents)| {
+                (0..agents.len()).map(move |card_idx| (col_idx, card_idx))
+            })
             .collect();
 
         if flat.is_empty() {
@@ -315,7 +317,9 @@ impl AppState {
         let flat: Vec<(usize, usize)> = columns
             .iter()
             .enumerate()
-            .flat_map(|(col_idx, agents)| (0..agents.len()).map(move |card_idx| (col_idx, card_idx)))
+            .flat_map(|(col_idx, agents)| {
+                (0..agents.len()).map(move |card_idx| (col_idx, card_idx))
+            })
             .collect();
 
         if flat.is_empty() {
@@ -568,6 +572,7 @@ mod tests {
             team_agent_id: None,
             team_agent_name: None,
             team_agent_type: None,
+            claude_code_version: None,
         }
     }
 

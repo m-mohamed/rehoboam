@@ -204,11 +204,7 @@ async fn handle_sprites_command(action: SpritesAction, token: Option<String>) ->
 /// Silently succeeds if:
 /// - No stdin input (empty hook call)
 /// - Socket unavailable (TUI not running)
-async fn handle_hook(
-    socket_path: &PathBuf,
-    should_notify: bool,
-    inject_context: bool,
-) -> Result<()> {
+async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     use std::io::{self, BufRead};
     use tokio::io::AsyncWriteExt;
     use tokio::net::UnixStream as TokioUnixStream;
@@ -252,9 +248,8 @@ async fn handle_hook(
     // NOTE: Auto-permission evaluation removed - TeammateTool handles permissions
     // via Claude Code's native permission system and approvePlan/rejectPlan
 
-    // NOTE: Context injection removed - TeammateTool manages agent context
-    // The inject_context flag is now a no-op but kept for backward compatibility
-    let _ = inject_context;
+    // Capture CLAUDE_CODE_VERSION for version-specific features
+    let claude_code_version = std::env::var("CLAUDE_CODE_VERSION").ok();
 
     // Get pane ID from terminal-specific env vars, fall back to session_id
     // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
@@ -330,6 +325,8 @@ async fn handle_hook(
         team_agent_id,
         team_agent_name,
         team_agent_type,
+        // CLAUDE_CODE_VERSION env var
+        claude_code_version,
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -437,13 +434,10 @@ async fn main() -> Result<()> {
 
     // Handle subcommands
     match cli.command {
-        Some(Commands::Hook {
-            no_notify,
-            inject_context,
-        }) => {
+        Some(Commands::Hook { no_notify }) => {
             // Hook mode: read stdin JSON, enrich with context, send to TUI
             // Notifications are ON by default, use --no-notify to disable
-            return handle_hook(&cli.socket, !no_notify, inject_context).await;
+            return handle_hook(&cli.socket, !no_notify).await;
         }
         Some(Commands::Init {
             path,
@@ -606,6 +600,8 @@ async fn main() -> Result<()> {
                     team_agent_id: None,
                     team_agent_name: None,
                     team_agent_type: None,
+                    // Version tracking - not yet available from sprites
+                    claude_code_version: None,
                 };
 
                 // Send as RemoteHook event

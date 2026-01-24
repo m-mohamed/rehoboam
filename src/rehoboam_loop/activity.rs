@@ -226,29 +226,3 @@ fn add_guardrail(loop_dir: &Path, sign: &str, trigger: &str, instruction: &str) 
     info!("Added guardrail: {}", sign);
     Ok(())
 }
-
-/// Get summary of recent iteration outcomes for context injection
-///
-/// Returns the last N entries from activity.log formatted for inclusion
-/// in the iteration prompt. This helps Claude understand recent progress.
-pub fn get_recent_progress_summary(loop_dir: &Path, count: usize) -> Result<String> {
-    let activity_path = loop_dir.join("activity.log");
-
-    if !activity_path.exists() {
-        return Ok(String::new());
-    }
-
-    let content = fs::read_to_string(&activity_path)?;
-    let lines: Vec<&str> = content.lines().rev().take(count).collect();
-
-    if lines.is_empty() {
-        return Ok(String::new());
-    }
-
-    let mut summary = String::from("Recent iteration outcomes:\n");
-    for line in lines.iter().rev() {
-        summary.push_str(&format!("  {}\n", line));
-    }
-
-    Ok(summary)
-}

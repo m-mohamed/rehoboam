@@ -373,14 +373,16 @@ impl App {
                 8 => self.spawn_state.task_list_id.push(' '),
                 _ => {}
             },
-            KeyCode::Left => match self.spawn_state.active_field {
-                10 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
-                _ => {}
-            },
-            KeyCode::Right => match self.spawn_state.active_field {
-                10 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
-                _ => {}
-            },
+            KeyCode::Left => {
+                if self.spawn_state.active_field == 10 {
+                    self.spawn_state.network_preset = self.spawn_state.network_preset.prev();
+                }
+            }
+            KeyCode::Right => {
+                if self.spawn_state.active_field == 10 {
+                    self.spawn_state.network_preset = self.spawn_state.network_preset.next();
+                }
+            }
             KeyCode::Backspace => match self.spawn_state.active_field {
                 0 => {
                     if self.spawn_state.use_sprite {

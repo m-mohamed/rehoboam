@@ -249,7 +249,6 @@ pub struct Agent {
     /// Recent tool names for role inference (last 10 tools)
     pub tool_history: VecDeque<String>,
 
-
     // v2.0 Per-agent file tracking (Phase 7)
     /// Files modified by this agent (tracked from Edit/Write tool_input)
     pub modified_files: HashSet<PathBuf>,
@@ -291,6 +290,10 @@ pub struct Agent {
     pub team_agent_name: Option<String>,
     /// Agent type from CLAUDE_CODE_AGENT_TYPE env var (e.g., "planner", "worker")
     pub team_agent_type: Option<String>,
+
+    // Claude Code version tracking
+    /// Claude Code version from CLAUDE_CODE_VERSION env var
+    pub claude_code_version: Option<String>,
 }
 
 impl Agent {
@@ -351,6 +354,8 @@ impl Agent {
             team_agent_id: None,
             team_agent_name: None,
             team_agent_type: None,
+            // Claude Code version
+            claude_code_version: None,
         }
     }
 

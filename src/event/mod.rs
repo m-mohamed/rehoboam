@@ -172,6 +172,11 @@ pub struct HookEvent {
     /// Agent type from CLAUDE_CODE_AGENT_TYPE env var
     #[serde(default)]
     pub team_agent_type: Option<String>,
+
+    // Claude Code version tracking
+    /// Claude Code version from CLAUDE_CODE_VERSION env var
+    #[serde(default)]
+    pub claude_code_version: Option<String>,
 }
 
 impl HookEvent {
@@ -369,6 +374,7 @@ mod tests {
             team_agent_id: None,
             team_agent_name: None,
             team_agent_type: None,
+            claude_code_version: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -400,6 +406,7 @@ mod tests {
             team_agent_id: None,
             team_agent_name: None,
             team_agent_type: None,
+            claude_code_version: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -431,6 +438,7 @@ mod tests {
             team_agent_id: None,
             team_agent_name: None,
             team_agent_type: None,
+            claude_code_version: None,
         };
         assert_eq!(
             event.validate(),
@@ -466,6 +474,7 @@ mod tests {
                 team_agent_id: None,
                 team_agent_name: None,
                 team_agent_type: None,
+                claude_code_version: None,
             };
             assert!(
                 event.validate().is_ok(),

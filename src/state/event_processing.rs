@@ -6,10 +6,10 @@
 use super::{status_to_column, Agent, AgentRole, AppState, AttentionType, LoopMode, Status};
 use crate::config::{MAX_EVENTS, MAX_SPARKLINE_POINTS};
 use crate::event::{EventSource, HookEvent};
+use crate::notify;
 use crate::rehoboam_loop;
 use crate::state::loop_handling::spawn_fresh_rehoboam_session;
 use crate::tmux::TmuxController;
-use crate::notify;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -343,6 +343,11 @@ impl AppState {
         }
         if let Some(ref agent_type) = event.team_agent_type {
             agent.team_agent_type = Some(agent_type.clone());
+        }
+
+        // Claude Code version tracking
+        if let Some(ref version) = event.claude_code_version {
+            agent.claude_code_version = Some(version.clone());
         }
 
         // Track tool latency (v1.0) and role classification (v1.2)
