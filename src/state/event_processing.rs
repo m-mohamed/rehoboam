@@ -9,7 +9,7 @@ use crate::event::{EventSource, HookEvent};
 use crate::rehoboam_loop;
 use crate::state::loop_handling::spawn_fresh_rehoboam_session;
 use crate::tmux::TmuxController;
-use crate::{notify, telemetry};
+use crate::notify;
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -275,19 +275,13 @@ impl AppState {
                 agent.loop_stop_word = loop_config.stop_word.clone();
                 agent.loop_dir = loop_config.loop_dir.clone();
                 agent.working_dir = loop_config.working_dir.clone();
-                agent.loop_role = loop_config.role;
-                agent.auto_spawn_workers = loop_config.auto_spawn_workers;
-                agent.max_workers = loop_config.max_workers;
                 tracing::info!(
                     pane_id = %pane_id,
                     max = loop_config.max_iterations,
                     stop_word = %loop_config.stop_word,
                     loop_dir = ?loop_config.loop_dir,
                     working_dir = ?loop_config.working_dir,
-                    auto_spawn = loop_config.auto_spawn_workers,
-                    max_workers = loop_config.max_workers,
-                    role = ?loop_config.role,
-                    "Loop mode applied (Judge is automatic)"
+                    "Loop mode applied"
                 );
             }
 
@@ -337,6 +331,20 @@ impl AppState {
             agent.transcript_path = Some(transcript.clone());
         }
 
+        // TeammateTool env vars (v3.0) - display-only monitoring
+        if let Some(ref name) = event.team_name {
+            agent.team_name = Some(name.clone());
+        }
+        if let Some(ref id) = event.team_agent_id {
+            agent.team_agent_id = Some(id.clone());
+        }
+        if let Some(ref name) = event.team_agent_name {
+            agent.team_agent_name = Some(name.clone());
+        }
+        if let Some(ref agent_type) = event.team_agent_type {
+            agent.team_agent_type = Some(agent_type.clone());
+        }
+
         // Track tool latency (v1.0) and role classification (v1.2)
         match event.event.as_str() {
             "PreToolUse" => {
@@ -345,9 +353,6 @@ impl AppState {
 
                     // v1.2: Track tool for role inference
                     agent.record_tool(tool);
-
-                    // OTEL: Record tool call metric
-                    telemetry::metrics::record_tool_call();
 
                     // v2.0: Track modified files from Edit/Write tool_input
                     if matches!(tool.as_str(), "Edit" | "Write") {
@@ -436,11 +441,6 @@ impl AppState {
                 let tool_name = agent.current_tool.clone();
                 agent.end_tool(event.tool_use_id.as_deref(), event.timestamp);
                 if let Some(latency) = agent.last_latency_ms {
-                    // OTEL: Record tool latency metric
-                    if let Some(ref tool) = tool_name {
-                        telemetry::metrics::record_tool_latency(tool, latency);
-                    }
-
                     tracing::info!(
                         pane_id = %pane_id,
                         tool = ?tool_name,
@@ -517,9 +517,6 @@ impl AppState {
         // v0.9.0 Loop Mode: Handle Stop events for loop-enabled agents
         if event.event == "Stop" && agent.loop_mode == LoopMode::Active {
             agent.loop_iteration += 1;
-
-            // OTEL: Record iteration metric
-            telemetry::metrics::record_iteration();
 
             // Track stop reason for stall detection (keep last 5)
             if let Some(reason) = &event.reason {
@@ -642,80 +639,7 @@ impl AppState {
                                     confidence = confidence,
                                     "Continuing loop"
                                 );
-
-                                // Auto-spawn workers when Planner completes planning
-                                // Workers will use Claude Code Tasks API to claim tasks
-                                if agent.loop_role == rehoboam_loop::LoopRole::Planner
-                                    && agent.auto_spawn_workers
-                                    && rehoboam_loop::is_planning_complete(loop_dir)
-                                {
-                                    tracing::info!(
-                                        pane_id = %pane_id,
-                                        max_workers = agent.max_workers,
-                                        "Planning complete, auto-spawning workers (will claim tasks via TaskList)"
-                                    );
-
-                                    // Mark planner as complete
-                                    agent.loop_mode = LoopMode::Complete;
-
-                                    // Spawn workers - they will claim tasks via TaskList/TaskUpdate
-                                    let spawn_result =
-                                        crate::state::worker_pool::spawn_worker_pool_for_planner(
-                                            loop_dir,
-                                            agent.max_workers,
-                                        );
-
-                                    // Store worker info for registration after the borrow ends
-                                    let workers_to_register: Vec<_> = match spawn_result {
-                                        Ok(workers) => {
-                                            let count = workers.len();
-                                            tracing::info!(
-                                                spawned = count,
-                                                "Workers spawned successfully (will claim tasks via TaskList)"
-                                            );
-                                            notify::send(
-                                                "Workers Spawned",
-                                                &format!(
-                                                    "{}: {} workers spawned (claiming tasks via TaskList)",
-                                                    agent.project,
-                                                    count
-                                                ),
-                                                Some("Glass"),
-                                            );
-                                            workers
-                                        }
-                                        Err(e) => {
-                                            tracing::error!(
-                                                pane_id = %pane_id,
-                                                error = %e,
-                                                "Failed to spawn workers"
-                                            );
-                                            notify::send(
-                                                "Worker Spawn Failed",
-                                                &format!("{}: {}", agent.project, e),
-                                                Some("Basso"),
-                                            );
-                                            Vec::new()
-                                        }
-                                    };
-
-                                    // Register each worker's loop config
-                                    // (must be done after releasing the agent borrow)
-                                    for worker in workers_to_register {
-                                        self.register_loop_config(
-                                            &worker.pane_id,
-                                            10, // max_iterations for workers
-                                            "DONE",
-                                            Some(worker.worker_loop_dir),
-                                            Some(worker.worktree_path), // git worktree for worker
-                                            false, // workers don't auto-spawn more workers
-                                            0,
-                                            rehoboam_loop::LoopRole::Worker,
-                                        );
-                                    }
-
-                                    return false;
-                                }
+                                // NOTE: Auto-spawn workers removed - TeammateTool handles team spawning
                             }
                         },
                         Err(e) => {

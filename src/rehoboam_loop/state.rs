@@ -51,76 +51,10 @@ pub struct LoopState {
     #[serde(default)]
     pub last_commit: Option<String>,
 
-    /// Role for the agent (Planner, Worker, or Auto)
-    #[serde(default)]
-    pub role: LoopRole,
-
     /// Assigned task ID for Workers (Cursor isolation model)
     /// Workers only see their pre-assigned task, not shared tasks.md
     #[serde(default)]
     pub assigned_task: Option<String>,
-}
-
-// ============================================================================
-// Loop Role - Cursor-aligned behavioral patterns
-// ============================================================================
-
-/// Role for a loop agent (Cursor-aligned)
-///
-/// Different roles get different prompts and behaviors:
-/// - Planner: Explores, decomposes tasks, uses TaskCreate to add tasks
-/// - Worker: Uses TaskList to find tasks, TaskUpdate to claim/complete
-/// - Auto: General autonomous loop, uses TaskCreate/TaskUpdate as needed
-///
-/// **REQUIRES**: `CLAUDE_CODE_TASK_LIST_ID` environment variable for all roles.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub enum LoopRole {
-    /// Planner: Explores and creates tasks with TaskCreate (doesn't implement)
-    Planner,
-    /// Worker: Claims tasks via TaskUpdate, executes in isolation
-    Worker,
-    /// Auto: General autonomous loop with TaskCreate/TaskUpdate
-    #[default]
-    Auto,
-}
-
-impl std::fmt::Display for LoopRole {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            LoopRole::Planner => write!(f, "Planner"),
-            LoopRole::Worker => write!(f, "Worker"),
-            LoopRole::Auto => write!(f, "Auto"),
-        }
-    }
-}
-
-impl LoopRole {
-    /// Cycle to next role
-    pub fn next(self) -> Self {
-        match self {
-            LoopRole::Auto => LoopRole::Planner,
-            LoopRole::Planner => LoopRole::Worker,
-            LoopRole::Worker => LoopRole::Auto,
-        }
-    }
-
-    /// Cycle to previous role
-    pub fn prev(self) -> Self {
-        match self {
-            LoopRole::Auto => LoopRole::Worker,
-            LoopRole::Planner => LoopRole::Auto,
-            LoopRole::Worker => LoopRole::Planner,
-        }
-    }
-
-    /// Get display name for UI
-    pub fn display(&self) -> &'static str {
-        match self {
-            LoopRole::Auto => "Auto (generic)",
-            LoopRole::Planner => "Planner (explores, creates tasks)",
-            LoopRole::Worker => "Worker (executes task in isolation)",
-        }
-    }
 }
 
 /// Configuration for starting a Rehoboam loop
@@ -129,10 +63,6 @@ pub struct RehoboamConfig {
     pub max_iterations: u32,
     pub stop_word: String,
     pub pane_id: String,
-    /// Loop role (Planner/Worker/Auto)
-    pub role: LoopRole,
-    /// Enable coordination.md (opt-in, only for planners)
-    pub enable_coordination: bool,
 }
 
 impl Default for RehoboamConfig {
@@ -141,8 +71,6 @@ impl Default for RehoboamConfig {
             max_iterations: 50,
             stop_word: "DONE".to_string(),
             pane_id: String::new(),
-            role: LoopRole::Auto,
-            enable_coordination: false,
         }
     }
 }
@@ -161,7 +89,6 @@ pub fn init_loop_dir(project_dir: &Path, prompt: &str, config: &RehoboamConfig) 
         "loop_session_init",
         project = %project_dir.display(),
         max_iterations = config.max_iterations,
-        role = ?config.role,
         otel.kind = "internal",
     )
     .entered();
@@ -226,21 +153,9 @@ Starting iteration 1...
     // Create empty session_history.log
     fs::write(loop_dir.join("session_history.log"), "")?;
 
-    // NOTE: tasks.md is NO LONGER CREATED
-    // Tasks are managed via Claude Code Tasks API (CLAUDE_CODE_TASK_LIST_ID)
+    // NOTE: tasks.md and coordination.md are NO LONGER CREATED
+    // Tasks and coordination are managed via Claude Code TeammateTool
     // Agents use TaskCreate/TaskUpdate/TaskList/TaskGet tools
-
-    // Create coordination.md only if enabled (opt-in)
-    // Per Cursor: "Workers never coordinate with each other"
-    if config.enable_coordination {
-        let coordination_content = r"# Coordination
-
-Cross-agent discoveries and broadcasts. Only planners use this.
-
-<!-- Format: [timestamp] [agent_id]: message -->
-";
-        fs::write(loop_dir.join("coordination.md"), coordination_content)?;
-    }
 
     // Write state.json
     let state = LoopState {
@@ -253,7 +168,6 @@ Cross-agent discoveries and broadcasts. Only planners use this.
         iteration_started_at: Some(Utc::now()),
         error_counts: HashMap::new(),
         last_commit: None,
-        role: config.role,
         assigned_task: None,
     };
     let state_json = serde_json::to_string_pretty(&state)?;
@@ -307,32 +221,6 @@ fn trim_error_counts(counts: &mut HashMap<String, u32>) {
     }
 }
 
-/// Find the Rehoboam loop directory
-///
-/// Searches for `.rehoboam/` directory starting from cwd and going up.
-///
-/// With git worktrees, workers run in their own isolated worktree directories,
-/// each with its own `.rehoboam/` folder. Standard discovery works for all roles:
-/// - Planner: main repo's `.rehoboam/`
-/// - Worker: worktree's `.rehoboam/` (created during auto-spawn)
-/// - Auto: main repo's `.rehoboam/`
-pub fn find_rehoboam_dir() -> Option<std::path::PathBuf> {
-    // Search for .rehoboam/ directory starting from cwd
-    let mut current = std::env::current_dir().ok()?;
-    loop {
-        let candidate = current.join(".rehoboam");
-        if candidate.is_dir() && candidate.join("state.json").exists() {
-            return Some(candidate);
-        }
-
-        if !current.pop() {
-            break;
-        }
-    }
-
-    None
-}
-
 /// Increment iteration counter
 ///
 /// Records OTEL span for iteration lifecycle tracking.
@@ -345,7 +233,6 @@ pub fn increment_iteration(loop_dir: &Path) -> Result<u32> {
         "loop_iteration",
         iteration = state.iteration,
         max = state.max_iterations,
-        role = ?state.role,
         otel.name = format!("iteration_{}", state.iteration),
     )
     .entered();

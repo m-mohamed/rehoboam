@@ -9,7 +9,9 @@
 //! - [`HybridConfig`] - Local planner + remote workers hybrid mode
 //!
 //! These APIs support hybrid mode with local planner and remote sprite workers.
-
+//!
+//! Note: Pool management infrastructure is partially implemented.
+//! Some types are defined for future pool orchestration features.
 #![allow(dead_code)]
 
 use std::collections::HashMap;

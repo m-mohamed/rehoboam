@@ -42,7 +42,7 @@ src/
   event/       # Event system (socket, keyboard input)
   state/       # Agent state, status tracking, role classification
   ui/          # Ratatui widgets (columns, cards, dialogs)
-  rehoboam_loop.rs  # Loop state management, task queue, role prompts
+  rehoboam_loop/  # Loop state management, iteration tracking, activity logging
   sprite/      # Remote VM (Sprites) integration
   git.rs       # Git worktree and checkpoint support
 ```
@@ -61,13 +61,14 @@ src/
 - `.rehoboam/` directory stores loop state
 - `anchor.md` = immutable task spec
 - `progress.md` = work completed each iteration
-- `tasks.md` = task queue for Planner/Worker separation
 - `guardrails.md` = learned constraints
+- Tasks managed via Claude Code Tasks API (not file-based)
 
-### Agent Roles (Cursor-aligned)
-- **Planner**: Explores codebase, creates tasks in `tasks.md`
-- **Worker**: Executes single task in isolation
-- **Auto**: Legacy generic prompt behavior
+### Agent Monitoring
+- Role detected from `CLAUDE_CODE_AGENT_TYPE` env var (set by TeammateTool)
+- Agent behavior patterns inferred from tool usage (AgentRole enum)
+- TUI displays both explicit type and observed behavior
+- TeammateTool handles orchestration; Rehoboam monitors and displays
 
 ### Sprites
 - Remote VMs via Fly.io for distributed agent execution
@@ -99,5 +100,5 @@ cargo test --release           # Release mode tests
 - Event handling: `src/event/`
 - UI rendering: `src/ui/mod.rs`
 - Agent state: `src/state/mod.rs`
-- Loop logic: `src/rehoboam_loop.rs`
+- Loop logic: `src/rehoboam_loop/`
 - Spawn dialog: `src/app/spawn.rs`

@@ -25,50 +25,12 @@ pub struct RehoboamConfig {
     /// Reconciliation configuration
     #[serde(default)]
     pub reconciliation: ReconciliationConfig,
-
-    /// OpenTelemetry configuration
-    #[serde(default)]
-    pub telemetry: OtelConfig,
-}
-
-/// OpenTelemetry configuration for distributed tracing
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OtelConfig {
-    /// Enable OTEL telemetry (default: false)
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// OTLP endpoint (e.g., "http://localhost:4317")
-    #[serde(default = "default_otel_endpoint")]
-    pub endpoint: String,
-
-    /// Service name for traces (default: "rehoboam")
-    #[serde(default = "default_otel_service_name")]
-    pub service_name: String,
-}
-
-impl Default for OtelConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            endpoint: default_otel_endpoint(),
-            service_name: default_otel_service_name(),
-        }
-    }
-}
-
-fn default_otel_endpoint() -> String {
-    "http://localhost:4317".to_string()
-}
-
-fn default_otel_service_name() -> String {
-    "rehoboam".to_string()
 }
 
 /// Timeout configuration for state transitions
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimeoutConfig {
-    /// Seconds before Working -> Idle transition (default: 60)
+    /// Seconds before Working -> Attention(Waiting) transition (default: 60)
     #[serde(default = "default_idle_timeout")]
     pub idle_timeout_secs: i64,
 
@@ -350,7 +312,6 @@ pub mod colors {
 /// Pre-built styles for common UI patterns
 ///
 /// Using const styles avoids rebuilding Style objects on every frame.
-#[allow(dead_code)]
 pub mod styles {
     use super::colors;
     use ratatui::style::{Modifier, Style};
@@ -364,6 +325,7 @@ pub mod styles {
         .add_modifier(Modifier::DIM);
 
     /// Highlighted/selected items
+    #[allow(dead_code)] // API consistency: available for future UI components
     pub const HIGHLIGHT: Style = Style::new()
         .fg(colors::HIGHLIGHT)
         .add_modifier(Modifier::BOLD);
@@ -372,6 +334,7 @@ pub mod styles {
     pub const WORKING: Style = Style::new().fg(colors::WORKING);
 
     /// Attention status
+    #[allow(dead_code)] // API consistency: ATTENTION_BOLD is used instead
     pub const ATTENTION: Style = Style::new().fg(colors::ATTENTION);
 
     /// Attention status (bold)
@@ -383,5 +346,6 @@ pub mod styles {
     pub const IDLE: Style = Style::new().fg(colors::IDLE);
 
     /// Compacting status
+    #[allow(dead_code)] // API consistency: available for future UI components
     pub const COMPACTING: Style = Style::new().fg(colors::COMPACTING);
 }

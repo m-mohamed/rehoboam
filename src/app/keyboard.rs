@@ -96,12 +96,26 @@ impl App {
             KeyCode::Char('l') | KeyCode::Right => {
                 self.state.move_column_right();
             }
-            // Card navigation (vertical within column)
+            // Card navigation (vertical)
+            // In Split view, navigate across all agents (flat list)
+            // In Kanban/Project view, navigate within current column
             KeyCode::Char('j') | KeyCode::Down => {
-                self.state.next_card();
+                if self.view_mode == ViewMode::Split {
+                    self.state.next_agent_flat();
+                    // Update live output when selection changes in split view
+                    self.live_output = navigation::capture_selected_output(&self.state);
+                } else {
+                    self.state.next_card();
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.state.previous_card();
+                if self.view_mode == ViewMode::Split {
+                    self.state.previous_agent_flat();
+                    // Update live output when selection changes in split view
+                    self.live_output = navigation::capture_selected_output(&self.state);
+                } else {
+                    self.state.previous_card();
+                }
             }
             // Jump to agent
             KeyCode::Enter => {
@@ -313,13 +327,12 @@ impl App {
                         % spawn::SPAWN_FIELD_COUNT;
             }
             KeyCode::Enter => {
-                // Toggle fields (3 = worktree, 4 = loop mode, 8 = auto_spawn, 10 = claude_tasks, 12 = sprite)
+                // Toggle fields (3 = worktree, 4 = loop, 7 = claude_tasks, 9 = sprite)
                 match self.spawn_state.active_field {
                     3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                     4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                    8 => self.spawn_state.auto_spawn_workers = !self.spawn_state.auto_spawn_workers,
-                    10 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
-                    12 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                    7 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
+                    9 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                     _ => match spawn::validate_spawn(
                         &self.spawn_state,
                         self.sprites_client.is_some(),
@@ -345,9 +358,8 @@ impl App {
             KeyCode::Char(' ') => match self.spawn_state.active_field {
                 3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
                 4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                8 => self.spawn_state.auto_spawn_workers = !self.spawn_state.auto_spawn_workers,
-                10 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
-                12 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                7 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
+                9 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                 0 => {
                     if self.spawn_state.use_sprite {
                         self.spawn_state.github_repo.push(' ');
@@ -358,17 +370,15 @@ impl App {
                 1 => self.spawn_state.prompt.push(' '),
                 2 => self.spawn_state.branch_name.push(' '),
                 6 => self.spawn_state.loop_stop_word.push(' '),
-                11 => self.spawn_state.task_list_id.push(' '),
+                8 => self.spawn_state.task_list_id.push(' '),
                 _ => {}
             },
             KeyCode::Left => match self.spawn_state.active_field {
-                7 => self.spawn_state.loop_role = self.spawn_state.loop_role.prev(),
-                13 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
+                10 => self.spawn_state.network_preset = self.spawn_state.network_preset.prev(),
                 _ => {}
             },
             KeyCode::Right => match self.spawn_state.active_field {
-                7 => self.spawn_state.loop_role = self.spawn_state.loop_role.next(),
-                13 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
+                10 => self.spawn_state.network_preset = self.spawn_state.network_preset.next(),
                 _ => {}
             },
             KeyCode::Backspace => match self.spawn_state.active_field {
@@ -391,19 +401,16 @@ impl App {
                 6 => {
                     self.spawn_state.loop_stop_word.pop();
                 }
-                9 => {
-                    self.spawn_state.max_workers.pop();
-                }
-                11 => {
+                8 => {
                     self.spawn_state.task_list_id.pop();
                 }
-                14 => {
+                11 => {
                     self.spawn_state.ram_mb.pop();
                 }
-                15 => {
+                12 => {
                     self.spawn_state.cpus.pop();
                 }
-                16 => {
+                13 => {
                     self.spawn_state.clone_destination.pop();
                 }
                 _ => {}
@@ -438,21 +445,7 @@ impl App {
                     }
                 }
                 6 => self.spawn_state.loop_stop_word.push(c),
-                8 => {
-                    // Auto-spawn toggle - y/n to toggle
-                    if c == 'y' || c == 'Y' {
-                        self.spawn_state.auto_spawn_workers = true;
-                    } else if c == 'n' || c == 'N' {
-                        self.spawn_state.auto_spawn_workers = false;
-                    }
-                }
-                9 => {
-                    // Max workers - only digits
-                    if c.is_ascii_digit() {
-                        self.spawn_state.max_workers.push(c);
-                    }
-                }
-                10 => {
+                7 => {
                     // Claude Tasks toggle - y/n to toggle
                     if c == 'y' || c == 'Y' {
                         self.spawn_state.use_claude_tasks = true;
@@ -460,13 +453,13 @@ impl App {
                         self.spawn_state.use_claude_tasks = false;
                     }
                 }
-                11 => {
+                8 => {
                     // Task list ID - alphanumeric + dash/underscore
                     if c.is_alphanumeric() || c == '-' || c == '_' {
                         self.spawn_state.task_list_id.push(c);
                     }
                 }
-                12 => {
+                9 => {
                     // Sprite toggle - y/n to toggle
                     if c == 'y' || c == 'Y' {
                         self.spawn_state.use_sprite = true;
@@ -474,17 +467,17 @@ impl App {
                         self.spawn_state.use_sprite = false;
                     }
                 }
-                14 => {
+                11 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.ram_mb.push(c);
                     }
                 }
-                15 => {
+                12 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.cpus.push(c);
                     }
                 }
-                16 => {
+                13 => {
                     self.spawn_state.clone_destination.push(c);
                 }
                 _ => {}

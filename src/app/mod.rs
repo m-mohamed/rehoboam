@@ -51,7 +51,7 @@ pub enum InputMode {
 /// View mode for the main display
 #[derive(Debug, Clone, PartialEq, Default)]
 pub enum ViewMode {
-    /// Kanban-style columns by status (Attention, Working, Compact, Idle)
+    /// Kanban-style columns by status (Attention, Working, Compacting)
     #[default]
     Kanban,
     /// Grouped by project name

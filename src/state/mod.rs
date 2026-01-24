@@ -9,7 +9,6 @@
 mod agent;
 mod event_processing;
 pub mod loop_handling;
-pub mod worker_pool;
 
 pub use agent::{Agent, AgentRole, AttentionType, LoopMode, Status, Subagent};
 
@@ -39,12 +38,6 @@ pub struct LoopConfig {
     pub loop_dir: Option<std::path::PathBuf>,
     /// Working directory for git operations (worktree path for workers)
     pub working_dir: Option<std::path::PathBuf>,
-    /// Auto-spawn workers when Planner completes (Cursor model)
-    pub auto_spawn_workers: bool,
-    /// Maximum concurrent workers for auto-spawn
-    pub max_workers: usize,
-    /// Agent role (Planner/Worker/Auto)
-    pub role: crate::rehoboam_loop::LoopRole,
 }
 
 /// Application state
@@ -282,6 +275,68 @@ impl AppState {
         }
     }
 
+    /// Move to next agent in flat order (across all columns)
+    ///
+    /// Used in Split view where agents are shown in a single list.
+    /// Order: Attention agents, then Working agents, then Compacting agents.
+    pub fn next_agent_flat(&mut self) {
+        let columns = self.agents_by_column();
+
+        // Build flat list of (column_index, card_index) pairs
+        let flat: Vec<(usize, usize)> = columns
+            .iter()
+            .enumerate()
+            .flat_map(|(col_idx, agents)| (0..agents.len()).map(move |card_idx| (col_idx, card_idx)))
+            .collect();
+
+        if flat.is_empty() {
+            return;
+        }
+
+        // Find current position in flat list
+        let current = (self.selected_column, self.selected_card);
+        let current_idx = flat.iter().position(|&pos| pos == current).unwrap_or(0);
+
+        // Move to next
+        let next_idx = (current_idx + 1) % flat.len();
+        let (col, card) = flat[next_idx];
+        self.selected_column = col;
+        self.selected_card = card;
+    }
+
+    /// Move to previous agent in flat order (across all columns)
+    ///
+    /// Used in Split view where agents are shown in a single list.
+    /// Order: Attention agents, then Working agents, then Compacting agents.
+    pub fn previous_agent_flat(&mut self) {
+        let columns = self.agents_by_column();
+
+        // Build flat list of (column_index, card_index) pairs
+        let flat: Vec<(usize, usize)> = columns
+            .iter()
+            .enumerate()
+            .flat_map(|(col_idx, agents)| (0..agents.len()).map(move |card_idx| (col_idx, card_idx)))
+            .collect();
+
+        if flat.is_empty() {
+            return;
+        }
+
+        // Find current position in flat list
+        let current = (self.selected_column, self.selected_card);
+        let current_idx = flat.iter().position(|&pos| pos == current).unwrap_or(0);
+
+        // Move to previous (wrap around)
+        let prev_idx = if current_idx == 0 {
+            flat.len() - 1
+        } else {
+            current_idx - 1
+        };
+        let (col, card) = flat[prev_idx];
+        self.selected_column = col;
+        self.selected_card = card;
+    }
+
     /// Move to column on the left
     pub fn move_column_left(&mut self) {
         self.selected_column = (self.selected_column + NUM_COLUMNS - 1) % NUM_COLUMNS;
@@ -349,7 +404,8 @@ impl AppState {
     /// If `loop_dir` is Some, the agent will use proper Rehoboam mode (fresh sessions).
     /// If `working_dir` is Some, it will be set as the agent's git working directory.
     /// Judge always runs when loop mode is active (no toggle needed).
-    #[allow(clippy::too_many_arguments)]
+    ///
+    /// Note: Role/auto-spawn removed - TeammateTool handles agent roles and team spawning.
     pub fn register_loop_config(
         &mut self,
         pane_id: &str,
@@ -357,9 +413,6 @@ impl AppState {
         stop_word: &str,
         loop_dir: Option<std::path::PathBuf>,
         working_dir: Option<std::path::PathBuf>,
-        auto_spawn_workers: bool,
-        max_workers: usize,
-        role: crate::rehoboam_loop::LoopRole,
     ) {
         self.pending_loop_configs.insert(
             pane_id.to_string(),
@@ -368,9 +421,6 @@ impl AppState {
                 stop_word: stop_word.to_string(),
                 loop_dir: loop_dir.clone(),
                 working_dir: working_dir.clone(),
-                auto_spawn_workers,
-                max_workers,
-                role,
             },
         );
         tracing::info!(
@@ -379,10 +429,7 @@ impl AppState {
             stop_word = %stop_word,
             loop_dir = ?loop_dir,
             working_dir = ?working_dir,
-            auto_spawn = auto_spawn_workers,
-            max_workers = max_workers,
-            role = ?role,
-            "Registered pending loop config (Judge is automatic)"
+            "Registered pending loop config"
         );
     }
 
@@ -517,6 +564,10 @@ mod tests {
             permission_mode: None,
             cwd: None,
             transcript_path: None,
+            team_name: None,
+            team_agent_id: None,
+            team_agent_name: None,
+            team_agent_type: None,
         }
     }
 

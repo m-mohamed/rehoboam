@@ -79,10 +79,6 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
         String::new(),
     ];
 
-    // Add OTEL Fleet Metrics
-    let tool_calls = crate::telemetry::metrics::get_tool_calls();
-    let otel_iterations = crate::telemetry::metrics::get_iterations();
-
     // Calculate average latency from agent data
     let avg_latency: f64 = {
         let latencies: Vec<u64> = app
@@ -98,15 +94,18 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
         }
     };
 
+    // Calculate total tool calls from agents
+    let total_tool_calls: u32 = app.state.agents.values().map(|a| a.total_tool_calls).sum();
+
     lines.push(String::new());
-    lines.push("  ┌─ Fleet Metrics (OTEL) ────────────────────────────────┐".to_string());
+    lines.push("  ┌─ Fleet Metrics ───────────────────────────────────────┐".to_string());
     lines.push(format!(
         "  │ Tool Calls: {:>8}   Avg Latency: {:>6.1}ms           │",
-        tool_calls, avg_latency
+        total_tool_calls, avg_latency
     ));
     lines.push(format!(
-        "  │ Traced Iterations: {:>5}   Connected Sprites: {:>3}   │",
-        otel_iterations,
+        "  │ Total Iterations: {:>5}   Connected Sprites: {:>3}     │",
+        total_iterations,
         app.state.connected_sprite_count()
     ));
     lines.push("  └──────────────────────────────────────────────────────┘".to_string());

@@ -329,6 +329,11 @@ fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str)
         permission_mode: None,
         cwd: None,
         transcript_path: None,
+        // TeammateTool fields (v3.0) - not applicable for synthetic events
+        team_name: None,
+        team_agent_id: None,
+        team_agent_name: None,
+        team_agent_type: None,
     }
 }
 

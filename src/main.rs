@@ -48,7 +48,6 @@ mod reconcile;
 mod rehoboam_loop;
 mod sprite;
 mod state;
-mod telemetry;
 mod tmux;
 mod tui;
 mod ui;
@@ -250,61 +249,12 @@ async fn handle_hook(
         }
     };
 
-    // Handle PermissionRequest events in loop mode - auto-approve based on policy
-    // This must be checked before other processing to return early with decision
-    if hook_input.hook_event_name == "PermissionRequest" {
-        if let Some(loop_dir) = rehoboam_loop::find_rehoboam_dir() {
-            // Get project directory for step-up checks
-            let project_dir = loop_dir.parent().map(std::path::Path::to_path_buf);
+    // NOTE: Auto-permission evaluation removed - TeammateTool handles permissions
+    // via Claude Code's native permission system and approvePlan/rejectPlan
 
-            // Evaluate permission against policy
-            let decision = rehoboam_loop::evaluate_permission(
-                &loop_dir,
-                hook_input.tool_name.as_deref().unwrap_or("Unknown"),
-                hook_input.tool_input.as_ref(),
-                project_dir.as_deref(),
-            );
-
-            // If we have a decision, output it and return early
-            if let Some(decision_value) = decision.as_json_value() {
-                let output = serde_json::json!({
-                    "permissionDecision": decision_value
-                });
-                println!("{}", serde_json::to_string(&output)?);
-
-                tracing::info!(
-                    tool = ?hook_input.tool_name,
-                    decision = decision_value,
-                    "Permission auto-decided in loop mode"
-                );
-
-                // Don't return early - still want to send event to TUI
-                // But the permission decision has been output
-            }
-        }
-    }
-
-    // Claude Code 2.1.x: Inject additionalContext for loop mode
-    // Only applies to PreToolUse and PostToolUse hooks
-    if inject_context {
-        let is_tool_hook = matches!(
-            hook_input.hook_event_name.as_str(),
-            "PreToolUse" | "PostToolUse"
-        );
-
-        if is_tool_hook {
-            if let Some(loop_dir) = rehoboam_loop::find_rehoboam_dir() {
-                if let Ok(context) = rehoboam_loop::build_loop_context(&loop_dir) {
-                    // Output JSON that Claude Code will inject
-                    let output = serde_json::json!({
-                        "additionalContext": context
-                    });
-                    println!("{}", serde_json::to_string(&output)?);
-                    // Continue processing - we still want to update the TUI
-                }
-            }
-        }
-    }
+    // NOTE: Context injection removed - TeammateTool manages agent context
+    // The inject_context flag is now a no-op but kept for backward compatibility
+    let _ = inject_context;
 
     // Get pane ID from terminal-specific env vars, fall back to session_id
     // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
@@ -342,6 +292,12 @@ async fn handle_hook(
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
+    // Capture TeammateTool env vars (v3.0)
+    let team_name = std::env::var("CLAUDE_CODE_TEAM_NAME").ok();
+    let team_agent_id = std::env::var("CLAUDE_CODE_AGENT_ID").ok();
+    let team_agent_name = std::env::var("CLAUDE_CODE_AGENT_NAME").ok();
+    let team_agent_type = std::env::var("CLAUDE_CODE_AGENT_TYPE").ok();
+
     // Build enriched socket message with ALL v1.0 fields
     let socket_event = event::HookEvent {
         event: hook_input.hook_event_name.clone(),
@@ -369,6 +325,11 @@ async fn handle_hook(
         permission_mode: hook_input.permission_mode.clone(),
         cwd: hook_input.cwd.clone(),
         transcript_path: hook_input.transcript_path.clone(),
+        // TeammateTool env vars (v3.0)
+        team_name,
+        team_agent_id,
+        team_agent_name,
+        team_agent_type,
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -510,7 +471,7 @@ async fn main() -> Result<()> {
     // Initialize error handling
     color_eyre::install()?;
 
-    // Load configuration early (needed for OTEL setup)
+    // Load configuration
     let app_config = config::RehoboamConfig::load();
 
     // Setup file logging with rotation
@@ -520,54 +481,16 @@ async fn main() -> Result<()> {
     let file_appender = tracing_appender::rolling::daily(&log_dir, "rehoboam.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
-    // Check OTEL configuration: CLI takes precedence over config file
-    let otel_endpoint = cli.otel_endpoint.clone().or_else(|| {
-        if app_config.telemetry.enabled {
-            Some(app_config.telemetry.endpoint.clone())
-        } else {
-            None
-        }
-    });
-
-    // Initialize logging with both file and optional OTEL layer
+    // Initialize logging
     let log_filter = format!("rehoboam={}", cli.log_level);
-    let subscriber = tracing_subscriber::registry()
+    tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::new(&log_filter))
         .with(
             tracing_subscriber::fmt::layer()
                 .with_target(true)
                 .with_writer(non_blocking),
-        );
-
-    // Optionally add OTEL layer if endpoint is configured
-    let otel_enabled = if let Some(ref endpoint) = otel_endpoint {
-        // Check endpoint reachability (non-blocking timeout)
-        if telemetry::check_endpoint(endpoint).await {
-            let otel_config = telemetry::TelemetryConfig::with_endpoint(endpoint);
-            match telemetry::otel_layer(&otel_config) {
-                Ok(layer) => {
-                    subscriber.with(layer).init();
-                    eprintln!("OTEL tracing enabled: {}", endpoint);
-                    true
-                }
-                Err(e) => {
-                    eprintln!("OTEL init failed: {} (continuing without tracing)", e);
-                    subscriber.init();
-                    false
-                }
-            }
-        } else {
-            eprintln!(
-                "OTEL endpoint {} not reachable (continuing without tracing)",
-                endpoint
-            );
-            subscriber.init();
-            false
-        }
-    } else {
-        subscriber.init();
-        false
-    };
+        )
+        .init();
 
     tracing::info!("Starting rehoboam v{}", env!("CARGO_PKG_VERSION"));
     tracing::info!("Log directory: {:?}", log_dir);
@@ -678,6 +601,11 @@ async fn main() -> Result<()> {
                     permission_mode: None,
                     cwd: None,
                     transcript_path: remote_event.event.transcript_path,
+                    // TeammateTool fields (v3.0) - not yet available from sprites
+                    team_name: None,
+                    team_agent_id: None,
+                    team_agent_name: None,
+                    team_agent_type: None,
                 };
 
                 // Send as RemoteHook event
@@ -699,12 +627,11 @@ async fn main() -> Result<()> {
         None
     };
 
-    // Log configuration (already loaded earlier for OTEL)
+    // Log configuration
     tracing::info!(
-        "Loaded config: sprites.enabled = {}, reconciliation.enabled = {}, telemetry.enabled = {}",
+        "Loaded config: sprites.enabled = {}, reconciliation.enabled = {}",
         app_config.sprites.enabled,
-        app_config.reconciliation.enabled,
-        app_config.telemetry.enabled
+        app_config.reconciliation.enabled
     );
 
     // Create SpritesClient if token is provided
@@ -739,12 +666,6 @@ async fn main() -> Result<()> {
     // Remove socket file
     if cli.socket.exists() {
         let _ = std::fs::remove_file(&cli.socket);
-    }
-
-    // Shutdown OTEL if enabled (flush pending traces)
-    if otel_enabled {
-        telemetry::shutdown();
-        tracing::debug!("OTEL tracing shut down");
     }
 
     result

@@ -1,10 +1,9 @@
 //! UI rendering module for Rehoboam TUI
 //!
 //! Provides a Kanban-style column layout where agents are grouped by status:
-//! - Attention (needs user input)
+//! - Attention (needs user input, includes waiting)
 //! - Working (actively processing)
 //! - Compacting (context compaction)
-//! - Idle (waiting)
 
 mod card;
 mod column;

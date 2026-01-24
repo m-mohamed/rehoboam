@@ -158,6 +158,20 @@ pub struct HookEvent {
     /// Path to conversation transcript (.jsonl)
     #[serde(default)]
     pub transcript_path: Option<String>,
+
+    // TeammateTool env vars (v3.0) - captured from environment at hook time
+    /// Team name from CLAUDE_CODE_TEAM_NAME env var
+    #[serde(default)]
+    pub team_name: Option<String>,
+    /// Agent ID from CLAUDE_CODE_AGENT_ID env var
+    #[serde(default)]
+    pub team_agent_id: Option<String>,
+    /// Agent name from CLAUDE_CODE_AGENT_NAME env var
+    #[serde(default)]
+    pub team_agent_name: Option<String>,
+    /// Agent type from CLAUDE_CODE_AGENT_TYPE env var
+    #[serde(default)]
+    pub team_agent_type: Option<String>,
 }
 
 impl HookEvent {
@@ -351,6 +365,10 @@ mod tests {
             permission_mode: None,
             cwd: None,
             transcript_path: None,
+            team_name: None,
+            team_agent_id: None,
+            team_agent_name: None,
+            team_agent_type: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -378,6 +396,10 @@ mod tests {
             permission_mode: None,
             cwd: None,
             transcript_path: None,
+            team_name: None,
+            team_agent_id: None,
+            team_agent_name: None,
+            team_agent_type: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -405,6 +427,10 @@ mod tests {
             permission_mode: None,
             cwd: None,
             transcript_path: None,
+            team_name: None,
+            team_agent_id: None,
+            team_agent_name: None,
+            team_agent_type: None,
         };
         assert_eq!(
             event.validate(),
@@ -436,6 +462,10 @@ mod tests {
                 permission_mode: None,
                 cwd: None,
                 transcript_path: None,
+                team_name: None,
+                team_agent_id: None,
+                team_agent_name: None,
+                team_agent_type: None,
             };
             assert!(
                 event.validate().is_ok(),

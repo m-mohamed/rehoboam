@@ -18,25 +18,20 @@
 //! NOTE: tasks.md is NO LONGER USED. Tasks are managed via Claude Code Tasks API.
 
 mod activity;
-mod coordination;
 mod git_checkpoint;
 mod judge;
-mod permissions;
-mod prompts;
 mod state;
 
 // Re-export state types
-#[allow(unused_imports)] // load_state is used in tests and worker_pool module
+#[allow(unused_imports)] // load_state is used in tests
 pub use state::{
-    check_max_iterations, find_rehoboam_dir, increment_iteration, init_loop_dir, load_state,
-    save_state, LoopRole, LoopState, RehoboamConfig,
+    check_max_iterations, increment_iteration, init_loop_dir, load_state, save_state, LoopState,
+    RehoboamConfig,
 };
 
 // Re-export judge types and functions
 pub use judge::{judge_completion, JudgeDecision};
 
-// Re-export prompt building
-pub use prompts::{build_iteration_prompt, build_loop_context};
 
 // Re-export activity logging
 pub use activity::{
@@ -47,8 +42,65 @@ pub use activity::{
 // Re-export git checkpoint
 pub use git_checkpoint::create_git_checkpoint;
 
+use color_eyre::eyre::Result;
 use std::fs;
 use std::path::Path;
+use tracing::debug;
+
+/// Build a simple iteration prompt from loop state files
+///
+/// Creates a minimal prompt file containing:
+/// - Current iteration number
+/// - anchor.md (task spec)
+/// - progress.md (work done)
+/// - guardrails.md (learned constraints)
+///
+/// Note: Role-specific prompts have been removed. TeammateTool
+/// (via CLAUDE_CODE_AGENT_TYPE) now defines agent behavior.
+pub fn build_iteration_prompt(loop_dir: &Path) -> Result<String> {
+    let state = load_state(loop_dir)?;
+
+    let anchor = fs::read_to_string(loop_dir.join("anchor.md")).unwrap_or_default();
+    let progress = fs::read_to_string(loop_dir.join("progress.md")).unwrap_or_default();
+    let guardrails = fs::read_to_string(loop_dir.join("guardrails.md")).unwrap_or_default();
+
+    let prompt = format!(
+        r#"# Rehoboam Loop - Iteration {iteration}
+
+## Task (anchor.md)
+{anchor}
+
+## Progress (progress.md)
+{progress}
+
+## Guardrails
+{guardrails}
+
+## Instructions
+- Continue working on the task from where progress.md left off
+- Update progress.md with your work
+- Add learned constraints to guardrails.md
+- Write "{stop_word}" to progress.md when the task is complete
+"#,
+        iteration = state.iteration + 1,
+        anchor = anchor.trim(),
+        progress = progress.trim(),
+        guardrails = guardrails.trim(),
+        stop_word = state.stop_word,
+    );
+
+    // Write to temp file for piping to claude
+    let prompt_file = loop_dir.join("_iteration_prompt.md");
+    fs::write(&prompt_file, &prompt)?;
+
+    debug!(
+        iteration = state.iteration + 1,
+        prompt_len = prompt.len(),
+        "Built iteration prompt"
+    );
+
+    Ok(prompt_file.to_string_lossy().to_string())
+}
 
 /// Check if the Planner has completed planning
 ///
@@ -62,15 +114,9 @@ pub fn is_planning_complete(loop_dir: &Path) -> bool {
     }
 }
 
-// Re-export permission policy types and functions
-pub use permissions::evaluate_permission;
 
 #[cfg(test)]
 mod tests {
-    use super::coordination::{
-        broadcast, join_existing_loop, list_workers, read_broadcasts, register_worker,
-    };
-    use super::permissions::{check_approval_memory, record_approval, PermissionDecision};
     use super::state::load_state;
     use super::*;
     use tempfile::TempDir;
@@ -82,8 +128,6 @@ mod tests {
             max_iterations: 10,
             stop_word: "COMPLETE".to_string(),
             pane_id: "%42".to_string(),
-            role: LoopRole::Auto,
-            enable_coordination: false,
         };
 
         let loop_dir = init_loop_dir(temp.path(), "Build a REST API", &config).unwrap();
@@ -233,304 +277,6 @@ mod tests {
     // Unit testing the full function would require Claude Code to be installed.
     // The JudgeDecision enum is still tested via other integration tests.
 
-    // Multi-Agent Coordination tests
-
-    #[test]
-    fn test_coordination_file_created() {
-        let temp = TempDir::new().unwrap();
-        // Coordination is opt-in per Cursor guidance
-        let config = RehoboamConfig {
-            enable_coordination: true,
-            ..Default::default()
-        };
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        assert!(loop_dir.join("coordination.md").exists());
-    }
-
-    #[test]
-    fn test_coordination_file_not_created_by_default() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Coordination is opt-in, so it shouldn't exist by default
-        assert!(!loop_dir.join("coordination.md").exists());
-    }
-
-    #[test]
-    fn test_broadcast() {
-        use std::fs;
-
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig {
-            enable_coordination: true,
-            ..Default::default()
-        };
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        broadcast(&loop_dir, "worker-1", "Found API schema at /api/v1").unwrap();
-        broadcast(&loop_dir, "worker-2", "Database migration complete").unwrap();
-
-        let content = fs::read_to_string(loop_dir.join("coordination.md")).unwrap();
-        assert!(content.contains("[worker-1]: Found API schema at /api/v1"));
-        assert!(content.contains("[worker-2]: Database migration complete"));
-    }
-
-    #[test]
-    fn test_read_broadcasts() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        broadcast(&loop_dir, "agent-a", "Test message 1").unwrap();
-        broadcast(&loop_dir, "agent-b", "Test message 2").unwrap();
-
-        let broadcasts = read_broadcasts(&loop_dir, Some(60)).unwrap();
-        assert_eq!(broadcasts.len(), 2);
-    }
-
-    #[test]
-    fn test_register_worker() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        register_worker(&loop_dir, "worker-1", "API endpoint worker").unwrap();
-
-        // Check worker file created
-        let worker_file = loop_dir.join("workers/worker-1.md");
-        assert!(worker_file.exists());
-
-        let content = std::fs::read_to_string(&worker_file).unwrap();
-        assert!(content.contains("API endpoint worker"));
-
-        // Check broadcast was sent
-        let broadcasts = read_broadcasts(&loop_dir, Some(60)).unwrap();
-        assert!(!broadcasts.is_empty());
-    }
-
-    #[test]
-    fn test_list_workers() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        register_worker(&loop_dir, "worker-a", "First worker").unwrap();
-        register_worker(&loop_dir, "worker-b", "Second worker").unwrap();
-
-        let workers = list_workers(&loop_dir).unwrap();
-        assert_eq!(workers.len(), 2);
-        assert!(workers.contains(&"worker-a".to_string()));
-        assert!(workers.contains(&"worker-b".to_string()));
-    }
-
-    #[test]
-    fn test_join_existing_loop() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let _loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Should be able to join existing loop
-        let joined_dir = join_existing_loop(temp.path()).unwrap();
-        assert!(joined_dir.exists());
-
-        // Should fail for non-existent loop
-        let other_temp = TempDir::new().unwrap();
-        assert!(join_existing_loop(other_temp.path()).is_err());
-    }
-
-    // NOTE: Legacy tasks.md tests removed - now using Claude Code Tasks API
-    // Tests for TaskCreate/TaskUpdate/TaskList/TaskGet are integration tests
-    // that require CLAUDE_CODE_TASK_LIST_ID to be set.
-
-    #[test]
-    fn test_role_specific_prompts() {
-        use std::fs;
-
-        // Set CLAUDE_CODE_TASK_LIST_ID for prompt generation
-        std::env::set_var("CLAUDE_CODE_TASK_LIST_ID", "test-task-list");
-
-        let temp = TempDir::new().unwrap();
-
-        // Test Planner role
-        let planner_config = RehoboamConfig {
-            role: LoopRole::Planner,
-            ..Default::default()
-        };
-        let loop_dir = init_loop_dir(temp.path(), "Build API", &planner_config).unwrap();
-        let prompt_file = build_iteration_prompt(&loop_dir).unwrap();
-        let prompt = fs::read_to_string(&prompt_file).unwrap();
-        assert!(prompt.contains("PLANNER"));
-        assert!(prompt.contains("Do NOT implement anything yourself"));
-        assert!(prompt.contains("TaskCreate")); // Uses Tasks API
-
-        // Test Worker role
-        let temp2 = TempDir::new().unwrap();
-        let worker_config = RehoboamConfig {
-            role: LoopRole::Worker,
-            ..Default::default()
-        };
-        let loop_dir2 = init_loop_dir(temp2.path(), "Build API", &worker_config).unwrap();
-        let prompt_file2 = build_iteration_prompt(&loop_dir2).unwrap();
-        let prompt2 = fs::read_to_string(&prompt_file2).unwrap();
-        assert!(prompt2.contains("WORKER"));
-        assert!(prompt2.contains("TaskList")); // Uses Tasks API
-        assert!(prompt2.contains("TaskUpdate")); // Uses Tasks API
-
-        // Test Auto role
-        let temp3 = TempDir::new().unwrap();
-        let auto_config = RehoboamConfig::default();
-        let loop_dir3 = init_loop_dir(temp3.path(), "Build API", &auto_config).unwrap();
-        let prompt_file3 = build_iteration_prompt(&loop_dir3).unwrap();
-        let prompt3 = fs::read_to_string(&prompt_file3).unwrap();
-        assert!(prompt3.contains("Rehoboam Loop - Iteration"));
-        assert!(!prompt3.contains("PLANNER"));
-        assert!(!prompt3.contains("WORKER"));
-        assert!(prompt3.contains("TaskCreate")); // Uses Tasks API
-
-        // Clean up
-        std::env::remove_var("CLAUDE_CODE_TASK_LIST_ID");
-    }
-
-    // Permission Policy Tests
-
-    #[test]
-    fn test_permission_policy_default_read_only_tools() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Read-only tools should be auto-approved
-        let read_only_tools = ["Read", "Glob", "Grep", "WebFetch", "WebSearch", "Task"];
-        for tool in &read_only_tools {
-            let decision = evaluate_permission(&loop_dir, tool, None, None);
-            assert_eq!(
-                decision,
-                PermissionDecision::Approve,
-                "{} should be auto-approved",
-                tool
-            );
-        }
-    }
-
-    #[test]
-    fn test_permission_policy_bash_allow_patterns() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Table-driven test for bash allow patterns
-        let cases = vec![
-            ("git status", true, "git status should be allowed"),
-            ("git diff --cached", true, "git diff should be allowed"),
-            ("cargo test --release", true, "cargo test should be allowed"),
-            ("cargo clippy", true, "cargo clippy should be allowed"),
-            ("ls -la", true, "ls should be allowed"),
-            ("cat README.md", true, "cat should be allowed"),
-            ("my-command --help", true, "--help should be allowed"),
-            ("npm test", true, "npm test should be allowed"),
-        ];
-
-        for (command, should_approve, desc) in cases {
-            let input = serde_json::json!({ "command": command });
-            let decision = evaluate_permission(&loop_dir, "Bash", Some(&input), None);
-
-            if should_approve {
-                assert_eq!(decision, PermissionDecision::Approve, "{}", desc);
-            }
-        }
-    }
-
-    #[test]
-    fn test_permission_policy_bash_deny_patterns() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Dangerous commands should be denied
-        let deny_cases = vec![
-            ("rm -rf /", "rm -rf should be denied"),
-            ("sudo apt install foo", "sudo should be denied"),
-            (
-                "git push --force origin main",
-                "force push should be denied",
-            ),
-            ("chmod 777 /etc/passwd", "chmod 777 should be denied"),
-        ];
-
-        for (command, desc) in deny_cases {
-            let input = serde_json::json!({ "command": command });
-            let decision = evaluate_permission(&loop_dir, "Bash", Some(&input), None);
-            assert_eq!(decision, PermissionDecision::Deny, "{}", desc);
-        }
-    }
-
-    #[test]
-    fn test_permission_policy_unknown_tool_defers() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Unknown tools should defer to user
-        let decision = evaluate_permission(&loop_dir, "UnknownTool", None, None);
-        assert_eq!(
-            decision,
-            PermissionDecision::Defer,
-            "Unknown tool should defer"
-        );
-
-        // Edit/Write without approval memory should defer
-        let edit_input = serde_json::json!({ "file_path": "/some/path.rs" });
-        let decision = evaluate_permission(&loop_dir, "Edit", Some(&edit_input), None);
-        assert_eq!(
-            decision,
-            PermissionDecision::Defer,
-            "Edit should defer without approval memory"
-        );
-    }
-
-    #[test]
-    fn test_permission_policy_custom_policy() {
-        use std::fs;
-
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Create a custom policy that allows Edit
-        let policy_content = r#"
-[auto_approve]
-always = ["Edit", "Write"]
-bash_allow = []
-bash_deny = []
-"#;
-        fs::write(loop_dir.join("policy.toml"), policy_content).unwrap();
-
-        // Edit should now be auto-approved
-        let decision = evaluate_permission(&loop_dir, "Edit", None, None);
-        assert_eq!(
-            decision,
-            PermissionDecision::Approve,
-            "Edit should be approved with custom policy"
-        );
-    }
-
-    #[test]
-    fn test_approval_memory() {
-        let temp = TempDir::new().unwrap();
-        let config = RehoboamConfig::default();
-        let loop_dir = init_loop_dir(temp.path(), "Test", &config).unwrap();
-
-        // Record an approval
-        record_approval(&loop_dir, "Edit", Some("/path/to/file.rs")).unwrap();
-
-        // Check that the approval is remembered
-        let found = check_approval_memory(&loop_dir, "Edit", Some("/path/to/file.rs"), 24);
-        assert!(found, "Should find recent approval");
-
-        // Different path should not be found
-        let not_found = check_approval_memory(&loop_dir, "Edit", Some("/different/path.rs"), 24);
-        assert!(!not_found, "Should not find approval for different path");
-    }
+    // NOTE: Coordination and permission tests removed - modules deleted
+    // TeammateTool now handles agent coordination and permissions
 }

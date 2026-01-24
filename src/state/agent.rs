@@ -55,7 +55,6 @@ pub enum AgentRole {
 /// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
 /// v1.3: Extended with parent tracking for hierarchical visualization.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct Subagent {
     /// Subagent session ID (for correlation)
     pub id: String,
@@ -68,7 +67,8 @@ pub struct Subagent {
 
     // v1.3: Parent-child relationship tracking
     /// Parent pane ID (the agent that spawned this subagent).
-    /// Used for hierarchical subagent tree visualization.
+    /// Used for future hierarchical subagent tree visualization.
+    #[allow(dead_code)] // Tracked for future nested tree display
     pub parent_pane_id: String,
     /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.).
     /// Used for hierarchical subagent tree visualization.
@@ -249,13 +249,6 @@ pub struct Agent {
     /// Recent tool names for role inference (last 10 tools)
     pub tool_history: VecDeque<String>,
 
-    // v1.3 Auto-spawn workers (Cursor model)
-    /// Loop role from spawn config (Planner/Worker/Auto)
-    pub loop_role: crate::rehoboam_loop::LoopRole,
-    /// Auto-spawn workers when Planner completes
-    pub auto_spawn_workers: bool,
-    /// Maximum concurrent workers for auto-spawn
-    pub max_workers: usize,
 
     // v2.0 Per-agent file tracking (Phase 7)
     /// Files modified by this agent (tracked from Edit/Write tool_input)
@@ -288,6 +281,16 @@ pub struct Agent {
     pub current_task_id: Option<String>,
     /// Task list ID for multi-agent coordination (CLAUDE_CODE_TASK_LIST_ID)
     pub task_list_id: Option<String>,
+
+    // TeammateTool integration (v3.0) - display-only fields
+    /// Team name from CLAUDE_CODE_TEAM_NAME env var
+    pub team_name: Option<String>,
+    /// Agent ID within team from CLAUDE_CODE_AGENT_ID env var
+    pub team_agent_id: Option<String>,
+    /// Agent name within team from CLAUDE_CODE_AGENT_NAME env var
+    pub team_agent_name: Option<String>,
+    /// Agent type from CLAUDE_CODE_AGENT_TYPE env var (e.g., "planner", "worker")
+    pub team_agent_type: Option<String>,
 }
 
 impl Agent {
@@ -327,10 +330,6 @@ impl Agent {
             // v1.2 Agent role classification
             role: AgentRole::General,
             tool_history: VecDeque::with_capacity(10),
-            // v1.3 Auto-spawn workers
-            loop_role: crate::rehoboam_loop::LoopRole::Auto,
-            auto_spawn_workers: false,
-            max_workers: 3,
             // v2.0 Per-agent file tracking
             modified_files: HashSet::new(),
             session_start_commit: None,
@@ -347,6 +346,11 @@ impl Agent {
             current_task_subject: None,
             current_task_id: None,
             task_list_id: None,
+            // TeammateTool integration (v3.0)
+            team_name: None,
+            team_agent_id: None,
+            team_agent_name: None,
+            team_agent_type: None,
         }
     }
 

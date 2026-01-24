@@ -19,10 +19,10 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     // Check if we need to show clone destination field
     let show_clone_dest = !spawn_state.use_sprite && is_github_url(&spawn_state.project_path);
 
-    // Field indices:
-    // 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word, 7=role,
-    // 8=auto_spawn, 9=max_workers, 10=claude_tasks, 11=task_list_id, 12=sprite, 13=network, 14=ram, 15=cpus, 16=clone_dest
-    // Note: Judge is automatic in loop mode (no toggle needed)
+    // Field indices (updated v3.0 - role/auto-spawn removed):
+    // 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word,
+    // 7=claude_tasks, 8=task_list_id, 9=sprite, 10=network, 11=ram, 12=cpus, 13=clone_dest
+    // Note: Agent roles handled by TeammateTool via CLAUDE_CODE_AGENT_TYPE
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -31,13 +31,12 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             Constraint::Length(3),                                   // Branch name (2)
             Constraint::Length(3),                                   // Worktree toggle (3)
             Constraint::Length(3),                                   // Loop mode toggle (4)
-            Constraint::Length(3), // Loop options (5=max_iter, 6=stop_word, 7=role)
-            Constraint::Length(3), // Auto-spawn (8) and max_workers (9) - Planner only
-            Constraint::Length(3), // Claude Tasks (10) and task_list_id (11)
-            Constraint::Length(3), // Sprite toggle (12)
-            Constraint::Length(3), // Network policy (13)
-            Constraint::Length(3), // Resources: RAM (14), CPUs (15)
-            Constraint::Length(if show_clone_dest { 3 } else { 0 }), // Clone destination (16)
+            Constraint::Length(3), // Loop options (5=max_iter, 6=stop_word)
+            Constraint::Length(3), // Claude Tasks (7) and task_list_id (8)
+            Constraint::Length(3), // Sprite toggle (9)
+            Constraint::Length(3), // Network policy (10)
+            Constraint::Length(3), // Resources: RAM (11), CPUs (12)
+            Constraint::Length(if show_clone_dest { 3 } else { 0 }), // Clone destination (13)
             Constraint::Length(2), // Error message
             Constraint::Length(2), // Instructions
         ])
@@ -171,14 +170,13 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .border_style(border_style(spawn_state.active_field == 4)),
         );
 
-    // Loop options (5 = max iterations, 6 = stop word, 7 = role) - show side by side
+    // Loop options (5 = max iterations, 6 = stop word) - show side by side
     let loop_options_area = chunks[5];
     let loop_options_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(25), // Max iterations
-            Constraint::Percentage(30), // Stop word
-            Constraint::Percentage(45), // Role selector
+            Constraint::Percentage(35), // Max iterations
+            Constraint::Percentage(65), // Stop word
         ])
         .split(loop_options_area);
 
@@ -215,105 +213,14 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .border_style(border_style(spawn_state.active_field == 6)),
         );
 
-    // Role selector (7) - Cursor-aligned behavioral patterns
-    let role_display = if spawn_state.loop_enabled {
-        spawn_state.loop_role.display()
-    } else {
-        "(enable Loop mode)"
-    };
-    let role_widget = Paragraph::new(format!("<  {}  >", role_display))
-        .style(if spawn_state.loop_enabled {
-            field_style(spawn_state.active_field == 7)
-        } else {
-            Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
-        })
-        .alignment(Alignment::Center)
-        .block(
-            Block::default()
-                .title(" Role (←/→) ")
-                .borders(Borders::ALL)
-                .border_style(if spawn_state.loop_enabled {
-                    border_style(spawn_state.active_field == 7)
-                } else {
-                    Style::default()
-                        .fg(colors::BORDER)
-                        .add_modifier(Modifier::DIM)
-                }),
-        );
-
-    // Auto-spawn workers (8) and max_workers (9) - only shown when role=Planner and loop enabled
-    let auto_spawn_area = chunks[6];
-    let auto_spawn_chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(60), Constraint::Percentage(40)])
-        .split(auto_spawn_area);
-
-    // Auto-spawn checkbox (8)
-    let is_planner = spawn_state.loop_role == crate::rehoboam_loop::LoopRole::Planner;
-    let auto_spawn_checkbox = if spawn_state.auto_spawn_workers {
-        "[x]"
-    } else {
-        "[ ]"
-    };
-    let auto_spawn_text = if spawn_state.loop_enabled && is_planner {
-        format!("{auto_spawn_checkbox} Auto-spawn workers")
-    } else {
-        "(Planner role only)".to_string()
-    };
-    let auto_spawn_style = if spawn_state.loop_enabled && is_planner {
-        field_style(spawn_state.active_field == 8)
-    } else {
-        Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
-    };
-    let auto_spawn_widget = Paragraph::new(auto_spawn_text)
-        .style(auto_spawn_style)
-        .block(
-            Block::default()
-                .title(" Auto-Spawn ")
-                .borders(Borders::ALL)
-                .border_style(if spawn_state.loop_enabled && is_planner {
-                    border_style(spawn_state.active_field == 8)
-                } else {
-                    Style::default()
-                        .fg(colors::BORDER)
-                        .add_modifier(Modifier::DIM)
-                }),
-        );
-
-    // Max workers field (9)
-    let workers_cursor = if spawn_state.active_field == 9 {
-        "▏"
-    } else {
-        ""
-    };
-    let workers_enabled = spawn_state.loop_enabled && is_planner && spawn_state.auto_spawn_workers;
-    let workers_widget = Paragraph::new(format!("{}{}", spawn_state.max_workers, workers_cursor))
-        .style(if workers_enabled {
-            field_style(spawn_state.active_field == 9)
-        } else {
-            Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
-        })
-        .block(
-            Block::default()
-                .title(" Max Workers ")
-                .borders(Borders::ALL)
-                .border_style(if workers_enabled {
-                    border_style(spawn_state.active_field == 9)
-                } else {
-                    Style::default()
-                        .fg(colors::BORDER)
-                        .add_modifier(Modifier::DIM)
-                }),
-        );
-
-    // Claude Tasks toggle (10) and task_list_id (11)
-    let claude_tasks_area = chunks[7];
+    // Claude Tasks toggle (7) and task_list_id (8)
+    let claude_tasks_area = chunks[6];
     let claude_tasks_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
         .split(claude_tasks_area);
 
-    // Claude Tasks checkbox (10) - only enabled when loop mode is on
+    // Claude Tasks checkbox (7) - only enabled when loop mode is on
     let tasks_checkbox = if spawn_state.use_claude_tasks {
         "[x]"
     } else {
@@ -325,7 +232,7 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
         "(enable Loop mode)".to_string()
     };
     let tasks_style = if spawn_state.loop_enabled {
-        field_style(spawn_state.active_field == 10)
+        field_style(spawn_state.active_field == 7)
     } else {
         Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
     };
@@ -334,7 +241,7 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             .title(" Tasks API ")
             .borders(Borders::ALL)
             .border_style(if spawn_state.loop_enabled {
-                border_style(spawn_state.active_field == 10)
+                border_style(spawn_state.active_field == 7)
             } else {
                 Style::default()
                     .fg(colors::BORDER)
@@ -342,15 +249,15 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             }),
     );
 
-    // Task list ID field (11)
-    let task_list_cursor = if spawn_state.active_field == 11 {
+    // Task list ID field (8)
+    let task_list_cursor = if spawn_state.active_field == 8 {
         "▏"
     } else {
         ""
     };
     let tasks_enabled = spawn_state.loop_enabled && spawn_state.use_claude_tasks;
     let task_list_placeholder = "auto-generated if empty";
-    let task_list_display = if spawn_state.task_list_id.is_empty() && spawn_state.active_field != 11
+    let task_list_display = if spawn_state.task_list_id.is_empty() && spawn_state.active_field != 8
     {
         task_list_placeholder.to_string()
     } else {
@@ -358,10 +265,10 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     };
     let task_list_style = if !tasks_enabled {
         Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
-    } else if spawn_state.task_list_id.is_empty() && spawn_state.active_field != 11 {
+    } else if spawn_state.task_list_id.is_empty() && spawn_state.active_field != 8 {
         Style::default().fg(Color::DarkGray)
     } else {
-        field_style(spawn_state.active_field == 11)
+        field_style(spawn_state.active_field == 8)
     };
     let task_list_widget = Paragraph::new(task_list_display)
         .style(task_list_style)
@@ -370,7 +277,7 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .title(" Task List ID ")
                 .borders(Borders::ALL)
                 .border_style(if tasks_enabled {
-                    border_style(spawn_state.active_field == 11)
+                    border_style(spawn_state.active_field == 8)
                 } else {
                     Style::default()
                         .fg(colors::BORDER)
@@ -378,19 +285,19 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 }),
         );
 
-    // Sprite toggle (12)
+    // Sprite toggle (9)
     let sprite_checkbox = if spawn_state.use_sprite { "[x]" } else { "[ ]" };
     let sprite_text = format!("{sprite_checkbox} Run on remote Sprite (cloud VM)");
     let sprite_widget = Paragraph::new(sprite_text)
-        .style(field_style(spawn_state.active_field == 12))
+        .style(field_style(spawn_state.active_field == 9))
         .block(
             Block::default()
                 .title(" Sprite Mode ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 12)),
+                .border_style(border_style(spawn_state.active_field == 9)),
         );
 
-    // Network policy selector (13) - only visible when sprite mode is enabled
+    // Network policy selector (10) - only visible when sprite mode is enabled
     let network_display = if spawn_state.use_sprite {
         spawn_state.network_preset.display()
     } else {
@@ -398,7 +305,7 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     };
     let network_widget = Paragraph::new(format!("<  {network_display}  >"))
         .style(if spawn_state.use_sprite {
-            field_style(spawn_state.active_field == 13)
+            field_style(spawn_state.active_field == 10)
         } else {
             Style::default().fg(colors::FG).add_modifier(Modifier::DIM)
         })
@@ -408,7 +315,7 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 .title(" Network Policy (←/→ to change) ")
                 .borders(Borders::ALL)
                 .border_style(if spawn_state.use_sprite {
-                    border_style(spawn_state.active_field == 13)
+                    border_style(spawn_state.active_field == 10)
                 } else {
                     Style::default()
                         .fg(colors::BORDER)
@@ -416,61 +323,61 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
                 }),
         );
 
-    // Resources row (14 = RAM, 15 = CPUs) - split horizontally
-    let resources_area = chunks[10];
+    // Resources row (11 = RAM, 12 = CPUs) - split horizontally
+    let resources_area = chunks[9];
     let resources_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
         .split(resources_area);
 
-    // RAM field (14)
-    let ram_cursor = if spawn_state.active_field == 14 {
+    // RAM field (11)
+    let ram_cursor = if spawn_state.active_field == 11 {
         "▏"
     } else {
         ""
     };
     let ram_widget = Paragraph::new(format!("{}{} MB", spawn_state.ram_mb, ram_cursor))
-        .style(field_style(spawn_state.active_field == 14))
+        .style(field_style(spawn_state.active_field == 11))
         .block(
             Block::default()
                 .title(" RAM ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 14)),
+                .border_style(border_style(spawn_state.active_field == 11)),
         );
 
-    // CPUs field (15)
-    let cpus_cursor = if spawn_state.active_field == 15 {
+    // CPUs field (12)
+    let cpus_cursor = if spawn_state.active_field == 12 {
         "▏"
     } else {
         ""
     };
     let cpus_widget = Paragraph::new(format!("{}{} cores", spawn_state.cpus, cpus_cursor))
-        .style(field_style(spawn_state.active_field == 15))
+        .style(field_style(spawn_state.active_field == 12))
         .block(
             Block::default()
                 .title(" CPUs ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 15)),
+                .border_style(border_style(spawn_state.active_field == 12)),
         );
 
-    // Clone destination field (16) - only shown when project_path is a GitHub URL in local mode
-    let clone_dest_cursor = if spawn_state.active_field == 16 {
+    // Clone destination field (13) - only shown when project_path is a GitHub URL in local mode
+    let clone_dest_cursor = if spawn_state.active_field == 13 {
         "▏"
     } else {
         ""
     };
     let clone_dest_placeholder = "e.g. ~/projects/my-clone or /tmp/my-repo";
     let clone_dest_display =
-        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 16 {
+        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 13 {
             clone_dest_placeholder.to_string()
         } else {
             format!("{}{}", spawn_state.clone_destination, clone_dest_cursor)
         };
     let clone_dest_style =
-        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 16 {
+        if spawn_state.clone_destination.is_empty() && spawn_state.active_field != 13 {
             Style::default().fg(Color::DarkGray)
         } else {
-            field_style(spawn_state.active_field == 16)
+            field_style(spawn_state.active_field == 13)
         };
     let clone_dest_widget = Paragraph::new(clone_dest_display)
         .style(clone_dest_style)
@@ -478,7 +385,7 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
             Block::default()
                 .title(" Clone Destination (where to clone the repo) ")
                 .borders(Borders::ALL)
-                .border_style(border_style(spawn_state.active_field == 16)),
+                .border_style(border_style(spawn_state.active_field == 13)),
         );
 
     // Validation error display
@@ -518,18 +425,15 @@ pub fn render_spawn_dialog(f: &mut Frame, spawn_state: &SpawnState) {
     f.render_widget(loop_widget, chunks[4]);
     f.render_widget(iter_widget, loop_options_chunks[0]);
     f.render_widget(stop_widget, loop_options_chunks[1]);
-    f.render_widget(role_widget, loop_options_chunks[2]);
-    f.render_widget(auto_spawn_widget, auto_spawn_chunks[0]);
-    f.render_widget(workers_widget, auto_spawn_chunks[1]);
     f.render_widget(tasks_widget, claude_tasks_chunks[0]);
     f.render_widget(task_list_widget, claude_tasks_chunks[1]);
-    f.render_widget(sprite_widget, chunks[8]);
-    f.render_widget(network_widget, chunks[9]);
+    f.render_widget(sprite_widget, chunks[7]);
+    f.render_widget(network_widget, chunks[8]);
     f.render_widget(ram_widget, resources_chunks[0]);
     f.render_widget(cpus_widget, resources_chunks[1]);
     if show_clone_dest {
-        f.render_widget(clone_dest_widget, chunks[11]);
+        f.render_widget(clone_dest_widget, chunks[10]);
     }
-    f.render_widget(error_widget, chunks[12]);
-    f.render_widget(instructions, chunks[13]);
+    f.render_widget(error_widget, chunks[11]);
+    f.render_widget(instructions, chunks[12]);
 }
