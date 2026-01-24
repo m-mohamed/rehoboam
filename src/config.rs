@@ -336,6 +336,7 @@ pub mod styles {
     pub const ATTENTION: Style = Style::new().fg(colors::ATTENTION);
 
     /// Attention status (bold)
+    #[allow(dead_code)] // API consistency: available for future UI components
     pub const ATTENTION_BOLD: Style = Style::new()
         .fg(colors::ATTENTION)
         .add_modifier(Modifier::BOLD);

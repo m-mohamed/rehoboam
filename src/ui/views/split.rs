@@ -82,20 +82,12 @@ fn render_agent_list_compact(f: &mut Frame, area: ratatui::layout::Rect, app: &A
                 " "
             };
 
-            // Show loop iteration if in Rehoboam mode
-            let loop_info = if agent.loop_mode != crate::state::LoopMode::None {
-                format!(" [{}]", agent.loop_iteration)
-            } else {
-                String::new()
-            };
-
             let line = format!(
-                "{} {}{} {}{}",
+                "{} {}{} {}",
                 selected,
                 sprite_prefix,
                 icon,
-                truncate(&agent.project, 15),
-                loop_info
+                truncate(&agent.project, 15)
             );
 
             let style = if Some(agent.pane_id.as_str()) == selected_pane {

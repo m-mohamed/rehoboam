@@ -2,7 +2,6 @@
 
 use crate::app::App;
 use crate::config::colors;
-use crate::state::LoopMode;
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Paragraph},
@@ -31,27 +30,10 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
     let sprite_count = app.state.sprite_agent_count();
     let local_count = total - sprite_count;
 
-    // Calculate loop stats
-    let mut total_iterations: u32 = 0;
-    let mut active_loops: u32 = 0;
-    let mut completed_loops: u32 = 0;
-    let mut project_counts: HashMap<String, (u32, u32)> = HashMap::new(); // (agents, iters)
-
+    // Calculate project stats
+    let mut project_counts: HashMap<String, u32> = HashMap::new();
     for agent in app.state.agents.values() {
-        total_iterations += agent.loop_iteration;
-
-        match agent.loop_mode {
-            LoopMode::Active => active_loops += 1,
-            LoopMode::Complete => completed_loops += 1,
-            _ => {}
-        }
-
-        // Group by project
-        let entry = project_counts
-            .entry(agent.project.clone())
-            .or_insert((0, 0));
-        entry.0 += 1;
-        entry.1 += agent.loop_iteration;
+        *project_counts.entry(agent.project.clone()).or_insert(0) += 1;
     }
 
     // Build dashboard text
@@ -62,91 +44,48 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
             session_str, total, local_count, sprite_count
         ),
         String::new(),
-        format!("  ┌─ Status ──────────────┐  ┌─ Loop Progress ─────────────┐"),
-        format!(
-            "  │ 🔔 Attention:   {:>3}   │  │ Total iterations:   {:>5}   │",
-            attention, total_iterations
-        ),
-        format!(
-            "  │ 🤖 Working:     {:>3}   │  │ Completed loops:    {:>5}   │",
-            working, completed_loops
-        ),
-        format!(
-            "  │ 🔄 Compacting:  {:>3}   │  │ Active loops:       {:>5}   │",
-            compacting, active_loops
-        ),
-        "  └──────────────────────┘  └─────────────────────────────┘".to_string(),
+        "  ┌─ Status ──────────────┐".to_string(),
+        format!("  │ 🔔 Attention:   {:>3}   │", attention),
+        format!("  │ 🤖 Working:     {:>3}   │", working),
+        format!("  │ 🔄 Compacting:  {:>3}   │", compacting),
+        "  └──────────────────────┘".to_string(),
         String::new(),
     ];
 
-    // Calculate average latency from agent data
-    let avg_latency: f64 = {
-        let latencies: Vec<u64> = app
-            .state
-            .agents
-            .values()
-            .filter_map(|a| a.avg_latency_ms)
-            .collect();
-        if latencies.is_empty() {
-            0.0
-        } else {
-            latencies.iter().sum::<u64>() as f64 / latencies.len() as f64
-        }
-    };
-
-    // Calculate total tool calls from agents
-    let total_tool_calls: u32 = app.state.agents.values().map(|a| a.total_tool_calls).sum();
-
-    lines.push(String::new());
-    lines.push("  ┌─ Fleet Metrics ───────────────────────────────────────┐".to_string());
-    lines.push(format!(
-        "  │ Tool Calls: {:>8}   Avg Latency: {:>6.1}ms           │",
-        total_tool_calls, avg_latency
-    ));
-    lines.push(format!(
-        "  │ Total Iterations: {:>5}   Connected Sprites: {:>3}     │",
-        total_iterations,
-        app.state.connected_sprite_count()
-    ));
-    lines.push("  └──────────────────────────────────────────────────────┘".to_string());
-
-    // Add project breakdown
+    // Add project breakdown (top 5)
     if !project_counts.is_empty() {
-        lines.push(String::new());
-        lines.push("  ┌─ By Project ───────────────────────────────────────┐".to_string());
-        let mut projects: Vec<_> = project_counts.iter().collect();
-        projects.sort_by(|a, b| b.1 .1.cmp(&a.1 .1)); // Sort by iterations desc
+        lines.push("  ┌─ Projects ─────────────────────────────┐".to_string());
 
-        for (project, (agents, iters)) in projects.iter().take(5) {
-            let bar_len = (*iters as usize).min(20);
-            let bar = "█".repeat(bar_len);
-            let project_short = if project.len() > 15 {
-                format!("{}...", &project[..12])
+        let mut projects: Vec<_> = project_counts.into_iter().collect();
+        projects.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by count desc
+
+        for (project, count) in projects.iter().take(5) {
+            let display = if project.len() > 28 {
+                format!("{}…", &project[..27])
             } else {
-                project.to_string()
+                project.clone()
             };
-            lines.push(format!(
-                "  │ {:15} {:20} {:>2} agents {:>4} iters │",
-                project_short, bar, agents, iters
-            ));
+            lines.push(format!("  │ {:28} {:>4} │", display, count));
         }
-        lines.push("  └─────────────────────────────────────────────────────┘".to_string());
+        if projects.len() > 5 {
+            lines.push(format!("  │ ... and {} more projects        │", projects.len() - 5));
+        }
+        lines.push("  └──────────────────────────────────────┘".to_string());
     }
 
-    let dashboard_text = lines.join("\n");
+    lines.push(String::new());
+    lines.push("  Press 'd' to close".to_string());
 
-    let dashboard = Paragraph::new(dashboard_text)
+    let text = lines.join("\n");
+
+    let dashboard = Paragraph::new(text)
         .style(Style::default().fg(colors::FG))
         .block(
             Block::default()
-                .title(" Rehoboam Dashboard ")
+                .title(" Dashboard ")
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(colors::HIGHLIGHT))
-                .border_type(ratatui::widgets::BorderType::Double)
-                .title_bottom(Line::from(" d:close ").centered())
-                .style(Style::default().bg(colors::BG)),
+                .border_style(Style::default().fg(colors::BORDER)),
         );
 
-    f.render_widget(ratatui::widgets::Clear, area);
     f.render_widget(dashboard, area);
 }

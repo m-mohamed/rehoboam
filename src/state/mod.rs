@@ -2,15 +2,13 @@
 //!
 //! Core state machine for tracking Claude Code agents:
 //! - Status tracking (Attention, Working, Compacting)
-//! - Loop mode orchestration for autonomous iterations
 //! - Session lifecycle management
 //! - Status count caching for efficient UI rendering
 
 mod agent;
 mod event_processing;
-pub mod loop_handling;
 
-pub use agent::{Agent, AgentRole, AttentionType, LoopMode, Status, Subagent};
+pub use agent::{Agent, AgentRole, AttentionType, Status, Subagent};
 
 use crate::event::HookEvent;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -27,19 +25,6 @@ const STALE_TIMEOUT_SECS: i64 = 300; // 5 minutes
 /// Number of status columns in Kanban view (Attention, Working, Compacting)
 pub const NUM_COLUMNS: usize = 3;
 
-/// Loop configuration for pending spawn
-#[derive(Debug, Clone)]
-pub struct LoopConfig {
-    /// Maximum iterations before stopping
-    pub max_iterations: u32,
-    /// Stop word to detect completion
-    pub stop_word: String,
-    /// Path to .rehoboam/ directory for Rehoboam loops (fresh sessions)
-    pub loop_dir: Option<std::path::PathBuf>,
-    /// Working directory for git operations (worktree path for workers)
-    pub working_dir: Option<std::path::PathBuf>,
-}
-
 /// Application state
 #[derive(Debug)]
 pub struct AppState {
@@ -55,8 +40,6 @@ pub struct AppState {
     pub status_counts: [usize; NUM_COLUMNS],
     /// Set of selected pane_ids for bulk operations
     pub selected_agents: HashSet<String>,
-    /// Pending loop configs for newly spawned agents (pane_id -> config)
-    pub pending_loop_configs: HashMap<String, LoopConfig>,
     /// Set of sprite agent IDs (for quick lookup)
     pub sprite_agent_ids: HashSet<String>,
     /// Set of currently connected sprite IDs
@@ -72,7 +55,6 @@ impl Default for AppState {
             selected_card: 0,
             status_counts: [0; NUM_COLUMNS],
             selected_agents: HashSet::new(),
-            pending_loop_configs: HashMap::new(),
             sprite_agent_ids: HashSet::new(),
             connected_sprites: HashSet::new(),
         }
@@ -400,81 +382,8 @@ impl AppState {
             .collect()
     }
 
-    // v0.9.0 Loop Mode Methods
-
-    /// Register a pending loop config for a newly spawned agent
-    ///
-    /// When the agent sends its first hook event, the config will be applied.
-    /// If `loop_dir` is Some, the agent will use proper Rehoboam mode (fresh sessions).
-    /// If `working_dir` is Some, it will be set as the agent's git working directory.
-    /// Judge always runs when loop mode is active (no toggle needed).
-    ///
-    /// Note: Role/auto-spawn removed - TeammateTool handles agent roles and team spawning.
-    pub fn register_loop_config(
-        &mut self,
-        pane_id: &str,
-        max_iterations: u32,
-        stop_word: &str,
-        loop_dir: Option<std::path::PathBuf>,
-        working_dir: Option<std::path::PathBuf>,
-    ) {
-        self.pending_loop_configs.insert(
-            pane_id.to_string(),
-            LoopConfig {
-                max_iterations,
-                stop_word: stop_word.to_string(),
-                loop_dir: loop_dir.clone(),
-                working_dir: working_dir.clone(),
-            },
-        );
-        tracing::info!(
-            pane_id = %pane_id,
-            max = max_iterations,
-            stop_word = %stop_word,
-            loop_dir = ?loop_dir,
-            working_dir = ?working_dir,
-            "Registered pending loop config"
-        );
-    }
-
-    /// Cancel loop mode (X key)
-    ///
-    /// Stops sending Enter on Stop events. Agent continues to run but won't auto-continue.
-    pub fn cancel_loop(&mut self, pane_id: &str) {
-        if let Some(agent) = self.agents.get_mut(pane_id) {
-            if agent.loop_mode == LoopMode::Active {
-                agent.loop_mode = LoopMode::None;
-                tracing::info!(
-                    pane_id = %pane_id,
-                    iteration = agent.loop_iteration,
-                    "Loop cancelled"
-                );
-            }
-        }
-    }
-
-    /// Restart loop mode (R key)
-    ///
-    /// Resets iteration counter and resumes sending Enter on Stop events.
-    pub fn restart_loop(&mut self, pane_id: &str) {
-        if let Some(agent) = self.agents.get_mut(pane_id) {
-            if matches!(
-                agent.loop_mode,
-                LoopMode::Stalled | LoopMode::Complete | LoopMode::None
-            ) {
-                agent.loop_mode = LoopMode::Active;
-                agent.loop_iteration = 0;
-                agent.loop_last_reasons.clear();
-                tracing::info!(
-                    pane_id = %pane_id,
-                    max = agent.loop_max,
-                    "Loop restarted"
-                );
-            }
-        }
-    }
-
     /// Get the pane_id of the currently selected agent
+    #[allow(dead_code)] // API consistency: convenience method
     pub fn selected_pane_id(&self) -> Option<String> {
         self.selected_agent().map(|a| a.pane_id.clone())
     }
@@ -529,8 +438,6 @@ impl AppState {
         }
     }
 }
-
-// NOTE: spawn_fresh_rehoboam_session() is defined in loop_handling.rs
 
 fn current_timestamp() -> i64 {
     SystemTime::now()
@@ -655,8 +562,6 @@ mod tests {
         assert_eq!(state.status_counts[1], 0); // Working
         assert_eq!(state.status_counts[0], 0); // Attention (includes Waiting)
     }
-
-    // NOTE: is_stalled tests moved to loop_handling.rs
 
     #[test]
     fn test_subagent_stop_does_not_override_attention() {

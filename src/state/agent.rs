@@ -2,33 +2,9 @@
 //!
 //! Tracks the status and activity of each Claude Code agent running in terminal panes.
 //! Supports multiple terminal emulators: Tmux, WezTerm, Kitty, iTerm2.
-//!
-//! # Loop Mode (v0.9.0)
-//! Agents can run in "Loop Mode" for Rehoboam-style autonomous iteration.
-//! Rehoboam sends Enter keystrokes via tmux to continue loops until:
-//! - Max iterations reached
-//! - Stop word detected in reason
-//! - Stall detected (5+ identical stop reasons)
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-
-/// Loop mode state for autonomous iteration
-///
-/// When an agent is spawned in Loop Mode, Rehoboam monitors Stop events
-/// and sends Enter keystrokes to continue the loop until a circuit breaker triggers.
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum LoopMode {
-    /// Not in loop mode (normal agent)
-    #[default]
-    None,
-    /// Loop is active - will send Enter on Stop
-    Active,
-    /// Loop stalled (5+ identical stop reasons)
-    Stalled,
-    /// Loop completed (stop word found or max iterations reached)
-    Complete,
-}
 
 /// Agent role classification based on tool usage patterns
 ///
@@ -213,18 +189,6 @@ pub struct Agent {
     /// Prevents timeout to Waiting while Claude is generating text (no tool hooks)
     pub in_response: bool,
 
-    // v0.9.0 Loop Mode fields
-    /// Current loop mode state
-    pub loop_mode: LoopMode,
-    /// Current iteration count (incremented on each Stop event)
-    pub loop_iteration: u32,
-    /// Maximum iterations before stopping (circuit breaker)
-    pub loop_max: u32,
-    /// Stop word to detect completion (e.g., "DONE")
-    pub loop_stop_word: String,
-    /// Last 5 stop reasons for stall detection
-    pub loop_last_reasons: VecDeque<String>,
-
     // v0.9.0 Subagent tracking
     /// Subagents spawned by this agent
     pub subagents: Vec<Subagent>,
@@ -238,10 +202,6 @@ pub struct Agent {
     // v1.0 Git operations
     /// Working directory for git operations (worktree path)
     pub working_dir: Option<std::path::PathBuf>,
-
-    // v1.1 Proper Rehoboam loops
-    /// Loop directory for Rehoboam Loop mode (fresh sessions)
-    pub loop_dir: Option<std::path::PathBuf>,
 
     // v1.2 Agent role classification (Cursor-inspired)
     /// Inferred agent role based on tool usage patterns
@@ -315,12 +275,6 @@ impl Agent {
             avg_latency_ms: None,
             total_tool_calls: 0,
             in_response: false,
-            // v0.9.0 Loop Mode fields
-            loop_mode: LoopMode::None,
-            loop_iteration: 0,
-            loop_max: 50, // Default max iterations
-            loop_stop_word: "DONE".to_string(),
-            loop_last_reasons: VecDeque::with_capacity(5),
             // v0.9.0 Subagent tracking
             subagents: Vec::new(),
             // v0.10.0 Sprite tracking
@@ -328,8 +282,6 @@ impl Agent {
             sprite_id: None,
             // v1.0 Git operations
             working_dir: None,
-            // v1.1 Proper Rehoboam loops
-            loop_dir: None,
             // v1.2 Agent role classification
             role: AgentRole::General,
             tool_history: VecDeque::with_capacity(10),

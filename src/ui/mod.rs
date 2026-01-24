@@ -284,15 +284,8 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     let help = if selection_count > 0 {
         // Multi-select mode
         format!("[{selection_count} selected]  Y/N:bulk approve  K:kill all  x:clear  Space:toggle")
-    } else if let Some(agent) = app.state.selected_agent() {
+    } else if let Some(_agent) = app.state.selected_agent() {
         // Single agent selected - show relevant commands
-        use crate::state::LoopMode;
-        let loop_info = if agent.loop_mode != LoopMode::None {
-            format!(" iter:{}/{}", agent.loop_iteration, agent.loop_max)
-        } else {
-            String::new()
-        };
-
         let mode_indicators: Vec<&str> = [
             app.debug_mode.then_some("[debug]"),
             app.frozen.then_some("[frozen]"),
@@ -309,7 +302,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         };
 
         format!(
-            "{prefix}Enter:jump  y/n:approve  c:input  X:cancel  R:restart{loop_info}  d:dash  ?:help"
+            "{prefix}Enter:jump  y/n:approve  c:input  d:dash  ?:help"
         )
     } else {
         // No selection - show general commands

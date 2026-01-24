@@ -196,55 +196,12 @@ impl App {
             Event::RemoteHook { sprite_id, event } => {
                 // Process remote hook events from sprites
                 if !self.frozen {
-                    let event_name = event.event.clone();
                     let mut hook_event = *event;
                     hook_event.source = EventSource::Sprite {
                         sprite_id: sprite_id.clone(),
                     };
                     let changed = self.state.process_event(hook_event);
                     self.needs_render = self.needs_render || changed;
-
-                    // Handle sprite loop continuation
-                    // After Stop event, check if sprite needs loop continuation
-                    if event_name == "Stop" {
-                        if let Some(agent) = self.state.agents.get(&sprite_id) {
-                            if agent.is_sprite && agent.loop_mode == crate::state::LoopMode::Active
-                            {
-                                // Sprite needs loop continuation - send Enter keystroke
-                                if let Some(client) = &self.sprites_client {
-                                    let sprite = client.sprite(&sprite_id);
-                                    let iteration = agent.loop_iteration;
-                                    let max = agent.loop_max;
-                                    tokio::spawn(async move {
-                                        tracing::info!(
-                                            sprite_id = %sprite.name(),
-                                            iteration = iteration,
-                                            max = max,
-                                            "Sending Enter for sprite loop continuation"
-                                        );
-                                        // Send Enter keystroke to continue the loop
-                                        if let Err(e) =
-                                            crate::sprite::controller::SpriteController::send_input(
-                                                &sprite, "\n",
-                                            )
-                                            .await
-                                        {
-                                            tracing::error!(
-                                                sprite_id = %sprite.name(),
-                                                error = %e,
-                                                "Failed to send Enter for sprite loop continuation"
-                                            );
-                                        }
-                                    });
-                                } else {
-                                    tracing::warn!(
-                                        sprite_id = %sprite_id,
-                                        "Sprite loop continuation needed but no sprites client configured"
-                                    );
-                                }
-                            }
-                        }
-                    }
                 }
             }
             Event::SpriteStatus { sprite_id, status } => {

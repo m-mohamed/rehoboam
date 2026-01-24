@@ -7,7 +7,7 @@
 //! - Elapsed time (dim)
 
 use crate::config::{colors, styles};
-use crate::state::{Agent, LoopMode};
+use crate::state::Agent;
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
@@ -86,24 +86,9 @@ pub fn render_agent_card(
         .style(styles::HEADER),
     ];
 
-    // Line 2: Loop mode indicator OR task info OR subagent count OR tool display
-    match &agent.loop_mode {
-        LoopMode::Active => {
-            content.push(
-                Line::from(format!("Loop {}/{}", agent.loop_iteration, agent.loop_max))
-                    .style(styles::WORKING),
-            );
-        }
-        LoopMode::Stalled => {
-            content.push(Line::from("STALLED (X/R)").style(styles::ATTENTION_BOLD));
-        }
-        LoopMode::Complete => {
-            content
-                .push(Line::from(format!("DONE at {}", agent.loop_iteration)).style(styles::IDLE));
-        }
-        LoopMode::None => {
-            // v2.2: Show current task info if working on a Claude Code Task
-            if let Some(ref task_subject) = agent.current_task_subject {
+    // Line 2: Task info OR subagent count OR tool display
+    // v2.2: Show current task info if working on a Claude Code Task
+    if let Some(ref task_subject) = agent.current_task_subject {
                 // Show task subject (truncated)
                 let task_display = format!(
                     "📋 {}",
@@ -169,8 +154,6 @@ pub fn render_agent_card(
             } else {
                 content.push(Line::from(agent.tool_display()).style(styles::IDLE));
             }
-        }
-    }
 
     // Line 3: Elapsed time OR context usage warning (when context is high)
     // v2.1.x: Show context usage bar when context is getting full (>= 80%)

@@ -27,10 +27,6 @@
 //! - `Space` - Toggle agent selection (for bulk ops)
 //! - `s` - Open spawn dialog
 //!
-//! ## Loop Mode Controls
-//! - `X` - Cancel loop for selected agent
-//! - `R` - Restart loop for selected agent
-//!
 //! ## Git Operations
 //! - `g` - Git commit checkpoint
 //! - `G` - Git push to remote
@@ -245,18 +241,6 @@ impl App {
                 tracing::debug!("Cleared all selections");
             }
 
-            // === Loop Mode Controls ===
-            KeyCode::Char('X') => {
-                if let Some(pane_id) = self.state.selected_pane_id() {
-                    self.state.cancel_loop(&pane_id);
-                }
-            }
-            KeyCode::Char('R') => {
-                if let Some(pane_id) = self.state.selected_pane_id() {
-                    self.state.restart_loop(&pane_id);
-                }
-            }
-
             // === Git Operations ===
             KeyCode::Char('g') => {
                 operations::git_commit_selected(&self.state);
@@ -327,12 +311,11 @@ impl App {
                         % spawn::SPAWN_FIELD_COUNT;
             }
             KeyCode::Enter => {
-                // Toggle fields (3 = worktree, 4 = loop, 7 = claude_tasks, 9 = sprite)
+                // Toggle fields (3 = worktree, 4 = claude_tasks, 6 = sprite)
                 match self.spawn_state.active_field {
                     3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
-                    4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                    7 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
-                    9 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                    4 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
+                    6 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                     _ => match spawn::validate_spawn(
                         &self.spawn_state,
                         self.sprites_client.is_some(),
@@ -357,9 +340,8 @@ impl App {
             }
             KeyCode::Char(' ') => match self.spawn_state.active_field {
                 3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
-                4 => self.spawn_state.loop_enabled = !self.spawn_state.loop_enabled,
-                7 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
-                9 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                4 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
+                6 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                 0 => {
                     if self.spawn_state.use_sprite {
                         self.spawn_state.github_repo.push(' ');
@@ -369,17 +351,16 @@ impl App {
                 }
                 1 => self.spawn_state.prompt.push(' '),
                 2 => self.spawn_state.branch_name.push(' '),
-                6 => self.spawn_state.loop_stop_word.push(' '),
-                8 => self.spawn_state.task_list_id.push(' '),
+                5 => self.spawn_state.task_list_id.push(' '),
                 _ => {}
             },
             KeyCode::Left => {
-                if self.spawn_state.active_field == 10 {
+                if self.spawn_state.active_field == 7 {
                     self.spawn_state.network_preset = self.spawn_state.network_preset.prev();
                 }
             }
             KeyCode::Right => {
-                if self.spawn_state.active_field == 10 {
+                if self.spawn_state.active_field == 7 {
                     self.spawn_state.network_preset = self.spawn_state.network_preset.next();
                 }
             }
@@ -398,21 +379,15 @@ impl App {
                     self.spawn_state.branch_name.pop();
                 }
                 5 => {
-                    self.spawn_state.loop_max_iterations.pop();
-                }
-                6 => {
-                    self.spawn_state.loop_stop_word.pop();
-                }
-                8 => {
                     self.spawn_state.task_list_id.pop();
                 }
-                11 => {
+                8 => {
                     self.spawn_state.ram_mb.pop();
                 }
-                12 => {
+                9 => {
                     self.spawn_state.cpus.pop();
                 }
-                13 => {
+                10 => {
                     self.spawn_state.clone_destination.pop();
                 }
                 _ => {}
@@ -435,19 +410,6 @@ impl App {
                     }
                 }
                 4 => {
-                    if c == 'y' || c == 'Y' {
-                        self.spawn_state.loop_enabled = true;
-                    } else if c == 'n' || c == 'N' {
-                        self.spawn_state.loop_enabled = false;
-                    }
-                }
-                5 => {
-                    if c.is_ascii_digit() {
-                        self.spawn_state.loop_max_iterations.push(c);
-                    }
-                }
-                6 => self.spawn_state.loop_stop_word.push(c),
-                7 => {
                     // Claude Tasks toggle - y/n to toggle
                     if c == 'y' || c == 'Y' {
                         self.spawn_state.use_claude_tasks = true;
@@ -455,13 +417,13 @@ impl App {
                         self.spawn_state.use_claude_tasks = false;
                     }
                 }
-                8 => {
+                5 => {
                     // Task list ID - alphanumeric + dash/underscore
                     if c.is_alphanumeric() || c == '-' || c == '_' {
                         self.spawn_state.task_list_id.push(c);
                     }
                 }
-                9 => {
+                6 => {
                     // Sprite toggle - y/n to toggle
                     if c == 'y' || c == 'Y' {
                         self.spawn_state.use_sprite = true;
@@ -469,17 +431,17 @@ impl App {
                         self.spawn_state.use_sprite = false;
                     }
                 }
-                11 => {
+                8 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.ram_mb.push(c);
                     }
                 }
-                12 => {
+                9 => {
                     if c.is_ascii_digit() {
                         self.spawn_state.cpus.push(c);
                     }
                 }
-                13 => {
+                10 => {
                     self.spawn_state.clone_destination.push(c);
                 }
                 _ => {}

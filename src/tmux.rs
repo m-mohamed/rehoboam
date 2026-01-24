@@ -73,27 +73,6 @@ impl TmuxController {
         Ok(())
     }
 
-    /// Send Enter key to a tmux pane (for loop continuation)
-    ///
-    /// Sends just Enter without any text. Used by loop mode to continue
-    /// Claude Code sessions after Stop events.
-    ///
-    /// # Arguments
-    /// * `pane_id` - Tmux pane identifier (e.g., "%1", "%2")
-    pub fn send_enter(pane_id: &str) -> Result<()> {
-        let status = Command::new("tmux")
-            .args(["send-keys", "-t", pane_id, "Enter"])
-            .status()
-            .wrap_err("Failed to execute tmux send-keys Enter")?;
-
-        if !status.success() {
-            bail!("tmux send-keys Enter failed with status: {}", status);
-        }
-
-        tracing::debug!(pane_id = %pane_id, "Sent Enter to pane");
-        Ok(())
-    }
-
     /// Send keys without Enter (for partial input)
     ///
     /// # Arguments
@@ -375,99 +354,6 @@ impl TmuxController {
         let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
         tracing::info!(pane_id = %pane_id, cwd = %cwd, "Created new tmux pane");
         Ok(pane_id)
-    }
-
-    /// Kill a tmux pane
-    ///
-    /// Used by Rehoboam loops to kill the old session before respawning fresh.
-    ///
-    /// # Arguments
-    /// * `pane_id` - Tmux pane identifier (e.g., "%1", "%2")
-    pub fn kill_pane(pane_id: &str) -> Result<()> {
-        let status = Command::new("tmux")
-            .args(["kill-pane", "-t", pane_id])
-            .status()
-            .wrap_err("Failed to execute tmux kill-pane")?;
-
-        if !status.success() {
-            bail!("tmux kill-pane failed with status: {}", status);
-        }
-
-        tracing::info!(pane_id = %pane_id, "Killed tmux pane");
-        Ok(())
-    }
-
-    /// Respawn a pane with a fresh Claude Code session
-    ///
-    /// Creates a new pane in the same window and starts Claude with the given prompt file.
-    /// Used by Rehoboam loops to spawn fresh sessions per iteration.
-    ///
-    /// With git worktrees, workers run in their own isolated worktree directories,
-    /// so the `cwd` parameter is sufficient for isolation (no env vars needed).
-    ///
-    /// # Arguments
-    /// * `cwd` - Working directory for the new pane (project root or worktree path)
-    /// * `prompt_file` - Path to the iteration prompt file
-    ///
-    /// # Returns
-    /// The pane ID of the newly created pane
-    pub fn respawn_claude(cwd: &str, prompt_file: &str) -> Result<String> {
-        // Escape the prompt file path for safe shell usage
-        // Replace single quotes with '\'' (end quote, escaped quote, start quote)
-        let escaped_path = prompt_file.replace('\'', "'\\''");
-
-        // Simple command - standard .rehoboam/ discovery works for all roles
-        let cmd = format!("cat '{}' | claude", escaped_path);
-
-        let output = Command::new("tmux")
-            .args([
-                "split-window",
-                "-h", // horizontal split
-                "-c",
-                cwd,
-                "-P",
-                "-F",
-                "#{pane_id}",
-                &cmd,
-            ])
-            .output()
-            .wrap_err("Failed to execute tmux split-window for respawn")?;
-
-        if !output.status.success() {
-            bail!(
-                "tmux split-window failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-
-        let pane_id = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        tracing::info!(
-            pane_id = %pane_id,
-            cwd = %cwd,
-            prompt_file = %prompt_file,
-            "Respawned Claude in new pane"
-        );
-        Ok(pane_id)
-    }
-
-    /// Send Ctrl+C to interrupt current process
-    ///
-    /// Used to cleanly stop Claude before killing the pane.
-    ///
-    /// # Arguments
-    /// * `pane_id` - Tmux pane identifier
-    pub fn send_interrupt(pane_id: &str) -> Result<()> {
-        let status = Command::new("tmux")
-            .args(["send-keys", "-t", pane_id, "C-c"])
-            .status()
-            .wrap_err("Failed to execute tmux send-keys C-c")?;
-
-        if !status.success() {
-            bail!("tmux send-keys C-c failed with status: {}", status);
-        }
-
-        tracing::debug!(pane_id = %pane_id, "Sent Ctrl+C to pane");
-        Ok(())
     }
 
     /// Respawn Claude with environment variables set

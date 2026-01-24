@@ -45,7 +45,6 @@ mod git;
 mod init;
 mod notify;
 mod reconcile;
-mod rehoboam_loop;
 mod sprite;
 mod state;
 mod tmux;

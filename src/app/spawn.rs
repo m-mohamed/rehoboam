@@ -10,7 +10,6 @@
 //!    - **Project**: Local path or GitHub repo (e.g., `owner/repo`)
 //!    - **Prompt**: Initial task for the agent
 //!    - **Branch**: Optional git worktree isolation
-//!    - **Loop Mode**: Enable Rehoboam's Loop for autonomous iteration
 //!    - **Sprite**: Enable for remote VM execution (cloud)
 //! 3. Press `Enter` to spawn or `Esc` to cancel
 //!
@@ -18,29 +17,17 @@
 //!
 //! - **Local (Tmux)**: Spawns Claude Code in a new tmux pane
 //! - **Sprite (Cloud)**: Spawns on remote Fly.io VM with checkpoint support
-//!
-//! # Loop Mode (Rehoboam's Loop)
-//!
-//! When loop mode is enabled:
-//! - Fresh Claude session spawned for each iteration
-//! - State persisted in `.rehoboam/` directory
-//! - Automatic continuation until stop word or max iterations
-//!
-//! Note: Agent roles (Planner/Worker) are now managed by Claude Code's
-//! TeammateTool via CLAUDE_CODE_AGENT_TYPE environment variable.
 
 use crate::git::GitController;
-use crate::rehoboam_loop::{self, RehoboamConfig};
 use crate::sprite::config::NetworkPreset;
 use crate::tmux::TmuxController;
 use sprites::SpritesClient;
 use std::path::PathBuf;
 
 /// Number of fields in spawn dialog
-/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=loop, 5=max_iter, 6=stop_word,
-/// 7=claude_tasks, 8=task_list_id, 9=sprite, 10=network, 11=ram, 12=cpus, 13=clone_dest
-/// Note: Role and auto-spawn removed - TeammateTool handles agent roles and team spawning
-pub const SPAWN_FIELD_COUNT: usize = 14;
+/// 0=project, 1=prompt, 2=branch, 3=worktree, 4=claude_tasks, 5=task_list_id,
+/// 6=sprite, 7=network, 8=ram, 9=cpus, 10=clone_dest
+pub const SPAWN_FIELD_COUNT: usize = 11;
 
 /// State for the spawn dialog
 #[derive(Debug, Clone)]
@@ -57,16 +44,9 @@ pub struct SpawnState {
     /// Whether to create a git worktree for isolation
     pub use_worktree: bool,
     /// Which field is being edited
-    /// 0 = project/github, 1 = prompt, 2 = branch, 3 = worktree toggle, 4 = loop toggle,
-    /// 5 = max iter, 6 = stop word, 7 = sprite toggle, 8 = network policy
+    /// 0 = project/github, 1 = prompt, 2 = branch, 3 = worktree toggle,
+    /// 4 = claude_tasks toggle, 5 = task_list_id, 6 = sprite toggle, 7 = network
     pub active_field: usize,
-    // v0.9.0 Loop Mode fields
-    /// Whether to enable loop mode for the new agent
-    pub loop_enabled: bool,
-    /// Maximum iterations before stopping (default: 20)
-    pub loop_max_iterations: String,
-    /// Stop word to detect completion (default: "COMPLETE")
-    pub loop_stop_word: String,
     /// Use Claude Code native Tasks API for task management
     /// When enabled, agents use TaskCreate/TaskUpdate instead of tasks.md
     pub use_claude_tasks: bool,
@@ -142,9 +122,6 @@ impl Default for SpawnState {
             branch_name: String::new(),
             use_worktree: false,
             active_field: 0,
-            loop_enabled: false,
-            loop_max_iterations: "20".to_string(),
-            loop_stop_word: "COMPLETE".to_string(),
             use_claude_tasks: true, // Default: use Claude Code native Tasks API
             task_list_id: String::new(),
             use_sprite: false,
@@ -213,16 +190,6 @@ pub fn validate_spawn(state: &SpawnState, has_sprites_client: bool) -> Result<()
         && (state.branch_name.contains(' ') || state.branch_name.contains(".."))
     {
         return Err("Invalid branch name (no spaces or '..')".to_string());
-    }
-
-    // Validate max iterations
-    if state.loop_enabled {
-        match state.loop_max_iterations.parse::<u32>() {
-            Ok(0) => return Err("Max iterations must be > 0".to_string()),
-            Ok(n) if n > 1000 => return Err("Max iterations too high (max 1000)".to_string()),
-            Err(_) => return Err("Invalid max iterations number".to_string()),
-            _ => {}
-        }
     }
 
     Ok(())
@@ -308,15 +275,11 @@ fn spawn_sprite_agent(spawn_state: &SpawnState, client: &SpritesClient) {
     let github_repo = spawn_state.github_repo.clone();
     let project_path = spawn_state.project_path.clone();
     let prompt = spawn_state.prompt.clone();
-    let loop_enabled = spawn_state.loop_enabled;
-    let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
-    let stop_word = spawn_state.loop_stop_word.clone();
 
     tracing::info!(
         project = %project_path,
         github_repo = %github_repo,
         prompt_len = prompt.len(),
-        loop_enabled = loop_enabled,
         "Spawning agent on remote sprite"
     );
 
@@ -415,17 +378,9 @@ fn spawn_sprite_agent(spawn_state: &SpawnState, client: &SpritesClient) {
                             sprite_name = %sprite_name,
                             tmux_session = %tmux_session,
                             work_dir = %work_dir,
-                            loop_enabled = loop_enabled,
                             "Claude Code started in sprite (tmux session: {})",
                             tmux_session
                         );
-                        if loop_enabled {
-                            tracing::debug!(
-                                max_iter = max_iter,
-                                stop_word = %stop_word,
-                                "Loop mode enabled for sprite"
-                            );
-                        }
                     }
                     Err(e) => {
                         tracing::error!(
@@ -506,8 +461,8 @@ fn spawn_tmux_agent(
         PathBuf::from(project_path)
     };
 
-    // Generate or use provided task list ID
-    let task_list_id = if spawn_state.loop_enabled && spawn_state.use_claude_tasks {
+    // Generate or use provided task list ID (for multi-agent coordination)
+    let task_list_id = if spawn_state.use_claude_tasks {
         if spawn_state.task_list_id.is_empty() {
             Some(generate_task_list_id(project_path))
         } else {
@@ -547,62 +502,16 @@ fn spawn_tmux_agent(
         Ok(pane_id) => {
             tracing::info!(pane_id = %pane_id, "Created new tmux pane");
 
-            // Initialize Rehoboam loop if loop mode is enabled
-            let loop_dir = if spawn_state.loop_enabled && !prompt.is_empty() {
-                let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
-                let config = RehoboamConfig {
-                    max_iterations: max_iter,
-                    stop_word: spawn_state.loop_stop_word.clone(),
-                    pane_id: pane_id.clone(),
-                };
-
-                match rehoboam_loop::init_loop_dir(&working_dir, prompt, &config) {
-                    Ok(dir) => {
-                        let _ = rehoboam_loop::log_session_transition(
-                            &dir,
-                            "init",
-                            "starting",
-                            Some(&pane_id),
-                        );
-                        let _ = rehoboam_loop::mark_iteration_start(&dir);
-
-                        tracing::info!(
-                            loop_dir = ?dir,
-                            "Initialized Rehoboam Loop directory"
-                        );
-                        Some(dir)
-                    }
-                    Err(e) => {
-                        tracing::error!(error = %e, "Failed to initialize Rehoboam Loop directory");
-                        None
-                    }
-                }
-            } else {
-                None
-            };
-
-            // Register loop config if loop mode is enabled (Judge is automatic)
-            if spawn_state.loop_enabled {
-                let max_iter = spawn_state.loop_max_iterations.parse::<u32>().unwrap_or(50);
-                state.register_loop_config(
-                    &pane_id,
-                    max_iter,
-                    &spawn_state.loop_stop_word,
-                    loop_dir.clone(),
-                    Some(working_dir.clone()), // git working directory
-                );
-
-                // Store task list ID on agent if using Claude Tasks
-                if let Some(ref id) = task_list_id {
-                    state.set_agent_task_list_id(&pane_id, id.clone());
-                }
+            // Store task list ID on agent if using Claude Tasks
+            if let Some(ref id) = task_list_id {
+                state.set_agent_task_list_id(&pane_id, id.clone());
             }
 
-            // Store working directory for git operations (redundant but kept for non-loop agents)
+            // Store working directory for git operations
             state.set_agent_working_dir(&pane_id, working_dir.clone());
 
             // Start Claude Code in the new pane
-            start_claude_in_pane(&pane_id, prompt, loop_dir.as_ref());
+            start_claude_in_pane(&pane_id, prompt);
         }
         Err(e) => {
             tracing::error!(error = %e, "Failed to create tmux pane");
@@ -611,50 +520,25 @@ fn spawn_tmux_agent(
 }
 
 /// Start Claude Code in a tmux pane
-fn start_claude_in_pane(pane_id: &str, prompt: &str, loop_dir: Option<&PathBuf>) {
-    if let Some(loop_dir) = loop_dir {
-        // Rehoboam loop mode: pipe the iteration prompt to Claude
-        match rehoboam_loop::build_iteration_prompt(loop_dir) {
-            Ok(prompt_file) => {
-                let cmd = format!("cat '{}' | claude", prompt_file);
-                if let Err(e) = TmuxController::send_keys(pane_id, &cmd) {
-                    tracing::error!(error = %e, "Failed to start Claude with prompt file");
-                    return;
-                }
-                tracing::info!(
-                    pane_id = %pane_id,
-                    prompt_file = %prompt_file,
-                    "Started Claude in Rehoboam loop mode"
-                );
-            }
-            Err(e) => {
-                tracing::error!(error = %e, "Failed to build iteration prompt");
-                // Fall back to normal start
-                if let Err(e) = TmuxController::send_keys(pane_id, "claude") {
-                    tracing::error!(error = %e, "Failed to start Claude");
-                }
-            }
-        }
-    } else {
-        // Normal mode: start Claude and send prompt via buffer
-        if let Err(e) = TmuxController::send_keys(pane_id, "claude") {
-            tracing::error!(error = %e, "Failed to start Claude");
-            return;
-        }
+fn start_claude_in_pane(pane_id: &str, prompt: &str) {
+    // Start Claude in the pane
+    if let Err(e) = TmuxController::send_keys(pane_id, "claude") {
+        tracing::error!(error = %e, "Failed to start Claude");
+        return;
+    }
 
-        // If we have a prompt, send it after a short delay
-        if !prompt.is_empty() {
-            let pane_id_clone = pane_id.to_string();
-            let prompt_clone = prompt.to_string();
-            tokio::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                if let Err(e) = TmuxController::send_buffered(&pane_id_clone, &prompt_clone) {
-                    tracing::error!(error = %e, "Failed to send prompt");
-                } else {
-                    tracing::info!(pane_id = %pane_id_clone, "Sent initial prompt");
-                }
-            });
-        }
+    // If we have a prompt, send it after a short delay
+    if !prompt.is_empty() {
+        let pane_id_clone = pane_id.to_string();
+        let prompt_clone = prompt.to_string();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            if let Err(e) = TmuxController::send_buffered(&pane_id_clone, &prompt_clone) {
+                tracing::error!(error = %e, "Failed to send prompt");
+            } else {
+                tracing::info!(pane_id = %pane_id_clone, "Sent initial prompt");
+            }
+        });
     }
 }
 
