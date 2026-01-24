@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.11] - 2026-01-24
+
+### Changed
+
+- Remove orchestration logic in favor of TeammateTool
+- Improve error handling, task integration, and loop orchestration
+
+### Fixed
+
+- Resolve CI formatting and sync with Claude Code 2.1.x
+- Security audit hardening and resource limits
+[0.9.11]: https://github.com/m-mohamed/rehoboam/compare/v0.9.10...v0.9.11
+
+
 ## [0.9.10] - 2026-01-21
 
 ### Added
