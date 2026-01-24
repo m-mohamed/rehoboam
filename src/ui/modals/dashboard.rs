@@ -68,7 +68,10 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
             lines.push(format!("  │ {:28} {:>4} │", display, count));
         }
         if projects.len() > 5 {
-            lines.push(format!("  │ ... and {} more projects        │", projects.len() - 5));
+            lines.push(format!(
+                "  │ ... and {} more projects        │",
+                projects.len() - 5
+            ));
         }
         lines.push("  └──────────────────────────────────────┘".to_string());
     }

@@ -301,9 +301,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             format!("{} ", mode_indicators.join(" "))
         };
 
-        format!(
-            "{prefix}Enter:jump  y/n:approve  c:input  d:dash  ?:help"
-        )
+        format!("{prefix}Enter:jump  y/n:approve  c:input  d:dash  ?:help")
     } else {
         // No selection - show general commands
         let mode_indicators: Vec<&str> = [

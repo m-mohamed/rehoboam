@@ -89,71 +89,71 @@ pub fn render_agent_card(
     // Line 2: Task info OR subagent count OR tool display
     // v2.2: Show current task info if working on a Claude Code Task
     if let Some(ref task_subject) = agent.current_task_subject {
-                // Show task subject (truncated)
-                let task_display = format!(
-                    "📋 {}",
-                    truncate(task_subject, area.width.saturating_sub(6) as usize)
-                );
-                content.push(Line::from(task_display).style(styles::WORKING));
-            } else if let Some(ref task_id) = agent.current_task_id {
-                // Show task ID if no subject available
-                let task_display = format!("📋 Task #{}", task_id);
-                content.push(Line::from(task_display).style(styles::WORKING));
-            } else if !agent.subagents.is_empty() {
-                // Show subagent info if any
-                let running: Vec<_> = agent
-                    .subagents
-                    .iter()
-                    .filter(|s| s.status == "running")
-                    .collect();
+        // Show task subject (truncated)
+        let task_display = format!(
+            "📋 {}",
+            truncate(task_subject, area.width.saturating_sub(6) as usize)
+        );
+        content.push(Line::from(task_display).style(styles::WORKING));
+    } else if let Some(ref task_id) = agent.current_task_id {
+        // Show task ID if no subject available
+        let task_display = format!("📋 Task #{}", task_id);
+        content.push(Line::from(task_display).style(styles::WORKING));
+    } else if !agent.subagents.is_empty() {
+        // Show subagent info if any
+        let running: Vec<_> = agent
+            .subagents
+            .iter()
+            .filter(|s| s.status == "running")
+            .collect();
 
-                let display = if !running.is_empty() {
-                    // v1.3: Show role breakdown for running subagents
-                    use crate::state::AgentRole;
-                    let planners = running
-                        .iter()
-                        .filter(|s| s.role == AgentRole::Planner)
-                        .count();
-                    let workers = running
-                        .iter()
-                        .filter(|s| s.role == AgentRole::Worker)
-                        .count();
-                    let reviewers = running
-                        .iter()
-                        .filter(|s| s.role == AgentRole::Reviewer)
-                        .count();
+        let display = if !running.is_empty() {
+            // v1.3: Show role breakdown for running subagents
+            use crate::state::AgentRole;
+            let planners = running
+                .iter()
+                .filter(|s| s.role == AgentRole::Planner)
+                .count();
+            let workers = running
+                .iter()
+                .filter(|s| s.role == AgentRole::Worker)
+                .count();
+            let reviewers = running
+                .iter()
+                .filter(|s| s.role == AgentRole::Reviewer)
+                .count();
 
-                    let mut parts = Vec::new();
-                    if planners > 0 {
-                        parts.push(format!("{planners}P"));
-                    }
-                    if workers > 0 {
-                        parts.push(format!("{workers}W"));
-                    }
-                    if reviewers > 0 {
-                        parts.push(format!("{reviewers}R"));
-                    }
-                    let others = running.len() - planners - workers - reviewers;
-                    if others > 0 {
-                        parts.push(format!("{others}"));
-                    }
-
-                    if parts.is_empty() {
-                        format!(
-                            "{} subagent{}",
-                            running.len(),
-                            if running.len() == 1 { "" } else { "s" }
-                        )
-                    } else {
-                        format!("⤵ {}", parts.join("/"))
-                    }
-                } else {
-                    format!("{} done", agent.subagents.len())
-                };
-                content.push(Line::from(display).style(styles::WORKING));
-            } else {
-                content.push(Line::from(agent.tool_display()).style(styles::IDLE));
+            let mut parts = Vec::new();
+            if planners > 0 {
+                parts.push(format!("{planners}P"));
             }
+            if workers > 0 {
+                parts.push(format!("{workers}W"));
+            }
+            if reviewers > 0 {
+                parts.push(format!("{reviewers}R"));
+            }
+            let others = running.len() - planners - workers - reviewers;
+            if others > 0 {
+                parts.push(format!("{others}"));
+            }
+
+            if parts.is_empty() {
+                format!(
+                    "{} subagent{}",
+                    running.len(),
+                    if running.len() == 1 { "" } else { "s" }
+                )
+            } else {
+                format!("⤵ {}", parts.join("/"))
+            }
+        } else {
+            format!("{} done", agent.subagents.len())
+        };
+        content.push(Line::from(display).style(styles::WORKING));
+    } else {
+        content.push(Line::from(agent.tool_display()).style(styles::IDLE));
+    }
 
     // Line 3: Elapsed time OR context usage warning (when context is high)
     // v2.1.x: Show context usage bar when context is getting full (>= 80%)
