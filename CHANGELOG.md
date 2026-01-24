@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.12] - 2026-01-24
+
+### Changed
+
+- Fix formatting issues
+- Remove loop mode orchestration, focus on telemetry/visualization
+[0.9.12]: https://github.com/m-mohamed/rehoboam/compare/v0.9.11...v0.9.12
+
+
 ## [0.9.11] - 2026-01-24
 
 ### Changed
