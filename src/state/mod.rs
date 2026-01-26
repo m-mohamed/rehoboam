@@ -8,7 +8,7 @@
 mod agent;
 mod event_processing;
 
-pub use agent::{Agent, AgentRole, AttentionType, Status, Subagent};
+pub use agent::{Agent, AgentRole, AttentionType, Status, Subagent, TaskInfo, TaskStatus};
 
 use crate::event::HookEvent;
 use std::collections::{HashMap, HashSet, VecDeque};

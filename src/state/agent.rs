@@ -26,6 +26,67 @@ pub enum AgentRole {
     General,
 }
 
+/// Task status for Claude Code Tasks API
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum TaskStatus {
+    /// Task is waiting to be started
+    #[default]
+    Pending,
+    /// Task is currently being worked on
+    InProgress,
+    /// Task has been completed
+    Completed,
+}
+
+impl TaskStatus {
+    /// Parse status from string
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "in_progress" => TaskStatus::InProgress,
+            "completed" => TaskStatus::Completed,
+            _ => TaskStatus::Pending,
+        }
+    }
+
+    /// Get display indicator for status
+    pub fn indicator(&self) -> &'static str {
+        match self {
+            TaskStatus::Pending => "○",
+            TaskStatus::InProgress => "●",
+            TaskStatus::Completed => "✓",
+        }
+    }
+}
+
+/// Information about a Claude Code Task (from Tasks API)
+///
+/// Tracks task metadata including dependencies for visualization.
+#[derive(Debug, Clone)]
+pub struct TaskInfo {
+    /// Task ID (from TaskCreate response or TaskUpdate input)
+    pub id: String,
+    /// Task subject/title
+    pub subject: String,
+    /// Current task status
+    pub status: TaskStatus,
+    /// Task IDs that block this task (must complete first)
+    pub blocked_by: Vec<String>,
+    /// Task IDs that this task blocks (waiting on this one)
+    pub blocks: Vec<String>,
+}
+
+impl TaskInfo {
+    pub fn new(id: String, subject: String) -> Self {
+        Self {
+            id,
+            subject,
+            status: TaskStatus::Pending,
+            blocked_by: Vec::new(),
+            blocks: Vec::new(),
+        }
+    }
+}
+
 /// A subagent spawned by the main agent (via Task tool)
 ///
 /// Tracks subagent lifecycle from SubagentStart to SubagentStop hooks.
@@ -254,6 +315,14 @@ pub struct Agent {
     // Claude Code version tracking
     /// Claude Code version from CLAUDE_CODE_VERSION env var
     pub claude_code_version: Option<String>,
+
+    // Background task tracking (v2.1.x)
+    /// True if this agent has spawned background tasks (Task tool with run_in_background: true)
+    pub has_background_tasks: bool,
+
+    // Task dependency tracking (v2.1.x)
+    /// Tasks tracked by this agent (keyed by task ID)
+    pub tasks: std::collections::HashMap<String, TaskInfo>,
 }
 
 impl Agent {
@@ -308,6 +377,10 @@ impl Agent {
             team_agent_type: None,
             // Claude Code version
             claude_code_version: None,
+            // Background task tracking
+            has_background_tasks: false,
+            // Task dependency tracking
+            tasks: std::collections::HashMap::new(),
         }
     }
 

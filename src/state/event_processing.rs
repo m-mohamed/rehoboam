@@ -102,6 +102,43 @@ fn extract_task_status(input: &Option<serde_json::Value>) -> Option<String> {
     input.as_ref()?.get("status")?.as_str().map(String::from)
 }
 
+/// Check if Task tool is running in background mode
+fn is_background_task(input: &Option<serde_json::Value>) -> bool {
+    input
+        .as_ref()
+        .and_then(|v| v.get("run_in_background"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// Extract addBlockedBy array from TaskUpdate tool_input
+fn extract_blocked_by(input: &Option<serde_json::Value>) -> Vec<String> {
+    input
+        .as_ref()
+        .and_then(|v| v.get("addBlockedBy"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Extract addBlocks array from TaskUpdate tool_input
+fn extract_blocks(input: &Option<serde_json::Value>) -> Vec<String> {
+    input
+        .as_ref()
+        .and_then(|v| v.get("addBlocks"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Get human-readable name for column index
 fn column_name(col: usize) -> &'static str {
     match col {
@@ -357,6 +394,10 @@ impl AppState {
                                 // Extract subject from TaskCreate input
                                 if let Some(subject) = extract_task_subject(&event.tool_input) {
                                     agent.current_task_subject = Some(subject.clone());
+
+                                    // v2.1.x: Track task for dependency visualization
+                                    // Note: We don't have the task ID yet (it comes in response)
+                                    // We'll use a placeholder and update on PostToolUse if needed
                                     tracing::info!(
                                         pane_id = %pane_id,
                                         tool = %tool,
@@ -368,22 +409,72 @@ impl AppState {
                             "TaskUpdate" => {
                                 // Extract task ID and status from TaskUpdate input
                                 if let Some(task_id) = extract_task_id(&event.tool_input) {
-                                    let status = extract_task_status(&event.tool_input);
-                                    if status.as_deref() == Some("in_progress") {
+                                    let status_str = extract_task_status(&event.tool_input);
+                                    let blocked_by = extract_blocked_by(&event.tool_input);
+                                    let blocks = extract_blocks(&event.tool_input);
+
+                                    // Update or create task entry
+                                    let task = agent
+                                        .tasks
+                                        .entry(task_id.clone())
+                                        .or_insert_with(|| {
+                                            super::TaskInfo::new(task_id.clone(), String::new())
+                                        });
+
+                                    // Update status if provided
+                                    if let Some(ref status) = status_str {
+                                        task.status = super::TaskStatus::from_str(status);
+                                    }
+
+                                    // Add dependencies to this task
+                                    for blocked in &blocked_by {
+                                        if !task.blocked_by.contains(blocked) {
+                                            task.blocked_by.push(blocked.clone());
+                                        }
+                                    }
+                                    for blocking in &blocks {
+                                        if !task.blocks.contains(blocking) {
+                                            task.blocks.push(blocking.clone());
+                                        }
+                                    }
+
+                                    let blocked_by_count = task.blocked_by.len();
+                                    let blocks_count = task.blocks.len();
+
+                                    // Now update the reverse relationships (separate loop to avoid borrow issues)
+                                    for blocked in blocked_by {
+                                        if let Some(blocker) = agent.tasks.get_mut(&blocked) {
+                                            if !blocker.blocks.contains(&task_id) {
+                                                blocker.blocks.push(task_id.clone());
+                                            }
+                                        }
+                                    }
+                                    for blocking in blocks {
+                                        if let Some(blocked_task) = agent.tasks.get_mut(&blocking) {
+                                            if !blocked_task.blocked_by.contains(&task_id) {
+                                                blocked_task.blocked_by.push(task_id.clone());
+                                            }
+                                        }
+                                    }
+
+                                    if status_str.as_deref() == Some("in_progress") {
                                         // Worker claiming a task
                                         agent.current_task_id = Some(task_id.clone());
-                                    } else if status.as_deref() == Some("completed") {
+                                    } else if status_str.as_deref() == Some("completed") {
                                         // Task completed, clear current task
                                         if agent.current_task_id.as_deref() == Some(&task_id) {
                                             agent.current_task_id = None;
                                             agent.current_task_subject = None;
                                         }
                                     }
+
                                     tracing::info!(
                                         pane_id = %pane_id,
                                         tool = %tool,
                                         task_id = %task_id,
-                                        status = ?status,
+                                        status = ?status_str,
+                                        blocked_by_count = blocked_by_count,
+                                        blocks_count = blocks_count,
                                         "TaskUpdate detected"
                                     );
                                 }
@@ -397,6 +488,15 @@ impl AppState {
                             }
                             _ => {}
                         }
+                    }
+
+                    // v2.1.x: Detect background tasks (Task tool with run_in_background: true)
+                    if tool == "Task" && is_background_task(&event.tool_input) {
+                        agent.has_background_tasks = true;
+                        tracing::info!(
+                            pane_id = %pane_id,
+                            "Task with run_in_background detected"
+                        );
                     }
 
                     // AskUserQuestion immediately needs user input - transition now

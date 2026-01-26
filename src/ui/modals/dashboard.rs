@@ -2,6 +2,7 @@
 
 use crate::app::App;
 use crate::config::colors;
+use crate::state::TaskStatus;
 use ratatui::{
     prelude::*,
     widgets::{Block, Borders, Paragraph},
@@ -34,6 +35,14 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
     let mut project_counts: HashMap<String, u32> = HashMap::new();
     for agent in app.state.agents.values() {
         *project_counts.entry(agent.project.clone()).or_insert(0) += 1;
+    }
+
+    // Calculate Claude Code version stats
+    let mut version_counts: HashMap<String, u32> = HashMap::new();
+    for agent in app.state.agents.values() {
+        if let Some(ref version) = agent.claude_code_version {
+            *version_counts.entry(version.clone()).or_insert(0) += 1;
+        }
     }
 
     // Build dashboard text
@@ -71,6 +80,98 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
             lines.push(format!(
                 "  │ ... and {} more projects        │",
                 projects.len() - 5
+            ));
+        }
+        lines.push("  └──────────────────────────────────────┘".to_string());
+    }
+
+    // Add Claude Code version breakdown (if any agents have version info)
+    if !version_counts.is_empty() {
+        lines.push(String::new());
+        lines.push("  ┌─ Claude Code Versions ─────────────────┐".to_string());
+
+        let mut versions: Vec<_> = version_counts.into_iter().collect();
+        versions.sort_by(|a, b| {
+            // Sort by version string descending (newer first)
+            b.0.cmp(&a.0)
+        });
+
+        for (version, count) in versions.iter().take(5) {
+            let display = if version.len() > 20 {
+                format!("{}…", &version[..19])
+            } else {
+                version.clone()
+            };
+            lines.push(format!("  │ {:20} {:>10} agents │", display, count));
+        }
+        if versions.len() > 5 {
+            lines.push(format!(
+                "  │ ... and {} more versions              │",
+                versions.len() - 5
+            ));
+        }
+        lines.push("  └──────────────────────────────────────┘".to_string());
+    }
+
+    // Collect all tasks from all agents for dependency visualization
+    let mut all_tasks: Vec<_> = app
+        .state
+        .agents
+        .values()
+        .flat_map(|agent| agent.tasks.values())
+        .collect();
+
+    // Show active tasks section if any agents have tasks
+    if !all_tasks.is_empty() {
+        lines.push(String::new());
+        lines.push("  ┌─ Active Tasks ──────────────────────────┐".to_string());
+
+        // Sort tasks: incomplete first, then by ID
+        all_tasks.sort_by(|a, b| {
+            let a_complete = matches!(a.status, TaskStatus::Completed);
+            let b_complete = matches!(b.status, TaskStatus::Completed);
+            a_complete.cmp(&b_complete).then_with(|| a.id.cmp(&b.id))
+        });
+
+        // Display tasks with dependency indicators
+        for task in all_tasks.iter().take(8) {
+            let indicator = task.status.indicator();
+            let is_blocked = !task.blocked_by.is_empty()
+                && task
+                    .blocked_by
+                    .iter()
+                    .any(|id| all_tasks.iter().any(|t| &t.id == id && !matches!(t.status, TaskStatus::Completed)));
+
+            let prefix = if is_blocked {
+                "  → " // Indented, blocked
+            } else {
+                "" // Root or independent task
+            };
+
+            let subject = if task.subject.len() > 30 {
+                format!("{}…", &task.subject[..29])
+            } else if task.subject.is_empty() {
+                format!("Task #{}", task.id)
+            } else {
+                task.subject.clone()
+            };
+
+            let blocked_suffix = if is_blocked { " (blocked)" } else { "" };
+
+            lines.push(format!(
+                "  │ {} [{}] {}{}{}",
+                indicator,
+                task.id,
+                prefix,
+                subject,
+                blocked_suffix
+            ));
+        }
+
+        if all_tasks.len() > 8 {
+            lines.push(format!(
+                "  │ ... and {} more tasks                    ",
+                all_tasks.len() - 8
             ));
         }
         lines.push("  └──────────────────────────────────────┘".to_string());

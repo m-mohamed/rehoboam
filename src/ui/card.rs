@@ -61,6 +61,9 @@ pub fn render_agent_card(
     // Sprite indicator (cloud icon for remote agents)
     let sprite_indicator = if agent.is_sprite { "☁ " } else { "" };
 
+    // v2.1.x: Background task indicator (hourglass for agents with background tasks)
+    let bg_task_indicator = if agent.has_background_tasks { "⏳" } else { "" };
+
     // v1.2: Role badge (Cursor-inspired Planner/Worker/Reviewer)
     // v2.1.x: Use explicit agent type badge if available
     let role_badge = agent.agent_type_badge();
@@ -74,12 +77,13 @@ pub fn render_agent_card(
 
     // Build card content
     let mut content = vec![
-        // Line 1: Project name with sprite indicator and role badge
+        // Line 1: Project name with sprite indicator, background task indicator, and role badge
         Line::from(format!(
-            "{}{}{} {}{}",
+            "{}{}{}{} {}{}",
             selection_indicator,
             sprite_indicator,
-            truncate(&agent.project, area.width.saturating_sub(14) as usize),
+            bg_task_indicator,
+            truncate(&agent.project, area.width.saturating_sub(16) as usize),
             role_badge,
             mode_indicator
         ))
@@ -186,6 +190,17 @@ pub fn render_agent_card(
         }
 
         content.push(Line::from(spans));
+    } else if let Some(ref cwd) = agent.cwd {
+        // v2.1.x: Show working directory with elapsed time
+        let cwd_display = truncate_path(cwd, area.width.saturating_sub(12) as usize);
+        let elapsed = agent.elapsed_display();
+        content.push(
+            Line::from(vec![
+                Span::styled(format!("📁 {}", cwd_display), styles::DIM),
+                Span::raw(" "),
+                Span::styled(elapsed, styles::DIM),
+            ])
+        );
     } else if !agent.subagents.is_empty() {
         // Show most recent subagent description with role badge
         if let Some(subagent) = agent.subagents.iter().rev().find(|s| s.status == "running") {
@@ -222,6 +237,42 @@ fn truncate(s: &str, max_len: usize) -> String {
         s.to_string()
     } else if max_len > 1 {
         format!("{}…", &s[..max_len - 1])
+    } else {
+        "…".to_string()
+    }
+}
+
+/// Truncate a file path intelligently for display
+///
+/// Replaces home directory with ~ and shows only the last components if too long.
+fn truncate_path(path: &str, max_len: usize) -> String {
+    // Replace home directory with ~
+    let home = std::env::var("HOME").unwrap_or_default();
+    let display_path = if !home.is_empty() && path.starts_with(&home) {
+        format!("~{}", &path[home.len()..])
+    } else {
+        path.to_string()
+    };
+
+    if display_path.len() <= max_len {
+        display_path
+    } else if max_len > 4 {
+        // Show "…/last/components" style
+        let parts: Vec<&str> = display_path.split('/').collect();
+        let mut result = String::new();
+        for part in parts.iter().rev() {
+            if result.is_empty() {
+                result = part.to_string();
+            } else {
+                let candidate = format!("{}/{}", part, result);
+                if candidate.len() < max_len {
+                    result = candidate;
+                } else {
+                    break;
+                }
+            }
+        }
+        format!("…/{}", result)
     } else {
         "…".to_string()
     }
