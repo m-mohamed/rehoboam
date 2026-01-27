@@ -326,6 +326,8 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         team_agent_type,
         // CLAUDE_CODE_VERSION env var
         claude_code_version,
+        // Model tracking (if available from hook input)
+        model: hook_input.model.clone(),
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -601,6 +603,8 @@ async fn main() -> Result<()> {
                     team_agent_type: None,
                     // Version tracking - not yet available from sprites
                     claude_code_version: None,
+                    // Model tracking - not yet available from sprites
+                    model: None,
                 };
 
                 // Send as RemoteHook event

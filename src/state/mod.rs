@@ -480,6 +480,7 @@ mod tests {
             team_agent_name: None,
             team_agent_type: None,
             claude_code_version: None,
+            model: None,
         }
     }
 

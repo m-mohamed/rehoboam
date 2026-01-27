@@ -336,6 +336,8 @@ fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str)
         team_agent_type: None,
         // Version tracking - not applicable for synthetic events
         claude_code_version: None,
+        // Model tracking - not applicable for synthetic events
+        model: None,
     }
 }
 

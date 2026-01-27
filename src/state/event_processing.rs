@@ -361,9 +361,18 @@ impl AppState {
             agent.claude_code_version = Some(version.clone());
         }
 
+        // Claude model tracking (typically from SessionStart)
+        if let Some(ref model) = event.model {
+            agent.model = Some(model.clone());
+        }
+
         // Track tool latency (v1.0) and role classification (v1.2)
         match event.event.as_str() {
             "PreToolUse" => {
+                // Reset failed state on new tool call
+                agent.last_tool_failed = false;
+                agent.failed_tool_name = None;
+
                 if let Some(tool) = &event.tool_name {
                     agent.start_tool(tool, event.tool_use_id.as_deref(), event.timestamp);
 
@@ -528,6 +537,18 @@ impl AppState {
                         "Tool completed"
                     );
                 }
+            }
+            "PostToolUseFailure" => {
+                // Track failed tool for display
+                let tool_name = agent.current_tool.clone();
+                agent.last_tool_failed = true;
+                agent.failed_tool_name = tool_name.clone();
+                agent.end_tool(event.tool_use_id.as_deref(), event.timestamp);
+                tracing::warn!(
+                    pane_id = %pane_id,
+                    tool = ?tool_name,
+                    "Tool failed"
+                );
             }
             // v0.9.0: Subagent tracking (v1.3: enhanced with parent tracking)
             "SubagentStart" => {

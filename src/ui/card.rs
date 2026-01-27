@@ -64,6 +64,9 @@ pub fn render_agent_card(
     // v2.1.x: Background task indicator (hourglass for agents with background tasks)
     let bg_task_indicator = if agent.has_background_tasks { "⏳" } else { "" };
 
+    // v2.1.x: Failed tool indicator (shows when last tool call failed)
+    let failed_tool_indicator = if agent.last_tool_failed { "❌" } else { "" };
+
     // v1.2: Role badge (Cursor-inspired Planner/Worker/Reviewer)
     // v2.1.x: Use explicit agent type badge if available
     let role_badge = agent.agent_type_badge();
@@ -75,17 +78,22 @@ pub fn render_agent_card(
         ""
     };
 
+    // v2.1.x: Model name indicator
+    let model_indicator = agent.model_display().map_or(String::new(), |m| format!(" ({})", m));
+
     // Build card content
     let mut content = vec![
-        // Line 1: Project name with sprite indicator, background task indicator, and role badge
+        // Line 1: Project name with sprite indicator, background task indicator, failed tool indicator, role badge, and model
         Line::from(format!(
-            "{}{}{}{} {}{}",
+            "{}{}{}{}{} {}{}{}",
             selection_indicator,
             sprite_indicator,
             bg_task_indicator,
-            truncate(&agent.project, area.width.saturating_sub(16) as usize),
+            failed_tool_indicator,
+            truncate(&agent.project, area.width.saturating_sub(24) as usize),
             role_badge,
-            mode_indicator
+            mode_indicator,
+            model_indicator
         ))
         .style(styles::HEADER),
     ];

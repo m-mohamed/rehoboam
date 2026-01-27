@@ -177,6 +177,10 @@ pub struct HookEvent {
     /// Claude Code version from CLAUDE_CODE_VERSION env var
     #[serde(default)]
     pub claude_code_version: Option<String>,
+
+    /// Claude model used for this session (e.g., "claude-opus-4-5-20251101")
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 impl HookEvent {
@@ -276,6 +280,10 @@ pub struct ClaudeHookInput {
     /// Path to conversation transcript (.jsonl)
     #[serde(default)]
     pub transcript_path: Option<String>,
+
+    /// Claude model used for this session (e.g., "claude-opus-4-5-20251101")
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 impl ClaudeHookInput {
@@ -375,6 +383,7 @@ mod tests {
             team_agent_name: None,
             team_agent_type: None,
             claude_code_version: None,
+            model: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -407,6 +416,7 @@ mod tests {
             team_agent_name: None,
             team_agent_type: None,
             claude_code_version: None,
+            model: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -439,6 +449,7 @@ mod tests {
             team_agent_name: None,
             team_agent_type: None,
             claude_code_version: None,
+            model: None,
         };
         assert_eq!(
             event.validate(),
@@ -475,6 +486,7 @@ mod tests {
                 team_agent_name: None,
                 team_agent_type: None,
                 claude_code_version: None,
+                model: None,
             };
             assert!(
                 event.validate().is_ok(),

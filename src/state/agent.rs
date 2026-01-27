@@ -316,6 +316,9 @@ pub struct Agent {
     /// Claude Code version from CLAUDE_CODE_VERSION env var
     pub claude_code_version: Option<String>,
 
+    /// Claude model name (e.g., "opus-4.5", "sonnet-4")
+    pub model: Option<String>,
+
     // Background task tracking (v2.1.x)
     /// True if this agent has spawned background tasks (Task tool with run_in_background: true)
     pub has_background_tasks: bool,
@@ -323,6 +326,12 @@ pub struct Agent {
     // Task dependency tracking (v2.1.x)
     /// Tasks tracked by this agent (keyed by task ID)
     pub tasks: std::collections::HashMap<String, TaskInfo>,
+
+    // Tool failure tracking (v2.1.x)
+    /// True if the last tool call failed (PostToolUseFailure)
+    pub last_tool_failed: bool,
+    /// Name of the failed tool (for display)
+    pub failed_tool_name: Option<String>,
 }
 
 impl Agent {
@@ -377,10 +386,15 @@ impl Agent {
             team_agent_type: None,
             // Claude Code version
             claude_code_version: None,
+            // Claude model
+            model: None,
             // Background task tracking
             has_background_tasks: false,
             // Task dependency tracking
             tasks: std::collections::HashMap::new(),
+            // Tool failure tracking
+            last_tool_failed: false,
+            failed_tool_name: None,
         }
     }
 
@@ -658,6 +672,24 @@ impl Agent {
         } else {
             self.role_badge()
         }
+    }
+
+    /// Get abbreviated model name for display
+    ///
+    /// Converts full model IDs like "claude-opus-4-5-20251101" to short forms like "opus"
+    pub fn model_display(&self) -> Option<&'static str> {
+        self.model.as_ref().map(|m| {
+            let m_lower = m.to_lowercase();
+            if m_lower.contains("opus") {
+                "opus"
+            } else if m_lower.contains("sonnet") {
+                "sonnet"
+            } else if m_lower.contains("haiku") {
+                "haiku"
+            } else {
+                "claude"
+            }
+        })
     }
 }
 
