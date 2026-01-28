@@ -75,7 +75,7 @@ pub fn render_diff_modal(f: &mut Frame, app: &App) {
     let summary = if let Some(ref parsed) = app.parsed_diff {
         if !parsed.is_empty() {
             format!(
-                " {} │ [j/k] scroll  [n/p] file  [\\[/\\]] hunk  [o] toggle  [g] commit  [q] close ",
+                " {} │ [j/k] scroll  [n/p] file  [\\[/\\]] hunk  [o/O] toggle  [g] commit  [G] push  [q] close ",
                 parsed.summary_string()
             )
         } else {

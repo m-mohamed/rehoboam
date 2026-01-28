@@ -45,14 +45,17 @@ pub fn render_help(f: &mut Frame) {
 
   Sprites
   t           Checkpoint timeline
+  P           Pool management
 
   Diff Viewer (when open)
-  j/k         Scroll
-  n/p         Next/prev file
+  j/k         Scroll line
+  Ctrl+U/D    Scroll page
+  n/p/Tab     Next/prev file
+  [/]         Next/prev hunk
   o/O         Collapse hunk/all
   g           Commit
   G           Push
-  q/Esc       Close
+  q/Esc/D     Close
 
   A           Auto-accept (use caution)
   q, Esc      Quit (Esc closes modals first)
