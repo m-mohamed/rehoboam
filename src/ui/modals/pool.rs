@@ -45,7 +45,7 @@ pub fn render_pool_management(f: &mut Frame, app: &App) {
             ));
             lines.push(Line::from(""));
             lines.push(Line::styled(
-                "Spawn a pool with 's' -> enable Loop Mode -> enable Sprite -> spawn",
+                "Spawn agents with 's' -> enable Sprite -> spawn",
                 Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
             ));
         } else {
@@ -151,15 +151,11 @@ pub fn render_pool_management(f: &mut Frame, app: &App) {
                 Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
             ),
             Line::styled(
-                "2. Enable Loop Mode",
+                "2. Enable Sprite Mode",
                 Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
             ),
             Line::styled(
-                "3. Enable Sprite Mode",
-                Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
-            ),
-            Line::styled(
-                "4. Spawn multiple workers for parallel task execution",
+                "3. Spawn workers for distributed execution",
                 Style::default().fg(colors::FG).add_modifier(Modifier::DIM),
             ),
         ];

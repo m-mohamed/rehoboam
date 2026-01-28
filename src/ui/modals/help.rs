@@ -37,10 +37,6 @@ pub fn render_help(f: &mut Frame) {
   g           Git commit
   p           Git push
 
-  Loop Mode
-  X           Cancel loop
-  R           Restart loop
-
   Bulk Operations
   Space       Toggle selection
   Y/N         Bulk approve/reject
