@@ -17,7 +17,7 @@ use crate::state::Status;
 use helpers::{status_base_color, truncate};
 use modals::{
     render_checkpoint_timeline, render_dashboard, render_diff_modal, render_event_log, render_help,
-    render_input_dialog, render_pool_management, render_spawn_dialog,
+    render_input_dialog, render_spawn_dialog,
 };
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -77,11 +77,6 @@ pub fn render(f: &mut Frame, app: &App) {
     // Render checkpoint timeline if active
     if app.show_checkpoint_timeline {
         render_checkpoint_timeline(f, app);
-    }
-
-    // Render pool management modal if active
-    if app.show_pool_management {
-        render_pool_management(f, app);
     }
 
     // Render input dialog if in input mode

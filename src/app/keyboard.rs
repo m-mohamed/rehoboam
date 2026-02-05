@@ -172,15 +172,6 @@ impl App {
                 );
             }
 
-            // Toggle sprite pool management modal
-            KeyCode::Char('P') => {
-                self.show_pool_management = !self.show_pool_management;
-                tracing::debug!(
-                    show_pool_management = self.show_pool_management,
-                    "Toggled pool management"
-                );
-            }
-
             // Scroll output (in split view)
             KeyCode::PageUp => {
                 if self.view_mode == ViewMode::Split {
@@ -1023,7 +1014,6 @@ mod tests {
             id: "test".to_string(),
             comment: "test checkpoint".to_string(),
             created_at: 0,
-            iteration: 0,
         }
     }
 

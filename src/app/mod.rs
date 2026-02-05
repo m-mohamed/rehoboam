@@ -28,7 +28,7 @@ use crate::config::ReconciliationConfig;
 use crate::diff::ParsedDiff;
 use crate::event::{Event, EventSource, SpriteStatusType};
 use crate::reconcile::Reconciler;
-use crate::sprite::{CheckpointRecord, SpritePool};
+use crate::sprite::CheckpointRecord;
 use crate::state::AppState;
 use sprites::SpritesClient;
 use std::collections::HashSet;
@@ -118,10 +118,6 @@ pub struct App {
     pub show_dashboard: bool,
     /// Search query for agent filtering
     pub search_query: String,
-    /// v1.5: Sprite pool for distributed workers
-    pub sprite_pool: Option<SpritePool>,
-    /// Show pool management modal
-    pub show_pool_management: bool,
     /// Session start time for dashboard
     pub session_start: std::time::Instant,
     /// Tmux reconciler for detecting stuck agents
@@ -168,8 +164,6 @@ impl App {
             search_query: String::new(),
             session_start: std::time::Instant::now(),
             reconciler: Reconciler::new(reconciliation_config),
-            sprite_pool: None,
-            show_pool_management: false,
         }
     }
 

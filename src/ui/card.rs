@@ -2,7 +2,6 @@
 //!
 //! Renders a single agent as a card showing:
 //! - Project name (bold)
-//! - Loop mode indicator (if in loop mode)
 //! - Current tool or last latency
 //! - Elapsed time (dim)
 

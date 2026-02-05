@@ -121,8 +121,7 @@ pub struct HookEvent {
     #[serde(default)]
     pub tool_use_id: Option<String>,
 
-    // v0.9.0 loop mode fields
-    /// Stop reason (from Stop/SubagentStop hooks) - used for loop control
+    /// Stop reason (from Stop/SubagentStop hooks)
     #[serde(default)]
     pub reason: Option<String>,
 

@@ -8,7 +8,6 @@ mod diff;
 mod event_log;
 mod help;
 mod input;
-mod pool;
 mod spawn;
 mod subagent;
 
@@ -18,6 +17,5 @@ pub use diff::render_diff_modal;
 pub use event_log::render_event_log;
 pub use help::render_help;
 pub use input::render_input_dialog;
-pub use pool::render_pool_management;
 pub use spawn::render_spawn_dialog;
 pub use subagent::render_subagent_tree;

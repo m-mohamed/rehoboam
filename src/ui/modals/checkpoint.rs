@@ -70,20 +70,12 @@ pub fn render_checkpoint_timeline(f: &mut Frame, app: &App) {
                 let elapsed = std::time::Duration::from_secs(elapsed_secs);
                 let elapsed_str = format_checkpoint_elapsed(elapsed);
 
-                // Show iteration if in loop mode
-                let iter_str = if cp.iteration > 0 {
-                    format!(" [iter {}]", cp.iteration)
-                } else {
-                    String::new()
-                };
-
                 Line::styled(
                     format!(
-                        "{}{} │ {} ago{} │ {}",
+                        "{}{} │ {} ago │ {}",
                         prefix,
                         &cp.id[..cp.id.len().min(8)],
                         elapsed_str,
-                        iter_str,
                         cp.comment
                     ),
                     style,
