@@ -436,7 +436,10 @@ async fn main() -> Result<()> {
 
     // Handle subcommands
     match cli.command {
-        Some(Commands::Hook { no_notify, notify: _ }) => {
+        Some(Commands::Hook {
+            no_notify,
+            notify: _,
+        }) => {
             // Hook mode: read stdin JSON, enrich with context, send to TUI
             // Notifications are ON by default, use --no-notify to disable
             return handle_hook(&cli.socket, !no_notify).await;

@@ -60,9 +60,10 @@ pub fn discover_projects_rich() -> Vec<ProjectInfo> {
     projects
         .into_iter()
         .map(|path| {
-            let name = path
-                .file_name()
-                .map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
+            let name = path.file_name().map_or_else(
+                || "unknown".to_string(),
+                |n| n.to_string_lossy().to_string(),
+            );
             let has_hooks = has_rehoboam_hooks(&path);
             let short_path = shorten_path(&path);
 
@@ -86,7 +87,6 @@ pub fn discover_projects_rich() -> Vec<ProjectInfo> {
         })
         .collect()
 }
-
 
 /// Get the rehoboam binary path from environment or default
 ///
@@ -315,7 +315,6 @@ pub fn list_projects() {
     println!();
 }
 
-
 /// Initialize a single project with hooks
 pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
     let name = project.file_name().map_or_else(
@@ -406,10 +405,8 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
                             // Check if rehoboam already present (v1.0 "hook" or legacy "send")
                             if let Some(arr) = existing_array.as_array() {
                                 let has_rehoboam = arr.iter().any(|entry| {
-                                    entry
-                                        .get("hooks")
-                                        .and_then(|h| h.as_array())
-                                        .is_some_and(|hooks| {
+                                    entry.get("hooks").and_then(|h| h.as_array()).is_some_and(
+                                        |hooks| {
                                             hooks.iter().any(|h| {
                                                 h.get("command")
                                                     .and_then(|c| c.as_str())
@@ -418,7 +415,8 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
                                                             || s.contains("rehoboam send")
                                                     })
                                             })
-                                        })
+                                        },
+                                    )
                                 });
 
                                 if !has_rehoboam {
@@ -604,8 +602,7 @@ mod tests {
         );
         assert!(content.contains("Stop"), "should have Stop hook");
         assert_eq!(
-            parsed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
-            "1",
+            parsed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1",
             "should enable agent teams"
         );
     }
@@ -716,8 +713,7 @@ mod tests {
         );
         // Force should add env
         assert_eq!(
-            parsed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
-            "1",
+            parsed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "1",
             "should add agent teams env var"
         );
     }

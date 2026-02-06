@@ -71,9 +71,7 @@ fn pick_with_nucleo(projects: &[ProjectInfo]) -> Vec<PathBuf> {
 fn pick_with_numbered_list(projects: &[ProjectInfo]) -> Vec<PathBuf> {
     use std::io::{self, BufRead, Write};
 
-    println!(
-        "Select projects to initialize (enter numbers separated by spaces, or 'all'):\n"
-    );
+    println!("Select projects to initialize (enter numbers separated by spaces, or 'all'):\n");
 
     for (i, project) in projects.iter().enumerate() {
         let status = if project.has_hooks {
