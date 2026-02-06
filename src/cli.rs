@@ -86,6 +86,10 @@ pub enum Commands {
         /// Disable desktop notifications (notifications are ON by default)
         #[arg(long, default_value_t = false)]
         no_notify: bool,
+
+        /// Enable desktop notifications (legacy flag, now on by default)
+        #[arg(short = 'N', long, hide = true, default_value_t = false)]
+        notify: bool,
     },
 
     /// Install Claude Code hooks to a project

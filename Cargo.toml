@@ -11,6 +11,10 @@ readme = "README.md"
 keywords = ["cli", "tui", "claude", "observability"]
 categories = ["command-line-utilities", "development-tools"]
 
+[features]
+default = ["builtin-picker"]
+builtin-picker = ["dep:nucleo-picker"]
+
 [dependencies]
 # CLI
 clap = { version = "4", features = ["derive", "env"] }
@@ -51,6 +55,7 @@ directories = "6"
 ignore = "0.4"          # Git-aware directory walking (from ripgrep)
 notify-rust = "4"       # Cross-platform native desktop notifications
 socket2 = "0.6"         # Socket buffer tuning
+nucleo-picker = { version = "0.11", optional = true }  # Built-in fuzzy picker
 tokio-util = { version = "0.7", features = ["rt"] }  # Graceful shutdown
 
 # Sprites - remote sandbox execution

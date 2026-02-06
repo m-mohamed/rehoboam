@@ -13,8 +13,80 @@
 use crate::errors::RehoboamError;
 use std::collections::HashSet;
 use std::fs;
-use std::io::{self, BufRead, Write};
 use std::path::{Path, PathBuf};
+use std::process::Command;
+
+/// Rich project metadata for display in picker and preview
+pub struct ProjectInfo {
+    pub path: PathBuf,
+    pub name: String,
+    pub has_hooks: bool,
+    /// Shortened path with ~ for home dir (e.g. ~/startups/foo)
+    #[cfg_attr(not(feature = "builtin-picker"), allow(dead_code))]
+    pub short_path: String,
+    #[cfg_attr(not(feature = "builtin-picker"), allow(dead_code))]
+    pub branch: Option<String>,
+}
+
+impl ProjectInfo {
+    /// Create a display line for the fuzzy picker
+    #[cfg_attr(not(feature = "builtin-picker"), allow(dead_code))]
+    pub fn picker_line(&self) -> String {
+        let check = if self.has_hooks { "✓" } else { " " };
+        let branch = self.branch.as_deref().unwrap_or("");
+        let branch_part = if branch.is_empty() {
+            String::new()
+        } else {
+            format!(" ({branch})")
+        };
+        format!("{check} {}{branch_part}  {}", self.name, self.short_path)
+    }
+}
+
+/// Shorten a path by replacing the home directory with ~
+fn shorten_path(path: &Path) -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let display = path.display().to_string();
+    if !home.is_empty() && display.starts_with(&home) {
+        format!("~{}", &display[home.len()..])
+    } else {
+        display
+    }
+}
+
+/// Discover projects with rich git metadata
+pub fn discover_projects_rich() -> Vec<ProjectInfo> {
+    let projects = discover_projects();
+    projects
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .map_or_else(|| "unknown".to_string(), |n| n.to_string_lossy().to_string());
+            let has_hooks = has_rehoboam_hooks(&path);
+            let short_path = shorten_path(&path);
+
+            // Get current branch (lightweight git call)
+            let branch = Command::new("git")
+                .args(["rev-parse", "--abbrev-ref", "HEAD"])
+                .current_dir(&path)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| String::from_utf8(o.stdout).ok())
+                .map(|s| s.trim().to_string());
+
+            ProjectInfo {
+                path,
+                name,
+                has_hooks,
+                short_path,
+                branch,
+            }
+        })
+        .collect()
+}
+
 
 /// Get the rehoboam binary path from environment or default
 ///
@@ -34,6 +106,9 @@ fn hook_template() -> String {
     let path = get_rehoboam_path();
     format!(
         r#"{{
+  "env": {{
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  }},
   "hooks": {{
     "SessionStart": [{{
       "matcher": "*",
@@ -240,58 +315,6 @@ pub fn list_projects() {
     println!();
 }
 
-/// Interactive project selection
-pub fn select_projects() -> Vec<PathBuf> {
-    let projects = discover_projects();
-
-    if projects.is_empty() {
-        println!("No git repositories found.");
-        return Vec::new();
-    }
-
-    println!("Select projects to initialize (enter numbers separated by spaces, or 'all'):\n");
-
-    for (i, project) in projects.iter().enumerate() {
-        let name = project.file_name().map_or_else(
-            || "unknown".to_string(),
-            |n| n.to_string_lossy().to_string(),
-        );
-
-        let status = if has_rehoboam_hooks(project) {
-            " [already initialized]"
-        } else {
-            ""
-        };
-
-        println!("  [{}] {}{}", i + 1, name, status);
-    }
-
-    print!("\nSelection: ");
-    let _ = io::stdout().flush();
-
-    let mut input = String::new();
-    if io::stdin().lock().read_line(&mut input).is_err() {
-        return Vec::new();
-    }
-
-    let input = input.trim().to_lowercase();
-
-    if input == "all" {
-        return projects;
-    }
-
-    // Parse space-separated numbers
-    let mut selected = Vec::new();
-    for part in input.split_whitespace() {
-        if let Ok(num) = part.parse::<usize>() {
-            if num > 0 && num <= projects.len() {
-                selected.push(projects[num - 1].clone());
-            }
-        }
-    }
-
-    selected
-}
 
 /// Initialize a single project with hooks
 pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
@@ -319,16 +342,18 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
 
     let settings_path = claude_dir.join("settings.json");
 
-    // Parse our template (with configurable path)
+    // Parse our settings template (hooks + env)
     let template = hook_template();
-    let our_hooks: serde_json::Value =
+    let our_settings: serde_json::Value =
         serde_json::from_str(&template).map_err(|e| RehoboamError::InitError {
             project: name.clone(),
-            reason: format!("Failed to parse hook template: {e}"),
+            reason: format!("Failed to parse settings template: {e}"),
         })?;
 
     // Handle existing settings
-    let final_settings = if settings_path.exists() && !force {
+    // Strategy: always preserve user's non-rehoboam settings (permissions, attribution,
+    // model, enabledPlugins, MCP config, etc). Only modify `hooks` and `env` keys.
+    let final_settings = if settings_path.exists() {
         // Read existing settings
         let existing_content =
             fs::read_to_string(&settings_path).map_err(|e| RehoboamError::InitError {
@@ -342,68 +367,95 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
                 reason: format!("Failed to parse existing settings: {e}"),
             })?;
 
-        // Merge hooks
-        if let (Some(existing_hooks), Some(our_hooks_obj)) =
-            (existing.get_mut("hooks"), our_hooks.get("hooks"))
-        {
-            // For each hook type, merge arrays
-            if let (Some(existing_obj), Some(our_obj)) =
-                (existing_hooks.as_object_mut(), our_hooks_obj.as_object())
-            {
-                for (hook_type, our_hook_array) in our_obj {
-                    if let Some(existing_array) = existing_obj.get_mut(hook_type) {
-                        // Check if rehoboam already present (v1.0 "hook" or legacy "send")
-                        if let Some(arr) = existing_array.as_array() {
-                            let has_rehoboam = arr.iter().any(|entry| {
-                                entry
-                                    .get("hooks")
-                                    .and_then(|h| h.as_array())
-                                    .is_some_and(|hooks| {
-                                        hooks.iter().any(|h| {
-                                            h.get("command").and_then(|c| c.as_str()).is_some_and(
-                                                |s| {
-                                                    s.contains("rehoboam hook")
-                                                        || s.contains("rehoboam send")
-                                                },
-                                            )
-                                        })
-                                    })
-                            });
-
-                            if !has_rehoboam {
-                                // Append our hook to existing array
-                                if let Some(arr_mut) = existing_array.as_array_mut() {
-                                    if let Some(our_arr) = our_hook_array.as_array() {
-                                        arr_mut.extend(our_arr.clone());
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // No existing hooks for this type, add ours
-                        existing_obj.insert(hook_type.clone(), our_hook_array.clone());
+        // Merge env vars (add ours without overwriting existing keys)
+        if let Some(our_env) = our_settings.get("env").and_then(|v| v.as_object()) {
+            if let Some(obj) = existing.as_object_mut() {
+                let existing_env = obj
+                    .entry("env")
+                    .or_insert_with(|| serde_json::Value::Object(serde_json::Map::new()));
+                if let Some(env_obj) = existing_env.as_object_mut() {
+                    for (key, value) in our_env {
+                        env_obj.entry(key.clone()).or_insert_with(|| value.clone());
                     }
                 }
             }
-            existing
-        } else if existing.get("hooks").is_none() {
-            // No hooks key, add ours
+        }
+
+        if force {
+            // Force: replace hooks entirely but preserve all other user settings
             if let Some(obj) = existing.as_object_mut() {
                 obj.insert(
                     "hooks".to_string(),
-                    our_hooks
+                    our_settings
                         .get("hooks")
                         .cloned()
-                        .expect("hook template must contain 'hooks' key"),
+                        .expect("template must contain 'hooks' key"),
                 );
             }
             existing
         } else {
-            existing
+            // Merge hooks (add missing hook types, skip where rehoboam already present)
+            if let (Some(existing_hooks), Some(our_hooks_obj)) =
+                (existing.get_mut("hooks"), our_settings.get("hooks"))
+            {
+                if let (Some(existing_obj), Some(our_obj)) =
+                    (existing_hooks.as_object_mut(), our_hooks_obj.as_object())
+                {
+                    for (hook_type, our_hook_array) in our_obj {
+                        if let Some(existing_array) = existing_obj.get_mut(hook_type) {
+                            // Check if rehoboam already present (v1.0 "hook" or legacy "send")
+                            if let Some(arr) = existing_array.as_array() {
+                                let has_rehoboam = arr.iter().any(|entry| {
+                                    entry
+                                        .get("hooks")
+                                        .and_then(|h| h.as_array())
+                                        .is_some_and(|hooks| {
+                                            hooks.iter().any(|h| {
+                                                h.get("command")
+                                                    .and_then(|c| c.as_str())
+                                                    .is_some_and(|s| {
+                                                        s.contains("rehoboam hook")
+                                                            || s.contains("rehoboam send")
+                                                    })
+                                            })
+                                        })
+                                });
+
+                                if !has_rehoboam {
+                                    // Append our hook to existing array
+                                    if let Some(arr_mut) = existing_array.as_array_mut() {
+                                        if let Some(our_arr) = our_hook_array.as_array() {
+                                            arr_mut.extend(our_arr.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            // No existing hooks for this type, add ours
+                            existing_obj.insert(hook_type.clone(), our_hook_array.clone());
+                        }
+                    }
+                }
+                existing
+            } else if existing.get("hooks").is_none() {
+                // No hooks key at all, add ours
+                if let Some(obj) = existing.as_object_mut() {
+                    obj.insert(
+                        "hooks".to_string(),
+                        our_settings
+                            .get("hooks")
+                            .cloned()
+                            .expect("template must contain 'hooks' key"),
+                    );
+                }
+                existing
+            } else {
+                existing
+            }
         }
     } else {
-        // No existing settings or force mode, use our template
-        our_hooks
+        // No existing settings file, use our template
+        our_settings
     };
 
     // Write settings with pretty formatting
@@ -422,6 +474,57 @@ pub fn init_project(project: &Path, force: bool) -> Result<(), RehoboamError> {
     Ok(())
 }
 
+/// Batch-initialize all discovered projects (scripting-friendly, no prompt)
+fn batch_init_all(force: bool) -> Result<(), RehoboamError> {
+    let projects = discover_projects();
+    if projects.is_empty() {
+        println!("No git repositories found.");
+        return Ok(());
+    }
+
+    println!("Initializing {} project(s)...\n", projects.len());
+    let mut success_count = 0;
+    for project in &projects {
+        if let Err(e) = init_project(project, force) {
+            eprintln!("  ✗ {e}");
+        } else {
+            success_count += 1;
+        }
+    }
+    println!("\n✓ Initialized {} project(s)", success_count);
+
+    println!("\nNext steps:");
+    println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
+    println!("  2. Run 'claude' in Terminal 2 (in any initialized project)");
+
+    Ok(())
+}
+
+/// Initialize selected projects with success summary
+fn init_selected(projects: Vec<PathBuf>, force: bool) -> Result<(), RehoboamError> {
+    if projects.is_empty() {
+        println!("No projects selected.");
+        return Ok(());
+    }
+
+    println!("\nInitializing {} project(s)...\n", projects.len());
+    let mut success_count = 0;
+    for project in &projects {
+        if let Err(e) = init_project(project, force) {
+            eprintln!("  ✗ {e}");
+        } else {
+            success_count += 1;
+        }
+    }
+    println!("\n✓ Initialized {} project(s)", success_count);
+
+    println!("\nNext steps:");
+    println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
+    println!("  2. Run 'claude' in Terminal 2 (in any initialized project)");
+
+    Ok(())
+}
+
 /// Run init command
 pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<(), RehoboamError> {
     // List mode
@@ -430,60 +533,46 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
         return Ok(());
     }
 
-    // All mode - interactive selection
+    // --all: batch install ALL discovered projects (no prompt)
     if all {
-        let projects = select_projects();
-        if projects.is_empty() {
-            println!("No projects selected.");
-            return Ok(());
-        }
+        return batch_init_all(force);
+    }
 
-        println!("\nInitializing {} project(s)...\n", projects.len());
-        let mut success_count = 0;
-        for project in &projects {
-            if let Err(e) = init_project(project, force) {
-                eprintln!("  ✗ {e}");
-            } else {
-                success_count += 1;
-            }
+    // Explicit path provided → init that path
+    if let Some(ref p) = path {
+        if !p.is_dir() {
+            return Err(RehoboamError::DiscoveryError(format!(
+                "Directory does not exist: {}",
+                p.display()
+            )));
         }
-        println!("\n✓ Initialized {} project(s)", success_count);
-
+        if !p.join(".git").exists() {
+            println!("Warning: {} is not a git repository", p.display());
+        }
+        init_project(p, force)?;
+        let settings_path = p.join(".claude").join("settings.json");
+        println!("✓ Installed hooks to {}", settings_path.display());
+        println!("✓ Configured 14 hook events");
         println!("\nNext steps:");
         println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
-        println!("  2. Run 'claude' in Terminal 2 (in any initialized project)");
-
+        println!("  2. Run 'claude' in Terminal 2 (agent)");
+        println!("\nVerify with: claude /hooks");
         return Ok(());
     }
 
-    // Single project mode
-    let project = path.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
-
-    if !project.is_dir() {
-        return Err(RehoboamError::DiscoveryError(format!(
-            "Directory does not exist: {}",
-            project.display()
-        )));
+    // No path provided → launch fuzzy picker (shows init status for all projects)
+    let projects = discover_projects_rich();
+    if projects.is_empty() {
+        println!("No git repositories found.");
+        let roots = get_scan_roots();
+        let root_strs: Vec<String> = roots.iter().map(|p| p.display().to_string()).collect();
+        println!("Scanned: {}", root_strs.join(", "));
+        println!("\nConfigure with: export REHOBOAM_SCAN_ROOTS=~/projects,~/work");
+        return Ok(());
     }
 
-    // Check if it's a git repo
-    if !project.join(".git").exists() {
-        println!("Warning: {} is not a git repository", project.display());
-    }
-
-    init_project(&project, force)?;
-
-    let settings_path = project.join(".claude").join("settings.json");
-    println!("✓ Installed hooks to {}", settings_path.display());
-    println!("✓ Configured 14 hook events");
-
-    println!("\nNext steps:");
-    println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
-    println!("  2. Run 'claude' in Terminal 2 (agent)");
-
-    println!("\nVerify with: claude /hooks");
-
-    Ok(())
+    let selected = crate::picker::pick_projects(&projects);
+    init_selected(selected, force)
 }
 
 #[cfg(test)]
@@ -503,6 +592,8 @@ mod tests {
         assert!(settings.exists(), "settings.json should be created");
 
         let content = fs::read_to_string(&settings).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
         assert!(
             content.contains("rehoboam hook"),
             "should contain rehoboam hooks (v1.0)"
@@ -512,6 +603,11 @@ mod tests {
             "should have SessionStart hook"
         );
         assert!(content.contains("Stop"), "should have Stop hook");
+        assert_eq!(
+            parsed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
+            "1",
+            "should enable agent teams"
+        );
     }
 
     #[test]
@@ -593,25 +689,76 @@ mod tests {
     }
 
     #[test]
-    fn test_init_force_overwrites() {
+    fn test_init_force_replaces_hooks_preserves_rest() {
         let tmp = TempDir::new().unwrap();
         let project = tmp.path();
         fs::create_dir(project.join(".git")).unwrap();
         fs::create_dir(project.join(".claude")).unwrap();
 
-        let existing = r#"{"custom": "value", "hooks": {}}"#;
+        // Existing settings with user's custom keys and old hooks
+        let existing = r#"{"permissions": {"allow": ["Read"]}, "hooks": {"Stop": []}}"#;
         fs::write(project.join(".claude/settings.json"), existing).unwrap();
 
         init_project(project, true).unwrap(); // force = true
 
         let content = fs::read_to_string(project.join(".claude/settings.json")).unwrap();
-        assert!(
-            !content.contains("custom"),
-            "force should overwrite existing"
-        );
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // Force should replace hooks entirely
         assert!(
             content.contains("rehoboam hook"),
             "should have rehoboam hooks (v1.0)"
+        );
+        // Force should preserve non-hook settings
+        assert!(
+            parsed["permissions"]["allow"].is_array(),
+            "force should preserve permissions"
+        );
+        // Force should add env
+        assert_eq!(
+            parsed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"],
+            "1",
+            "should add agent teams env var"
+        );
+    }
+
+    #[test]
+    fn test_init_env_merge_preserves_existing() {
+        let tmp = TempDir::new().unwrap();
+        let project = tmp.path();
+        fs::create_dir(project.join(".git")).unwrap();
+        fs::create_dir(project.join(".claude")).unwrap();
+
+        // Existing settings with user's own env vars
+        let existing = r#"{
+            "env": {
+                "MY_API_KEY": "secret123",
+                "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "0"
+            },
+            "permissions": {"allow": ["Read"]},
+            "hooks": {}
+        }"#;
+        fs::write(project.join(".claude/settings.json"), existing).unwrap();
+
+        init_project(project, false).unwrap();
+
+        let content = fs::read_to_string(project.join(".claude/settings.json")).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
+
+        // Should preserve user's env vars
+        assert_eq!(
+            parsed["env"]["MY_API_KEY"], "secret123",
+            "should preserve user env vars"
+        );
+        // Should NOT overwrite existing agent teams value (user explicitly set to 0)
+        assert_eq!(
+            parsed["env"]["CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS"], "0",
+            "should not overwrite existing env vars"
+        );
+        // Should preserve permissions
+        assert!(
+            parsed["permissions"]["allow"].is_array(),
+            "should preserve permissions"
         );
     }
 
