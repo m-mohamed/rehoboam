@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.13] - 2026-02-06
+
+### Added
+
+- Add PostToolUseFailure tracking and model display
+- Align with Claude Code 2.1.x hook updates
+
+### Changed
+
+- Apply cargo fmt formatting
+- Remove dead code and fix stale help modal after view consolidation
+- Remove unused Loop Mode and SpritePool code
+
+### Documentation
+
+- Add missing keyboard shortcuts to help modal
+
+### Fixed
+
+- Update bytes to 1.11.1 (RUSTSEC-2026-0007)
+- Remove legacy Loop Mode references from help and pool modals
+[0.9.13]: https://github.com/m-mohamed/rehoboam/compare/v0.9.12...v0.9.13
+
+
 ## [0.9.12] - 2026-01-24
 
 ### Changed
