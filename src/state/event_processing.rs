@@ -383,6 +383,11 @@ impl AppState {
             agent.model = Some(model.clone());
         }
 
+        // Effort level tracking
+        if let Some(ref effort) = event.effort_level {
+            agent.effort_level = Some(effort.clone());
+        }
+
         // v0.9.15: Track notification details
         if event.event == "Notification" {
             agent.last_notification_type = event.notification_type.clone();

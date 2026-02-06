@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crate::config::colors;
-use crate::state::{AttentionType, Status};
+use crate::state::{AgentRole, AttentionType, Status};
 use ratatui::{
     prelude::*,
     style::Modifier,
@@ -117,6 +117,14 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
             let is_selected = selected_pane_id == Some(agent.pane_id.as_str());
             let select_prefix = if is_selected { "\u{25b6} " } else { "  " }; // ▶ or spaces
 
+            // Role tag (only show non-General roles to avoid noise)
+            let role_tag = match agent.role {
+                AgentRole::Planner => Some("planner"),
+                AgentRole::Worker => Some("worker"),
+                AgentRole::Reviewer => Some("reviewer"),
+                AgentRole::General => None,
+            };
+
             // Build optional tags string
             let mut tags = String::new();
             if let Some(ref m) = model_tag {
@@ -127,6 +135,19 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
                     tags.push(' ');
                 }
                 tags.push_str(c);
+            }
+            if let Some(r) = role_tag {
+                if !tags.is_empty() {
+                    tags.push(' ');
+                }
+                tags.push_str(r);
+            }
+            if let Some(ref effort) = agent.effort_level {
+                if !tags.is_empty() {
+                    tags.push(' ');
+                }
+                tags.push_str("effort:");
+                tags.push_str(effort);
             }
             let tags_display = if tags.is_empty() {
                 String::new()
@@ -212,7 +233,7 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
                 )])));
             }
 
-            // Show session metadata line (session_source + permission_mode + subagents)
+            // Show session metadata line (session_source + permission_mode + cwd + files + subagents)
             {
                 let mut meta_parts: Vec<String> = Vec::new();
                 if let Some(ref src) = agent.session_source {
@@ -220,6 +241,20 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
                 }
                 if let Some(ref mode) = agent.permission_mode {
                     meta_parts.push(format!("mode:{}", mode));
+                }
+                // Show shortened cwd (~/path instead of /Users/name/path)
+                if let Some(ref cwd) = agent.cwd {
+                    let short_cwd = shorten_path(cwd);
+                    meta_parts.push(short_cwd);
+                }
+                // Show modified files count
+                let file_count = agent.modified_files.len();
+                if file_count > 0 {
+                    meta_parts.push(format!(
+                        "{} file{} modified",
+                        file_count,
+                        if file_count == 1 { "" } else { "s" }
+                    ));
                 }
                 let running_subagents: Vec<_> = agent
                     .subagents
@@ -254,6 +289,29 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
                         meta_line,
                         Style::default().fg(colors::IDLE),
                     )])));
+                }
+            }
+
+            // Show running subagent descriptions (truncated)
+            {
+                let running_subagents: Vec<_> = agent
+                    .subagents
+                    .iter()
+                    .filter(|s| s.status == "running")
+                    .collect();
+                for sub in running_subagents {
+                    if !sub.description.is_empty() && sub.description != "subagent" {
+                        let desc = if sub.description.len() > 40 {
+                            format!("{}...", &sub.description[..37])
+                        } else {
+                            sub.description.clone()
+                        };
+                        let sub_line = format!("  {}  \u{2192} {}", continuation, desc); // → prefix
+                        items.push(ListItem::new(Line::from(vec![Span::styled(
+                            sub_line,
+                            Style::default().fg(colors::IDLE),
+                        )])));
+                    }
                 }
             }
 
@@ -311,4 +369,14 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
     );
 
     f.render_widget(list, area);
+}
+
+/// Shorten a path for display: replace home dir with ~
+fn shorten_path(path: &str) -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        if let Some(rest) = path.strip_prefix(&home) {
+            return format!("~{rest}");
+        }
+    }
+    path.to_string()
 }

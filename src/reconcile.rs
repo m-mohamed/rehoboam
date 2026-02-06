@@ -348,6 +348,8 @@ fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str)
         stop_hook_active: None,
         agent_transcript_path: None,
         trigger: None,
+        // Effort level - not applicable for synthetic events
+        effort_level: None,
     }
 }
 

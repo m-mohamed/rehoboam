@@ -22,7 +22,7 @@ clap_complete = "4"     # Shell completion generation
 
 # TUI
 ratatui = "0.30"
-crossterm = { version = "0.29", features = ["event-stream"] }
+crossterm = "0.29"
 
 # Async runtime (minimal features for smaller binary)
 tokio = { version = "1.43", features = [
@@ -49,14 +49,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 
 # Utilities
-chrono = { version = "0.4", features = ["serde"] }
-once_cell = "1.19"              # Lazy static initialization
 directories = "6"
 ignore = "0.4"          # Git-aware directory walking (from ripgrep)
 notify-rust = "4"       # Cross-platform native desktop notifications
 socket2 = "0.6"         # Socket buffer tuning
 nucleo-picker = { version = "0.11", optional = true }  # Built-in fuzzy picker
-tokio-util = { version = "0.7", features = ["rt"] }  # Graceful shutdown
+tokio-util = "0.7"  # CancellationToken for graceful shutdown
 
 # Sprites - remote sandbox execution
 sprites = "0.1"

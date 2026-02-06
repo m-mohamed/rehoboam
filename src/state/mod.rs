@@ -481,6 +481,7 @@ mod tests {
             stop_hook_active: None,
             agent_transcript_path: None,
             trigger: None,
+            effort_level: None,
         }
     }
 
@@ -920,6 +921,30 @@ mod tests {
         assert_eq!(agent.context_usage_percent, Some(73.5));
         assert_eq!(agent.context_remaining_percent, Some(26.5));
         assert_eq!(agent.context_total_tokens, Some(150000));
+    }
+
+    #[test]
+    fn test_effort_level_captured_from_event() {
+        let mut state = AppState::new();
+        let mut event = make_event("SessionStart", "working", "%0", "test");
+        event.effort_level = Some("high".to_string());
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert_eq!(agent.effort_level.as_deref(), Some("high"));
+    }
+
+    #[test]
+    fn test_effort_level_absent_graceful_degradation() {
+        let mut state = AppState::new();
+        let event = make_event("SessionStart", "working", "%0", "test");
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(
+            agent.effort_level.is_none(),
+            "effort_level should be None when not set"
+        );
     }
 
     #[test]

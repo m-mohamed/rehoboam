@@ -211,6 +211,10 @@ pub struct HookEvent {
     /// What triggered compaction (PreCompact)
     #[serde(default)]
     pub trigger: Option<String>,
+
+    /// Effort level from CLAUDE_CODE_EFFORT_LEVEL env var (e.g., "low", "medium", "high")
+    #[serde(default)]
+    pub effort_level: Option<String>,
 }
 
 impl HookEvent {
@@ -458,6 +462,7 @@ mod tests {
             stop_hook_active: None,
             agent_transcript_path: None,
             trigger: None,
+            effort_level: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -500,6 +505,7 @@ mod tests {
             stop_hook_active: None,
             agent_transcript_path: None,
             trigger: None,
+            effort_level: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -542,6 +548,7 @@ mod tests {
             stop_hook_active: None,
             agent_transcript_path: None,
             trigger: None,
+            effort_level: None,
         };
         assert_eq!(
             event.validate(),
@@ -588,6 +595,7 @@ mod tests {
                 stop_hook_active: None,
                 agent_transcript_path: None,
                 trigger: None,
+                effort_level: None,
             };
             assert!(
                 event.validate().is_ok(),

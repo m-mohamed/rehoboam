@@ -98,6 +98,15 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     .map(|(count, label)| format!("{count} {label}"))
     .collect();
 
+    // Show Claude Code version from any active agent (they should all be the same)
+    let cc_version = app
+        .state
+        .agents
+        .values()
+        .find_map(|a| a.claude_code_version.as_deref())
+        .map(|v| format!(" [CC {v}]"))
+        .unwrap_or_default();
+
     let frozen_indicator = if app.frozen { " [FROZEN]" } else { "" };
     // Show sprite count with connection status if any remote agents
     let connected_count = app.state.connected_sprite_count();
@@ -125,9 +134,10 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         format!("Rehoboam{frozen_indicator}")
     } else {
         format!(
-            "Rehoboam ({} agents: {}){}{}",
+            "Rehoboam ({} agents: {}){}{}{}",
             total,
             status_parts.join(", "),
+            cc_version,
             sprite_indicator,
             frozen_indicator,
         )
@@ -269,7 +279,6 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         let mode_indicators: Vec<&str> = [
             app.debug_mode.then_some("[debug]"),
             app.frozen.then_some("[frozen]"),
-            app.auto_accept.then_some("[AUTO]"),
         ]
         .into_iter()
         .flatten()
@@ -287,7 +296,6 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         let mode_indicators: Vec<&str> = [
             app.debug_mode.then_some("[debug]"),
             app.frozen.then_some("[frozen]"),
-            app.auto_accept.then_some("[AUTO]"),
         ]
         .into_iter()
         .flatten()

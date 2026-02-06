@@ -142,20 +142,6 @@ impl App {
                 tracing::debug!("Entering spawn mode");
             }
 
-            // === Auto-accept toggle ===
-            KeyCode::Char('A') => {
-                self.auto_accept = !self.auto_accept;
-                tracing::info!(
-                    auto_accept = self.auto_accept,
-                    "Auto-accept mode {}",
-                    if self.auto_accept {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                );
-            }
-
             // === Bulk operations ===
             KeyCode::Char(' ') => {
                 self.state.toggle_selection();
@@ -844,18 +830,6 @@ mod tests {
 
         app.handle_key(key('k'));
         assert_eq!(app.diff_scroll, 5, "'k' should scroll up in diff view");
-    }
-
-    #[test]
-    fn test_auto_accept_toggle() {
-        let mut app = test_app();
-        assert!(!app.auto_accept);
-
-        app.handle_key(key('A'));
-        assert!(app.auto_accept, "'A' should enable auto-accept");
-
-        app.handle_key(key('A'));
-        assert!(!app.auto_accept, "'A' should disable auto-accept");
     }
 
     #[test]

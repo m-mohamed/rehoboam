@@ -355,6 +355,9 @@ pub struct Agent {
     pub session_source: Option<String>,
     /// Whether stop hook is active (Claude continues after Stop)
     pub stop_hook_active: bool,
+
+    /// Effort level from CLAUDE_CODE_EFFORT_LEVEL env var
+    pub effort_level: Option<String>,
 }
 
 impl Agent {
@@ -426,6 +429,8 @@ impl Agent {
             // Session metadata (v0.9.15)
             session_source: None,
             stop_hook_active: false,
+            // Effort level
+            effort_level: None,
         }
     }
 

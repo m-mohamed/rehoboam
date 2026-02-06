@@ -251,6 +251,9 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     // Capture CLAUDE_CODE_VERSION for version-specific features
     let claude_code_version = std::env::var("CLAUDE_CODE_VERSION").ok();
 
+    // Capture effort level configuration
+    let effort_level = std::env::var("CLAUDE_CODE_EFFORT_LEVEL").ok();
+
     // Get pane ID from terminal-specific env vars, fall back to session_id
     // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
     let wezterm_pane = std::env::var("WEZTERM_PANE").ok();
@@ -340,6 +343,8 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         stop_hook_active: hook_input.stop_hook_active,
         agent_transcript_path: hook_input.agent_transcript_path.clone(),
         trigger: hook_input.trigger.clone(),
+        // Effort level from env var
+        effort_level,
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -640,6 +645,8 @@ async fn main() -> Result<()> {
                     stop_hook_active: None,
                     agent_transcript_path: None,
                     trigger: None,
+                    // Effort level - not yet available from sprites
+                    effort_level: None,
                 };
 
                 // Send as RemoteHook event

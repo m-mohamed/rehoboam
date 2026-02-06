@@ -308,31 +308,3 @@ pub mod colors {
     pub const BORDER: Color = Color::Rgb(59, 66, 97); // #3b4261
     pub const HIGHLIGHT: Color = Color::Rgb(187, 154, 247); // #bb9af7 purple
 }
-
-/// Pre-built styles for common UI patterns
-///
-/// Using const styles avoids rebuilding Style objects on every frame.
-pub mod styles {
-    use super::colors;
-    use ratatui::style::{Modifier, Style};
-
-    /// Highlighted/selected items
-    #[allow(dead_code)] // API consistency: available for future UI components
-    pub const HIGHLIGHT: Style = Style::new()
-        .fg(colors::HIGHLIGHT)
-        .add_modifier(Modifier::BOLD);
-
-    /// Attention status
-    #[allow(dead_code)] // API consistency: ATTENTION_BOLD is used instead
-    pub const ATTENTION: Style = Style::new().fg(colors::ATTENTION);
-
-    /// Attention status (bold)
-    #[allow(dead_code)] // API consistency: available for future UI components
-    pub const ATTENTION_BOLD: Style = Style::new()
-        .fg(colors::ATTENTION)
-        .add_modifier(Modifier::BOLD);
-
-    /// Compacting status
-    #[allow(dead_code)] // API consistency: available for future UI components
-    pub const COMPACTING: Style = Style::new().fg(colors::COMPACTING);
-}

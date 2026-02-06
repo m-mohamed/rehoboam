@@ -58,8 +58,6 @@ pub struct App {
     pub frozen: bool,
     /// Dirty flag: true if UI needs re-render (render-on-change optimization)
     pub needs_render: bool,
-    /// Auto-accept mode: automatically approve low-risk operations
-    pub auto_accept: bool,
     /// Current input mode (Normal or Input)
     pub input_mode: InputMode,
     /// Text buffer for input mode
@@ -116,7 +114,6 @@ impl App {
             show_help: false,
             frozen: false,
             needs_render: true, // Always render first frame
-            auto_accept: false, // Manual approval by default
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             spawn_state: SpawnState::default(),
