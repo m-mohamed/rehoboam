@@ -627,7 +627,6 @@ impl Agent {
             .count();
         (completed, total)
     }
-
 }
 
 /// Truncate tool name for display (max 12 chars)

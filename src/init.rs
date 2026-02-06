@@ -716,10 +716,7 @@ mod tests {
             hooks.contains_key("PostToolUseFailure"),
             "should have PostToolUseFailure"
         );
-        assert!(
-            hooks.contains_key("PostCompact"),
-            "should have PostCompact"
-        );
+        assert!(hooks.contains_key("PostCompact"), "should have PostCompact");
 
         // Verify all expected hooks
         let expected = [

@@ -423,10 +423,8 @@ impl AppState {
                                     let blocks = extract_blocks(&event.tool_input);
 
                                     // Update or create task entry
-                                    let task = agent
-                                        .tasks
-                                        .entry(task_id.clone())
-                                        .or_insert_with(|| {
+                                    let task =
+                                        agent.tasks.entry(task_id.clone()).or_insert_with(|| {
                                             super::TaskInfo::new(task_id.clone(), String::new())
                                         });
 

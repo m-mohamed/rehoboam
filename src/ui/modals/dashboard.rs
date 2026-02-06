@@ -137,10 +137,11 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
         for task in all_tasks.iter().take(8) {
             let indicator = task.status.indicator();
             let is_blocked = !task.blocked_by.is_empty()
-                && task
-                    .blocked_by
-                    .iter()
-                    .any(|id| all_tasks.iter().any(|t| &t.id == id && !matches!(t.status, TaskStatus::Completed)));
+                && task.blocked_by.iter().any(|id| {
+                    all_tasks
+                        .iter()
+                        .any(|t| &t.id == id && !matches!(t.status, TaskStatus::Completed))
+                });
 
             let prefix = if is_blocked {
                 "  → " // Indented, blocked
@@ -160,11 +161,7 @@ pub fn render_dashboard(f: &mut Frame, app: &App) {
 
             lines.push(format!(
                 "  │ {} [{}] {}{}{}",
-                indicator,
-                task.id,
-                prefix,
-                subject,
-                blocked_suffix
+                indicator, task.id, prefix, subject, blocked_suffix
             ));
         }
 

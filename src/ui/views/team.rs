@@ -54,12 +54,16 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         let agent_count = agents.len();
         for (i, agent) in agents.iter().enumerate() {
             let is_last = i == agent_count - 1;
-            let glyph = if is_last { "\u{2514}\u{2500}" } else { "\u{251c}\u{2500}" }; // └─ or ├─
+            let glyph = if is_last {
+                "\u{2514}\u{2500}"
+            } else {
+                "\u{251c}\u{2500}"
+            }; // └─ or ├─
 
             let (icon, color) = match &agent.status {
                 Status::Attention(_) => ("\u{1f514}", colors::ATTENTION), // 🔔
-                Status::Working => ("\u{1f916}", colors::WORKING),       // 🤖
-                Status::Compacting => ("\u{1f504}", colors::COMPACTING), // 🔄
+                Status::Working => ("\u{1f916}", colors::WORKING),        // 🤖
+                Status::Compacting => ("\u{1f504}", colors::COMPACTING),  // 🔄
             };
 
             let status_str = match &agent.status {
@@ -76,10 +80,7 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
             };
 
             // Prefer team_agent_name, fall back to pane_id
-            let display_name = agent
-                .team_agent_name
-                .as_deref()
-                .unwrap_or(&agent.pane_id);
+            let display_name = agent.team_agent_name.as_deref().unwrap_or(&agent.pane_id);
 
             let tool_info = agent.tool_display();
             let elapsed = agent.elapsed_display();
@@ -89,7 +90,13 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 
             let line = format!(
                 "{}{} {}{} {} ({}) {} {}",
-                select_prefix, glyph, lead_prefix, icon, display_name, status_str, tool_info,
+                select_prefix,
+                glyph,
+                lead_prefix,
+                icon,
+                display_name,
+                status_str,
+                tool_info,
                 elapsed
             );
 
@@ -106,8 +113,7 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
             // Show current_task_subject indented below agent when present
             if let Some(ref task_subject) = agent.current_task_subject {
                 let continuation = if is_last { "   " } else { "\u{2502}  " }; // │ or space
-                let task_line =
-                    format!("  {}  \u{1f4cb} {}", continuation, task_subject); // 📋
+                let task_line = format!("  {}  \u{1f4cb} {}", continuation, task_subject); // 📋
                 items.push(ListItem::new(Line::from(vec![Span::styled(
                     task_line,
                     Style::default().fg(colors::IDLE),
@@ -133,8 +139,8 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
             let empty = 12 - filled;
             let bar = format!(
                 "  [{}{}] {}/{} tasks ({}%)",
-                "\u{2588}".repeat(filled),  // █
-                "\u{2591}".repeat(empty),   // ░
+                "\u{2588}".repeat(filled), // █
+                "\u{2591}".repeat(empty),  // ░
                 team_completed,
                 team_total,
                 pct

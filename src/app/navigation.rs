@@ -71,4 +71,3 @@ pub fn jump_to_search_match(state: &mut AppState, query: &str) {
         }
     }
 }
-
