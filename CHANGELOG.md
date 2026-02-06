@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.17] - 2026-02-06
+
+### Added
+
+- Display model/context in TUI, parse subagent types, add v0.9.16 tests
+[0.9.17]: https://github.com/m-mohamed/rehoboam/compare/v0.9.16...v0.9.17
+
+
 ## [0.9.16] - 2026-02-06
 
 ### Added
