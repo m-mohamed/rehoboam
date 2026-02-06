@@ -67,11 +67,19 @@ fn hook_template() -> String {
       "matcher": "",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
     }}],
+    "PostToolUseFailure": [{{
+      "matcher": "",
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+    }}],
     "SessionEnd": [{{
       "matcher": "*",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
     }}],
     "PreCompact": [{{
+      "matcher": "*",
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+    }}],
+    "PostCompact": [{{
       "matcher": "*",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
     }}],
@@ -467,7 +475,7 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
 
     let settings_path = project.join(".claude").join("settings.json");
     println!("✓ Installed hooks to {}", settings_path.display());
-    println!("✓ Configured 12 hook events");
+    println!("✓ Configured 14 hook events");
 
     println!("\nNext steps:");
     println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
@@ -692,5 +700,49 @@ mod tests {
         assert!(content.contains("PreCompact"), "should add PreCompact");
         // Should preserve user's Stop hook
         assert!(content.contains("echo stop"), "should preserve user hook");
+    }
+
+    #[test]
+    fn test_hook_template_has_all_events() {
+        let template = hook_template();
+        let parsed: serde_json::Value = serde_json::from_str(&template).unwrap();
+        let hooks = parsed["hooks"].as_object().unwrap();
+
+        // Should have 14 hook events
+        assert_eq!(hooks.len(), 14, "template should have 14 hook events");
+
+        // Verify the two new hooks are present
+        assert!(
+            hooks.contains_key("PostToolUseFailure"),
+            "should have PostToolUseFailure"
+        );
+        assert!(
+            hooks.contains_key("PostCompact"),
+            "should have PostCompact"
+        );
+
+        // Verify all expected hooks
+        let expected = [
+            "SessionStart",
+            "Setup",
+            "UserPromptSubmit",
+            "PermissionRequest",
+            "Stop",
+            "Notification",
+            "PreToolUse",
+            "PostToolUse",
+            "PostToolUseFailure",
+            "SessionEnd",
+            "PreCompact",
+            "PostCompact",
+            "SubagentStart",
+            "SubagentStop",
+        ];
+        for hook_name in expected {
+            assert!(
+                hooks.contains_key(hook_name),
+                "should have {hook_name} hook"
+            );
+        }
     }
 }

@@ -48,18 +48,6 @@ pub enum InputMode {
     Search,
 }
 
-/// View mode for the main display
-#[derive(Debug, Clone, PartialEq, Default)]
-pub enum ViewMode {
-    /// Kanban-style columns by status (Attention, Working, Compacting)
-    #[default]
-    Kanban,
-    /// Grouped by project name
-    Project,
-    /// Split view: agent list on left, live output on right
-    Split,
-}
-
 /// Application state and logic
 pub struct App {
     pub state: AppState,
@@ -76,8 +64,6 @@ pub struct App {
     pub input_mode: InputMode,
     /// Text buffer for input mode
     pub input_buffer: String,
-    /// Current view mode (Kanban or Project)
-    pub view_mode: ViewMode,
     /// Spawn dialog state
     pub spawn_state: SpawnState,
     /// Sprites API client (None if sprites not enabled)
@@ -106,14 +92,6 @@ pub struct App {
     pub selected_checkpoint: usize,
     /// Status message to display in footer (message, timestamp)
     pub status_message: Option<(String, std::time::Instant)>,
-    /// Live output from selected agent's pane (for split view)
-    pub live_output: String,
-    /// Last time we captured pane output
-    pub last_output_capture: std::time::Instant,
-    /// Scroll offset for live output view
-    pub output_scroll: u16,
-    /// Show subagent tree panel
-    pub show_subagents: bool,
     /// Show progress dashboard overlay
     pub show_dashboard: bool,
     /// Search query for agent filtering
@@ -141,7 +119,6 @@ impl App {
             auto_accept: false, // Manual approval by default
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
-            view_mode: ViewMode::Kanban,
             spawn_state: SpawnState::default(),
             sprites_client,
             event_tx,
@@ -156,10 +133,6 @@ impl App {
             checkpoint_timeline: Vec::new(),
             selected_checkpoint: 0,
             status_message: None,
-            live_output: String::new(),
-            last_output_capture: std::time::Instant::now(),
-            output_scroll: 0,
-            show_subagents: false,
             show_dashboard: false,
             search_query: String::new(),
             session_start: std::time::Instant::now(),
@@ -242,15 +215,6 @@ impl App {
         if self.reconciler.should_run() {
             let modified = self.reconciler.run(&mut self.state);
             self.needs_render = self.needs_render || modified;
-        }
-
-        // Capture pane output periodically in split view
-        if self.view_mode == ViewMode::Split {
-            // Rate limit captures
-            if self.last_output_capture.elapsed() >= std::time::Duration::from_millis(500) {
-                self.live_output = navigation::capture_selected_output(&self.state);
-                self.last_output_capture = std::time::Instant::now();
-            }
         }
 
         // Tick triggers re-render for elapsed time updates

@@ -316,20 +316,11 @@ pub mod styles {
     use super::colors;
     use ratatui::style::{Modifier, Style};
 
-    /// Bold foreground text (headers, titles)
-    pub const HEADER: Style = Style::new().fg(colors::FG).add_modifier(Modifier::BOLD);
-
-    /// Dim text (timestamps, secondary info)
-    pub const DIM: Style = Style::new().fg(colors::IDLE).add_modifier(Modifier::DIM);
-
     /// Highlighted/selected items
     #[allow(dead_code)] // API consistency: available for future UI components
     pub const HIGHLIGHT: Style = Style::new()
         .fg(colors::HIGHLIGHT)
         .add_modifier(Modifier::BOLD);
-
-    /// Working status
-    pub const WORKING: Style = Style::new().fg(colors::WORKING);
 
     /// Attention status
     #[allow(dead_code)] // API consistency: ATTENTION_BOLD is used instead
@@ -340,9 +331,6 @@ pub mod styles {
     pub const ATTENTION_BOLD: Style = Style::new()
         .fg(colors::ATTENTION)
         .add_modifier(Modifier::BOLD);
-
-    /// Idle/completed status
-    pub const IDLE: Style = Style::new().fg(colors::IDLE);
 
     /// Compacting status
     #[allow(dead_code)] // API consistency: available for future UI components

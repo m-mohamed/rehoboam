@@ -24,10 +24,7 @@ pub fn render_help(f: &mut Frame) {
   c           Send custom input
   s           Spawn new agent
 
-  Views
-  v           Cycle: Kanban → Project → Split
-  T           Toggle subagent panel (split view)
-  PgUp/PgDn   Scroll output (split view)
+  Display
   d           Dashboard overview
   f           Freeze display
   ?, H        This help
@@ -45,7 +42,6 @@ pub fn render_help(f: &mut Frame) {
 
   Sprites
   t           Checkpoint timeline
-  P           Pool management
 
   Diff Viewer (when open)
   j/k         Scroll line

@@ -16,9 +16,7 @@
 //! - `?`/`H` - Toggle help overlay
 //! - `d` - Toggle progress dashboard
 //! - `D` - Toggle diff view for selected agent
-//! - `v` - Cycle view modes (Kanban → Project → Split)
 //! - `f` - Freeze/unfreeze display updates
-//! - `t` - Toggle subagent tree panel
 //!
 //! ## Agent Actions
 //! - `y` - Approve permission request
@@ -36,7 +34,7 @@
 //! - `Esc` - Close overlays or quit
 //! - `Ctrl+C` - Force quit
 
-use super::{agent_control, navigation, operations, spawn, App, InputMode, ViewMode};
+use super::{agent_control, navigation, operations, spawn, App, InputMode};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 impl App {
@@ -92,26 +90,12 @@ impl App {
             KeyCode::Char('l') | KeyCode::Right => {
                 self.state.move_column_right();
             }
-            // Card navigation (vertical)
-            // In Split view, navigate across all agents (flat list)
-            // In Kanban/Project view, navigate within current column
+            // Agent navigation (vertical, flat across all columns)
             KeyCode::Char('j') | KeyCode::Down => {
-                if self.view_mode == ViewMode::Split {
-                    self.state.next_agent_flat();
-                    // Update live output when selection changes in split view
-                    self.live_output = navigation::capture_selected_output(&self.state);
-                } else {
-                    self.state.next_card();
-                }
+                self.state.next_agent_flat();
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                if self.view_mode == ViewMode::Split {
-                    self.state.previous_agent_flat();
-                    // Update live output when selection changes in split view
-                    self.live_output = navigation::capture_selected_output(&self.state);
-                } else {
-                    self.state.previous_card();
-                }
+                self.state.previous_agent_flat();
             }
             // Jump to agent
             KeyCode::Enter => {
@@ -145,44 +129,6 @@ impl App {
                     self.input_mode = InputMode::Input;
                     self.input_buffer.clear();
                     tracing::debug!("Entering input mode");
-                }
-            }
-
-            // === View mode toggle ===
-            KeyCode::Char('v') => {
-                self.view_mode = match self.view_mode {
-                    ViewMode::Kanban => ViewMode::Project,
-                    ViewMode::Project => ViewMode::Split,
-                    ViewMode::Split => ViewMode::Kanban,
-                };
-                // Capture output when entering split view
-                if self.view_mode == ViewMode::Split {
-                    self.live_output = navigation::capture_selected_output(&self.state);
-                    self.output_scroll = 0;
-                }
-                tracing::debug!(view_mode = ?self.view_mode, "Toggled view mode");
-            }
-
-            // Toggle subagent tree panel
-            KeyCode::Char('T') => {
-                self.show_subagents = !self.show_subagents;
-                tracing::debug!(
-                    show_subagents = self.show_subagents,
-                    "Toggled subagent panel"
-                );
-            }
-
-            // Scroll output (in split view)
-            KeyCode::PageUp => {
-                if self.view_mode == ViewMode::Split {
-                    self.output_scroll = self.output_scroll.saturating_add(10);
-                    self.needs_render = true;
-                }
-            }
-            KeyCode::PageDown => {
-                if self.view_mode == ViewMode::Split {
-                    self.output_scroll = self.output_scroll.saturating_sub(10);
-                    self.needs_render = true;
                 }
             }
 
@@ -740,29 +686,6 @@ mod tests {
     }
 
     #[test]
-    fn test_view_mode_cycling() {
-        let mut app = test_app();
-        assert_eq!(app.view_mode, ViewMode::Kanban);
-
-        app.handle_key(key('v'));
-        assert_eq!(
-            app.view_mode,
-            ViewMode::Project,
-            "'v' should cycle to Project"
-        );
-
-        app.handle_key(key('v'));
-        assert_eq!(app.view_mode, ViewMode::Split, "'v' should cycle to Split");
-
-        app.handle_key(key('v'));
-        assert_eq!(
-            app.view_mode,
-            ViewMode::Kanban,
-            "'v' should cycle back to Kanban"
-        );
-    }
-
-    #[test]
     fn test_spawn_mode_entry() {
         let mut app = test_app();
         assert_eq!(app.input_mode, InputMode::Normal);
@@ -933,18 +856,6 @@ mod tests {
 
         app.handle_key(key('A'));
         assert!(!app.auto_accept, "'A' should disable auto-accept");
-    }
-
-    #[test]
-    fn test_subagent_panel_toggle() {
-        let mut app = test_app();
-        assert!(!app.show_subagents);
-
-        app.handle_key(key('T'));
-        assert!(app.show_subagents, "'T' should toggle subagent panel on");
-
-        app.handle_key(key('T'));
-        assert!(!app.show_subagents, "'T' should toggle subagent panel off");
     }
 
     #[test]

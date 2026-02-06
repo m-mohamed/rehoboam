@@ -96,6 +96,7 @@ pub struct Subagent {
     /// Subagent session ID (for correlation)
     pub id: String,
     /// Short description of what the subagent is doing
+    #[allow(dead_code)] // Tracked for future subagent tree display
     pub description: String,
     /// Current status: "running", "completed", "failed"
     pub status: String,
@@ -109,8 +110,10 @@ pub struct Subagent {
     pub parent_pane_id: String,
     /// Nesting depth (0 = root agent's direct child, 1 = grandchild, etc.).
     /// Used for hierarchical subagent tree visualization.
+    #[allow(dead_code)] // Tracked for future nested tree display
     pub depth: u8,
     /// Inferred role based on subagent description
+    #[allow(dead_code)] // Tracked for future subagent tree display
     pub role: AgentRole,
 }
 
@@ -612,85 +615,19 @@ impl Agent {
         AgentRole::General
     }
 
-    /// Get role badge for display
+    /// Get task progress as (completed, total)
     ///
-    /// Returns a short string for TUI card rendering.
-    pub fn role_badge(&self) -> &'static str {
-        match self.role {
-            AgentRole::Planner => "[P]",
-            AgentRole::Worker => "[W]",
-            AgentRole::Reviewer => "[R]",
-            AgentRole::General => "",
-        }
+    /// Returns (0, 0) if no tasks are tracked.
+    pub fn task_progress(&self) -> (usize, usize) {
+        let total = self.tasks.len();
+        let completed = self
+            .tasks
+            .values()
+            .filter(|t| matches!(t.status, TaskStatus::Completed))
+            .count();
+        (completed, total)
     }
 
-    /// Get context usage level for UI display (Claude Code 2.1.x)
-    ///
-    /// Returns: None (no data), Some("low"), Some("medium"), Some("high"), Some("critical")
-    ///
-    /// Prefers remaining_percentage when available (Claude Code 2.1.6+) as it's cleaner
-    /// for threshold checks: `remaining < 20%` maps to "high", `remaining < 5%` maps to "critical"
-    pub fn context_level(&self) -> Option<&'static str> {
-        // Prefer remaining_percentage (Claude Code 2.1.6+)
-        if let Some(remaining) = self.context_remaining_percent {
-            return Some(if remaining <= 5.0 {
-                "critical"
-            } else if remaining <= 20.0 {
-                "high"
-            } else if remaining <= 50.0 {
-                "medium"
-            } else {
-                "low"
-            });
-        }
-
-        // Fall back to used_percentage
-        self.context_usage_percent.map(|pct| {
-            if pct >= 95.0 {
-                "critical"
-            } else if pct >= 80.0 {
-                "high"
-            } else if pct >= 50.0 {
-                "medium"
-            } else {
-                "low"
-            }
-        })
-    }
-
-    /// Get display badge for explicit agent type (Claude Code 2.1.x)
-    ///
-    /// When explicit_agent_type is set from --agent flag, use it for display.
-    /// Falls back to inferred role badge.
-    pub fn agent_type_badge(&self) -> &'static str {
-        if let Some(ref agent_type) = self.explicit_agent_type {
-            match agent_type.as_str() {
-                "explore" => "[E]",
-                "plan" => "[P]",
-                _ => "",
-            }
-        } else {
-            self.role_badge()
-        }
-    }
-
-    /// Get abbreviated model name for display
-    ///
-    /// Converts full model IDs like "claude-opus-4-5-20251101" to short forms like "opus"
-    pub fn model_display(&self) -> Option<&'static str> {
-        self.model.as_ref().map(|m| {
-            let m_lower = m.to_lowercase();
-            if m_lower.contains("opus") {
-                "opus"
-            } else if m_lower.contains("sonnet") {
-                "sonnet"
-            } else if m_lower.contains("haiku") {
-                "haiku"
-            } else {
-                "claude"
-            }
-        })
-    }
 }
 
 /// Truncate tool name for display (max 12 chars)
@@ -719,41 +656,36 @@ mod tests {
     fn test_role_classification_general_default() {
         let agent = Agent::new("%0".to_string(), "test".to_string());
         assert_eq!(agent.role, AgentRole::General);
-        assert_eq!(agent.role_badge(), "");
     }
 
     #[test]
     fn test_role_classification() {
         // Table-driven test for role classification based on tool usage patterns
-        let cases: Vec<(Vec<&str>, AgentRole, &str, &str)> = vec![
-            // (tools, expected_role, expected_badge, description)
+        let cases: Vec<(Vec<&str>, AgentRole, &str)> = vec![
+            // (tools, expected_role, description)
             (
                 vec!["Read", "Glob", "Grep", "Read", "WebSearch"],
                 AgentRole::Planner,
-                "[P]",
                 "5 read-only tools -> Planner (>80% read-only)",
             ),
             (
                 vec!["Read", "Edit"],
                 AgentRole::Worker,
-                "[W]",
                 "Any mutation tool -> Worker",
             ),
             (
                 vec!["Edit", "Read", "Read", "Grep"],
                 AgentRole::Reviewer,
-                "[R]",
                 "Edit followed by 2+ reads -> Reviewer",
             ),
         ];
 
-        for (tools, expected_role, expected_badge, desc) in cases {
+        for (tools, expected_role, desc) in cases {
             let mut agent = Agent::new("%0".to_string(), "test".to_string());
             for tool in tools {
                 agent.record_tool(tool);
             }
             assert_eq!(agent.role, expected_role, "{}", desc);
-            assert_eq!(agent.role_badge(), expected_badge, "{}", desc);
         }
     }
 

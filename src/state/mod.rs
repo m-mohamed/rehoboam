@@ -214,52 +214,43 @@ impl AppState {
         columns
     }
 
-    /// Get agents grouped by project name
+    /// Get agents grouped by team name
     ///
-    /// Returns a vector of (project_name, agents) tuples, sorted by project name.
-    /// Within each project, agents are sorted by status priority (attention first).
-    pub fn agents_by_project(&self) -> Vec<(String, Vec<&Agent>)> {
-        let mut projects: HashMap<String, Vec<&Agent>> = HashMap::new();
-
+    /// Returns a vector of (team_name, agents) tuples.
+    /// Agents within each team are sorted: leads first, then by status priority.
+    /// "Independent" group (agents with no team) is always last.
+    pub fn agents_by_team(&self) -> Vec<(String, Vec<&Agent>)> {
+        let mut teams: HashMap<String, Vec<&Agent>> = HashMap::new();
         for agent in self.agents.values() {
-            projects
-                .entry(agent.project.clone())
-                .or_default()
-                .push(agent);
+            let team_key = agent
+                .team_name
+                .clone()
+                .unwrap_or_else(|| "Independent".to_string());
+            teams.entry(team_key).or_default().push(agent);
         }
-
-        // Sort agents within each project by status priority
-        for agents in projects.values_mut() {
-            agents.sort_by(|a, b| a.status.priority().cmp(&b.status.priority()));
+        // Sort: leads first within team, then by status priority
+        for agents in teams.values_mut() {
+            agents.sort_by(|a, b| {
+                let a_lead = a.team_agent_type.as_deref() == Some("lead");
+                let b_lead = b.team_agent_type.as_deref() == Some("lead");
+                b_lead
+                    .cmp(&a_lead)
+                    .then_with(|| a.status.priority().cmp(&b.status.priority()))
+            });
         }
-
-        // Convert to sorted vector of tuples
-        let mut result: Vec<(String, Vec<&Agent>)> = projects.into_iter().collect();
-        result.sort_by(|a, b| a.0.cmp(&b.0));
+        // "Independent" always last, otherwise alphabetical
+        let mut result: Vec<_> = teams.into_iter().collect();
+        result.sort_by(|a, b| {
+            (a.0 == "Independent")
+                .cmp(&(b.0 == "Independent"))
+                .then_with(|| a.0.cmp(&b.0))
+        });
         result
-    }
-
-    /// Move to next card in current column
-    pub fn next_card(&mut self) {
-        let columns = self.agents_by_column();
-        let col_len = columns[self.selected_column].len();
-        if col_len > 0 {
-            self.selected_card = (self.selected_card + 1) % col_len;
-        }
-    }
-
-    /// Move to previous card in current column
-    pub fn previous_card(&mut self) {
-        let columns = self.agents_by_column();
-        let col_len = columns[self.selected_column].len();
-        if col_len > 0 {
-            self.selected_card = (self.selected_card + col_len - 1) % col_len;
-        }
     }
 
     /// Move to next agent in flat order (across all columns)
     ///
-    /// Used in Split view where agents are shown in a single list.
+    /// Navigates across all status columns in flat order.
     /// Order: Attention agents, then Working agents, then Compacting agents.
     pub fn next_agent_flat(&mut self) {
         let columns = self.agents_by_column();
@@ -290,7 +281,7 @@ impl AppState {
 
     /// Move to previous agent in flat order (across all columns)
     ///
-    /// Used in Split view where agents are shown in a single list.
+    /// Navigates across all status columns in flat order.
     /// Order: Attention agents, then Working agents, then Compacting agents.
     pub fn previous_agent_flat(&mut self) {
         let columns = self.agents_by_column();
@@ -626,6 +617,55 @@ mod tests {
             ),
             "SubagentStart should not override Attention(Input)"
         );
+    }
+
+    #[test]
+    fn test_agents_by_team_grouping() {
+        let mut state = AppState::new();
+
+        // Create a team lead
+        let mut event = make_event("SessionStart", "working", "%lead", "auth-project");
+        event.team_name = Some("refactor-auth".to_string());
+        event.team_agent_type = Some("lead".to_string());
+        event.team_agent_name = Some("lead-agent".to_string());
+        let _ = state.process_event(event);
+
+        // Create a team worker
+        let mut event = make_event("SessionStart", "working", "%worker", "auth-project");
+        event.team_name = Some("refactor-auth".to_string());
+        event.team_agent_type = Some("worker".to_string());
+        event.team_agent_name = Some("test-writer".to_string());
+        let _ = state.process_event(event);
+
+        // Create an independent agent
+        let _ = state.process_event(make_event("SessionStart", "working", "%solo", "other"));
+
+        let teams = state.agents_by_team();
+
+        // Should have 2 groups
+        assert_eq!(teams.len(), 2, "should have 2 groups (team + independent)");
+
+        // First group: "refactor-auth" (alphabetically before "Independent" is forced last)
+        assert_eq!(teams[0].0, "refactor-auth");
+        assert_eq!(teams[0].1.len(), 2);
+        // Lead should be first
+        assert_eq!(
+            teams[0].1[0].team_agent_type.as_deref(),
+            Some("lead"),
+            "lead should be first in team"
+        );
+
+        // Second group: "Independent"
+        assert_eq!(teams[1].0, "Independent");
+        assert_eq!(teams[1].1.len(), 1);
+        assert_eq!(teams[1].1[0].pane_id, "%solo");
+    }
+
+    #[test]
+    fn test_agents_by_team_empty() {
+        let state = AppState::new();
+        let teams = state.agents_by_team();
+        assert!(teams.is_empty(), "empty state should return empty vec");
     }
 
     // v1.3: Tests for parent-child tracking and role inference from description

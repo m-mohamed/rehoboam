@@ -1,17 +1,13 @@
 //! UI rendering module for Rehoboam TUI
 //!
-//! Provides a Kanban-style column layout where agents are grouped by status:
-//! - Attention (needs user input, includes waiting)
-//! - Working (actively processing)
-//! - Compacting (context compaction)
+//! Provides a team-grouped view where agents are organized by team with hierarchy.
+//! When no teams exist, agents appear under "Independent" as a flat list.
 
-mod card;
-mod column;
 pub mod helpers;
 mod modals;
 mod views;
 
-use crate::app::{App, InputMode, ViewMode};
+use crate::app::{App, InputMode};
 use crate::config::colors;
 use crate::state::Status;
 use helpers::{status_base_color, truncate};
@@ -27,7 +23,7 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, RenderDirection, Sparkline, SparklineBar},
     Frame,
 };
-use views::{render_agent_columns, render_project_view, render_split_view};
+use views::render_team_view;
 
 /// Main render function
 pub fn render(f: &mut Frame, app: &App) {
@@ -44,12 +40,7 @@ pub fn render(f: &mut Frame, app: &App) {
 
     render_header(f, chunks[0], app);
 
-    // Render based on view mode
-    match app.view_mode {
-        ViewMode::Kanban => render_agent_columns(f, chunks[1], app),
-        ViewMode::Project => render_project_view(f, chunks[1], app),
-        ViewMode::Split => render_split_view(f, chunks[1], app),
-    }
+    render_team_view(f, chunks[1], app);
 
     render_activity(f, chunks[2], app);
     render_footer(f, chunks[3], app);
@@ -108,11 +99,6 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     .collect();
 
     let frozen_indicator = if app.frozen { " [FROZEN]" } else { "" };
-    let view_indicator = match app.view_mode {
-        ViewMode::Kanban => "",
-        ViewMode::Project => " [PROJECT VIEW]",
-        ViewMode::Split => " [SPLIT VIEW]",
-    };
     // Show sprite count with connection status if any remote agents
     let connected_count = app.state.connected_sprite_count();
     let sprite_indicator = if sprite_count > 0 {
@@ -136,15 +122,14 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         String::new()
     };
     let title = if total == 0 {
-        format!("Rehoboam{frozen_indicator}{view_indicator}")
+        format!("Rehoboam{frozen_indicator}")
     } else {
         format!(
-            "Rehoboam ({} agents: {}){}{}{}",
+            "Rehoboam ({} agents: {}){}{}",
             total,
             status_parts.join(", "),
             sprite_indicator,
             frozen_indicator,
-            view_indicator
         )
     };
 
@@ -314,18 +299,7 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
             format!("{} ", mode_indicators.join(" "))
         };
 
-        // View-aware hints
-        match app.view_mode {
-            ViewMode::Kanban => {
-                format!("{prefix}s:spawn  d:dashboard  v:view  /:search  ?:help  q:quit")
-            }
-            ViewMode::Project => {
-                format!("{prefix}j/k:nav  v:view  /:search  ?:help  q:quit")
-            }
-            ViewMode::Split => {
-                format!("{prefix}PgUp/Dn:scroll  T:subagents  v:view  ?:help  q:quit")
-            }
-        }
+        format!("{prefix}j/k:nav  s:spawn  d:dashboard  /:search  ?:help  q:quit")
     };
 
     let footer = Paragraph::new(help)

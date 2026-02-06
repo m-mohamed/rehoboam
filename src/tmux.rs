@@ -156,39 +156,6 @@ impl TmuxController {
         Ok(())
     }
 
-    /// Capture pane output for monitoring
-    ///
-    /// Returns the visible content of the pane as a string.
-    /// Use this to detect agent status via pattern matching.
-    ///
-    /// # Arguments
-    /// * `pane_id` - Tmux pane identifier
-    ///
-    /// # Returns
-    /// The captured pane content
-    pub fn capture_pane(pane_id: &str) -> Result<String> {
-        let output = Command::new("tmux")
-            .args(["capture-pane", "-t", pane_id, "-p"])
-            .output()
-            .wrap_err("Failed to execute tmux capture-pane")?;
-
-        if !output.status.success() {
-            bail!(
-                "tmux capture-pane failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-
-        // Try proper UTF-8 conversion, fall back to lossy with warning
-        match String::from_utf8(output.stdout.clone()) {
-            Ok(s) => Ok(s),
-            Err(_) => {
-                tracing::warn!(pane_id = %pane_id, "Non-UTF-8 output from pane, using lossy conversion");
-                Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-            }
-        }
-    }
-
     /// Check if a tmux pane exists and is alive
     ///
     /// Uses `display-message` to query the pane's `pane_dead` flag.
