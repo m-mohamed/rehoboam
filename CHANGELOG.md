@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.14] - 2026-02-06
+
+### Added
+
+- Interactive fuzzy picker and agent teams setup
+
+### Changed
+
+- Apply cargo fmt formatting
+[0.9.14]: https://github.com/m-mohamed/rehoboam/compare/v0.9.13...v0.9.14
+
+
 ## [0.9.13] - 2026-02-06
 
 ### Added
