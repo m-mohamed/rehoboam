@@ -335,6 +335,22 @@ pub struct Agent {
     pub last_tool_failed: bool,
     /// Name of the failed tool (for display)
     pub failed_tool_name: Option<String>,
+    /// Error message from last tool failure
+    pub failed_tool_error: Option<String>,
+    /// Whether the last failure was a user interrupt
+    pub failed_tool_interrupt: bool,
+
+    // Notification tracking (v0.9.15)
+    /// Last notification type (permission_prompt, idle_prompt, auth_success, elicitation_dialog)
+    pub last_notification_type: Option<String>,
+    /// Last notification title
+    pub last_notification_title: Option<String>,
+
+    // Session metadata (v0.9.15)
+    /// Session source from SessionStart (startup, resume, clear, compact)
+    pub session_source: Option<String>,
+    /// Whether stop hook is active (Claude continues after Stop)
+    pub stop_hook_active: bool,
 }
 
 impl Agent {
@@ -398,6 +414,14 @@ impl Agent {
             // Tool failure tracking
             last_tool_failed: false,
             failed_tool_name: None,
+            failed_tool_error: None,
+            failed_tool_interrupt: false,
+            // Notification tracking (v0.9.15)
+            last_notification_type: None,
+            last_notification_title: None,
+            // Session metadata (v0.9.15)
+            session_source: None,
+            stop_hook_active: false,
         }
     }
 

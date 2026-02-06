@@ -258,6 +258,23 @@ impl AppState {
             agent.status = new_status;
         }
 
+        // v0.9.15: Refine Notification attention type using notification_type field
+        if event.event == "Notification" {
+            if let Some(ref ntype) = event.notification_type {
+                match ntype.as_str() {
+                    "permission_prompt" => {
+                        agent.status = Status::Attention(AttentionType::Permission);
+                    }
+                    "idle_prompt" | "elicitation_dialog" => {
+                        agent.status = Status::Attention(AttentionType::Input);
+                    }
+                    _ => {
+                        // auth_success and others remain as Notification
+                    }
+                }
+            }
+        }
+
         // Fix: AskUserQuestion waiting for user response should be ATTENTION, not IDLE
         // PostToolUse doesn't fire until user responds, so current_tool is still set
         if event.event == "Stop" {
@@ -366,12 +383,32 @@ impl AppState {
             agent.model = Some(model.clone());
         }
 
+        // v0.9.15: Track notification details
+        if event.event == "Notification" {
+            agent.last_notification_type = event.notification_type.clone();
+            agent.last_notification_title = event.notification_title.clone();
+        }
+
+        // v0.9.15: Track session source from SessionStart
+        if event.event == "SessionStart" {
+            if let Some(ref source) = event.session_source {
+                agent.session_source = Some(source.clone());
+            }
+        }
+
+        // v0.9.15: Track stop_hook_active from Stop/SubagentStop
+        if matches!(event.event.as_str(), "Stop" | "SubagentStop") {
+            agent.stop_hook_active = event.stop_hook_active.unwrap_or(false);
+        }
+
         // Track tool latency (v1.0) and role classification (v1.2)
         match event.event.as_str() {
             "PreToolUse" => {
                 // Reset failed state on new tool call
                 agent.last_tool_failed = false;
                 agent.failed_tool_name = None;
+                agent.failed_tool_error = None;
+                agent.failed_tool_interrupt = false;
 
                 if let Some(tool) = &event.tool_name {
                     agent.start_tool(tool, event.tool_use_id.as_deref(), event.timestamp);
@@ -541,10 +578,14 @@ impl AppState {
                 let tool_name = agent.current_tool.clone();
                 agent.last_tool_failed = true;
                 agent.failed_tool_name = tool_name.clone();
+                agent.failed_tool_error = event.error.clone();
+                agent.failed_tool_interrupt = event.is_interrupt.unwrap_or(false);
                 agent.end_tool(event.tool_use_id.as_deref(), event.timestamp);
                 tracing::warn!(
                     pane_id = %pane_id,
                     tool = ?tool_name,
+                    error = ?event.error,
+                    is_interrupt = ?event.is_interrupt,
                     "Tool failed"
                 );
             }

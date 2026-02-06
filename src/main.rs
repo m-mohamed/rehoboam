@@ -308,6 +308,12 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         tool_use_id: hook_input.tool_use_id.clone(),
         // v0.9.0 loop mode fields
         reason: hook_input.reason.clone(),
+        // v0.9.15 high-value fields
+        notification_type: hook_input.notification_type.clone(),
+        notification_title: hook_input.title.clone(),
+        error: hook_input.error.clone(),
+        is_interrupt: hook_input.is_interrupt,
+        prompt: hook_input.prompt.clone(),
         // v0.9.0 subagent fields
         subagent_id: hook_input.subagent_id.clone(),
         description: hook_input.description.clone(),
@@ -378,10 +384,19 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
             }
             // Notification from Claude
             ("attention", Some("notification")) => {
+                let title = hook_input
+                    .title
+                    .clone()
+                    .unwrap_or_else(|| "Claude Notification".to_string());
                 let msg = hook_input
                     .message
                     .unwrap_or_else(|| "Notification".to_string());
-                notify::send("Claude Notification", &msg, Some("default"));
+                // Use urgency based on notification_type
+                let sound = match hook_input.notification_type.as_deref() {
+                    Some("permission_prompt") => "Basso",
+                    _ => "default",
+                };
+                notify::send(&title, &msg, Some(sound));
             }
             // Waiting (was idle) - only notify on Stop event (completion)
             ("attention", Some("waiting")) if hook_input.hook_event_name == "Stop" => {
@@ -593,6 +608,12 @@ async fn main() -> Result<()> {
                     tool_input: remote_event.event.tool_input,
                     tool_use_id: None,
                     reason: None,
+                    // v0.9.15 fields - not yet available from sprites
+                    notification_type: None,
+                    notification_title: None,
+                    error: None,
+                    is_interrupt: None,
+                    prompt: None,
                     subagent_id: None,
                     description: None,
                     subagent_duration_ms: None,

@@ -125,6 +125,23 @@ pub struct HookEvent {
     #[serde(default)]
     pub reason: Option<String>,
 
+    // v0.9.15 high-value fields from official schema
+    /// Notification type: permission_prompt, idle_prompt, auth_success, elicitation_dialog
+    #[serde(default)]
+    pub notification_type: Option<String>,
+    /// Notification title
+    #[serde(default)]
+    pub notification_title: Option<String>,
+    /// Error message from PostToolUseFailure
+    #[serde(default)]
+    pub error: Option<String>,
+    /// Whether tool failure was a user interrupt
+    #[serde(default)]
+    pub is_interrupt: Option<bool>,
+    /// User's prompt text (UserPromptSubmit)
+    #[serde(default)]
+    pub prompt: Option<String>,
+
     // v0.9.0 subagent fields
     /// Subagent session ID (SubagentStart/SubagentStop)
     #[serde(default)]
@@ -265,10 +282,26 @@ pub struct ClaudeHookInput {
     /// Notification message (Notification)
     #[serde(default)]
     pub message: Option<String>,
+    /// Notification type: permission_prompt, idle_prompt, auth_success, elicitation_dialog
+    #[serde(default)]
+    pub notification_type: Option<String>,
+    /// Notification title (Notification)
+    #[serde(default)]
+    pub title: Option<String>,
+    /// Error message (PostToolUseFailure)
+    #[serde(default)]
+    pub error: Option<String>,
+    /// Whether failure was a user interrupt (PostToolUseFailure)
+    #[serde(default)]
+    pub is_interrupt: Option<bool>,
+    /// User's prompt text (UserPromptSubmit)
+    #[serde(default)]
+    pub prompt: Option<String>,
 
     // Subagent fields
     /// Subagent session ID (SubagentStart/SubagentStop)
-    #[serde(default)]
+    /// Claude Code sends `agent_id`; we alias it for backward compat
+    #[serde(default, alias = "agent_id")]
     pub subagent_id: Option<String>,
     /// Subagent description (SubagentStart)
     #[serde(default)]
@@ -401,6 +434,11 @@ mod tests {
             tool_input: None,
             tool_use_id: None,
             reason: None,
+            notification_type: None,
+            notification_title: None,
+            error: None,
+            is_interrupt: None,
+            prompt: None,
             subagent_id: None,
             description: None,
             subagent_duration_ms: None,
@@ -438,6 +476,11 @@ mod tests {
             tool_input: None,
             tool_use_id: None,
             reason: None,
+            notification_type: None,
+            notification_title: None,
+            error: None,
+            is_interrupt: None,
+            prompt: None,
             subagent_id: None,
             description: None,
             subagent_duration_ms: None,
@@ -475,6 +518,11 @@ mod tests {
             tool_input: None,
             tool_use_id: None,
             reason: None,
+            notification_type: None,
+            notification_title: None,
+            error: None,
+            is_interrupt: None,
+            prompt: None,
             subagent_id: None,
             description: None,
             subagent_duration_ms: None,
@@ -516,6 +564,11 @@ mod tests {
                 tool_input: None,
                 tool_use_id: None,
                 reason: None,
+                notification_type: None,
+                notification_title: None,
+                error: None,
+                is_interrupt: None,
+                prompt: None,
                 subagent_id: None,
                 description: None,
                 subagent_duration_ms: None,

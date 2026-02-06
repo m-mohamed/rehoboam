@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crate::config::colors;
-use crate::state::Status;
+use crate::state::{AttentionType, Status};
 use ratatui::{
     prelude::*,
     style::Modifier,
@@ -67,7 +67,18 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
             };
 
             let status_str = match &agent.status {
-                Status::Attention(_) => "Attention",
+                Status::Attention(AttentionType::Permission) => "Permission",
+                Status::Attention(AttentionType::Input) => "Input",
+                Status::Attention(AttentionType::Notification) => {
+                    // Show notification_type if available
+                    match agent.last_notification_type.as_deref() {
+                        Some("permission_prompt") => "Permission",
+                        Some("idle_prompt") => "Idle",
+                        Some("auth_success") => "Auth OK",
+                        _ => "Notification",
+                    }
+                }
+                Status::Attention(AttentionType::Waiting) => "Waiting",
                 Status::Working => "Working",
                 Status::Compacting => "Compacting",
             };
@@ -110,9 +121,55 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
 
             items.push(ListItem::new(Line::from(vec![Span::styled(line, style)])));
 
+            let continuation = if is_last { "   " } else { "\u{2502}  " }; // │ or space
+
+            // Show error message when last tool failed
+            if agent.last_tool_failed {
+                let error_msg = if agent.failed_tool_interrupt {
+                    format!(
+                        "  {}  \u{26a0} {} interrupted",
+                        continuation,
+                        agent.failed_tool_name.as_deref().unwrap_or("tool")
+                    )
+                } else if let Some(ref err) = agent.failed_tool_error {
+                    // Truncate long error messages
+                    let truncated = if err.len() > 60 {
+                        format!("{}...", &err[..57])
+                    } else {
+                        err.clone()
+                    };
+                    format!(
+                        "  {}  \u{274c} {}: {}",
+                        continuation,
+                        agent.failed_tool_name.as_deref().unwrap_or("tool"),
+                        truncated
+                    )
+                } else {
+                    format!(
+                        "  {}  \u{274c} {} failed",
+                        continuation,
+                        agent.failed_tool_name.as_deref().unwrap_or("tool")
+                    )
+                };
+                items.push(ListItem::new(Line::from(vec![Span::styled(
+                    error_msg,
+                    Style::default().fg(Color::Red),
+                )])));
+            }
+
+            // Show stop_hook_active indicator (Claude continues after Stop)
+            if agent.stop_hook_active
+                && matches!(agent.status, Status::Attention(AttentionType::Waiting))
+            {
+                let hook_line = format!("  {}  \u{1f517} stop hook active", continuation); // 🔗
+                items.push(ListItem::new(Line::from(vec![Span::styled(
+                    hook_line,
+                    Style::default().fg(colors::WORKING),
+                )])));
+            }
+
             // Show current_task_subject indented below agent when present
             if let Some(ref task_subject) = agent.current_task_subject {
-                let continuation = if is_last { "   " } else { "\u{2502}  " }; // │ or space
                 let task_line = format!("  {}  \u{1f4cb} {}", continuation, task_subject); // 📋
                 items.push(ListItem::new(Line::from(vec![Span::styled(
                     task_line,
