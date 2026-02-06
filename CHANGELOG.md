@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.18] - 2026-02-06
+
+### Added
+
+- Cleanup unused deps, enrich TUI display, capture effort_level
+[0.9.18]: https://github.com/m-mohamed/rehoboam/compare/v0.9.17...v0.9.18
+
+
 ## [0.9.17] - 2026-02-06
 
 ### Added
