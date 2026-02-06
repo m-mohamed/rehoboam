@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.15] - 2026-02-06
+
+### Added
+
+- Add TeammateIdle, TaskCompleted events and v2.1.33 fields
+[0.9.15]: https://github.com/m-mohamed/rehoboam/compare/v0.9.14...v0.9.15
+
+
 ## [0.9.14] - 2026-02-06
 
 ### Added
