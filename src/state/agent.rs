@@ -115,6 +115,10 @@ pub struct Subagent {
     /// Inferred role based on subagent description
     #[allow(dead_code)] // Tracked for future subagent tree display
     pub role: AgentRole,
+
+    /// Subagent type from SubagentStart/Stop agent_type field
+    /// e.g., "Bash", "Explore", "Plan", "general-purpose"
+    pub subagent_type: Option<String>,
 }
 
 /// Current status of a Claude Code agent

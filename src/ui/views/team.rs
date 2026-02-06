@@ -96,27 +96,71 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
             let tool_info = agent.tool_display();
             let elapsed = agent.elapsed_display();
 
+            // Model name (shorten for display)
+            let model_tag = agent.model.as_deref().map(|m| {
+                // Shorten common model names: "claude-opus-4-6" -> "opus-4.6"
+                let short = m
+                    .strip_prefix("claude-")
+                    .unwrap_or(m)
+                    .split('-')
+                    .take(3)
+                    .collect::<Vec<_>>()
+                    .join("-");
+                short
+            });
+
+            // Context usage indicator
+            let ctx_tag = agent
+                .context_usage_percent
+                .map(|pct| format!("ctx:{:.0}%", pct));
+
             let is_selected = selected_pane_id == Some(agent.pane_id.as_str());
             let select_prefix = if is_selected { "\u{25b6} " } else { "  " }; // ▶ or spaces
 
+            // Build optional tags string
+            let mut tags = String::new();
+            if let Some(ref m) = model_tag {
+                tags.push_str(m);
+            }
+            if let Some(ref c) = ctx_tag {
+                if !tags.is_empty() {
+                    tags.push(' ');
+                }
+                tags.push_str(c);
+            }
+            let tags_display = if tags.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", tags)
+            };
+
             let line = format!(
-                "{}{} {}{} {} ({}) {} {}",
+                "{}{} {}{} {} ({}){} {} {}",
                 select_prefix,
                 glyph,
                 lead_prefix,
                 icon,
                 display_name,
                 status_str,
+                tags_display,
                 tool_info,
                 elapsed
             );
 
+            // Context burn warning: override color when usage > 80%
+            let ctx_warning = agent.context_usage_percent.is_some_and(|pct| pct > 80.0);
+            let effective_color = if ctx_warning {
+                colors::COMPACTING // Yellow warning for high context burn
+            } else {
+                color
+            };
+
             let style = if is_selected {
                 Style::default()
-                    .fg(color)
+                    .fg(effective_color)
                     .add_modifier(Modifier::BOLD | Modifier::REVERSED)
             } else {
-                Style::default().fg(color)
+                Style::default().fg(effective_color)
             };
 
             items.push(ListItem::new(Line::from(vec![Span::styled(line, style)])));
@@ -166,6 +210,51 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
                     hook_line,
                     Style::default().fg(colors::WORKING),
                 )])));
+            }
+
+            // Show session metadata line (session_source + permission_mode + subagents)
+            {
+                let mut meta_parts: Vec<String> = Vec::new();
+                if let Some(ref src) = agent.session_source {
+                    meta_parts.push(src.clone());
+                }
+                if let Some(ref mode) = agent.permission_mode {
+                    meta_parts.push(format!("mode:{}", mode));
+                }
+                let running_subagents: Vec<_> = agent
+                    .subagents
+                    .iter()
+                    .filter(|s| s.status == "running")
+                    .collect();
+                let total_subagents = agent.subagents.len();
+                if total_subagents > 0 {
+                    // Show running subagent types if available
+                    let running_types: Vec<&str> = running_subagents
+                        .iter()
+                        .filter_map(|s| s.subagent_type.as_deref())
+                        .collect();
+                    if running_types.is_empty() {
+                        meta_parts.push(format!(
+                            "{} sub ({} running)",
+                            total_subagents,
+                            running_subagents.len()
+                        ));
+                    } else {
+                        meta_parts.push(format!(
+                            "{} sub ({})",
+                            total_subagents,
+                            running_types.join(", ")
+                        ));
+                    }
+                }
+                if !meta_parts.is_empty() {
+                    let meta_line =
+                        format!("  {}  {}", continuation, meta_parts.join(" \u{2502} ")); // │ separator
+                    items.push(ListItem::new(Line::from(vec![Span::styled(
+                        meta_line,
+                        Style::default().fg(colors::IDLE),
+                    )])));
+                }
             }
 
             // Show current_task_subject indented below agent when present

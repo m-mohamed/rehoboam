@@ -727,4 +727,226 @@ mod tests {
         assert_eq!(subagent.depth, 0);
         assert_eq!(subagent.role, AgentRole::Planner); // "Explore" -> Planner
     }
+
+    // =========================================================================
+    // v0.9.16 feature tests
+    // =========================================================================
+
+    #[test]
+    fn test_notification_permission_prompt_becomes_attention_permission() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Notification with notification_type="permission_prompt" should become Permission
+        let mut event = make_event("Notification", "attention", "%0", "test");
+        event.attention_type = Some("notification".to_string());
+        event.notification_type = Some("permission_prompt".to_string());
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(
+            matches!(agent.status, Status::Attention(AttentionType::Permission)),
+            "permission_prompt notification should become Attention(Permission), got {:?}",
+            agent.status
+        );
+        assert_eq!(
+            agent.last_notification_type.as_deref(),
+            Some("permission_prompt")
+        );
+    }
+
+    #[test]
+    fn test_notification_idle_prompt_becomes_attention_input() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Notification with notification_type="idle_prompt" should become Input
+        let mut event = make_event("Notification", "attention", "%0", "test");
+        event.attention_type = Some("notification".to_string());
+        event.notification_type = Some("idle_prompt".to_string());
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(
+            matches!(agent.status, Status::Attention(AttentionType::Input)),
+            "idle_prompt notification should become Attention(Input), got {:?}",
+            agent.status
+        );
+    }
+
+    #[test]
+    fn test_post_tool_use_failure_error_forwarding() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Start a tool
+        let mut pre = make_event("PreToolUse", "working", "%0", "test");
+        pre.tool_name = Some("Bash".to_string());
+        pre.tool_use_id = Some("tu-1".to_string());
+        let _ = state.process_event(pre);
+
+        // Fail the tool with error and interrupt
+        let mut fail = make_event("PostToolUseFailure", "working", "%0", "test");
+        fail.tool_use_id = Some("tu-1".to_string());
+        fail.error = Some("Command timed out".to_string());
+        fail.is_interrupt = Some(true);
+        let _ = state.process_event(fail);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(agent.last_tool_failed);
+        assert_eq!(agent.failed_tool_name.as_deref(), Some("Bash"));
+        assert_eq!(
+            agent.failed_tool_error.as_deref(),
+            Some("Command timed out")
+        );
+        assert!(agent.failed_tool_interrupt);
+    }
+
+    #[test]
+    fn test_post_tool_use_failure_error_without_interrupt() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Start a tool
+        let mut pre = make_event("PreToolUse", "working", "%0", "test");
+        pre.tool_name = Some("Write".to_string());
+        let _ = state.process_event(pre);
+
+        // Fail the tool with error only
+        let mut fail = make_event("PostToolUseFailure", "working", "%0", "test");
+        fail.error = Some("Permission denied".to_string());
+        fail.is_interrupt = Some(false);
+        let _ = state.process_event(fail);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(agent.last_tool_failed);
+        assert_eq!(
+            agent.failed_tool_error.as_deref(),
+            Some("Permission denied")
+        );
+        assert!(!agent.failed_tool_interrupt);
+    }
+
+    #[test]
+    fn test_session_start_with_session_source() {
+        let mut state = AppState::new();
+
+        let mut event = make_event("SessionStart", "working", "%0", "test");
+        event.session_source = Some("resume".to_string());
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert_eq!(agent.session_source.as_deref(), Some("resume"));
+    }
+
+    #[test]
+    fn test_stop_with_stop_hook_active() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        let mut event = make_event("Stop", "idle", "%0", "test");
+        event.stop_hook_active = Some(true);
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(agent.stop_hook_active);
+    }
+
+    #[test]
+    fn test_stop_hook_active_cleared_on_normal_stop() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // First stop with hook active
+        let mut event = make_event("Stop", "idle", "%0", "test");
+        event.stop_hook_active = Some(true);
+        let _ = state.process_event(event);
+        assert!(state.agents.get("%0").unwrap().stop_hook_active);
+
+        // Resume working
+        let _ = state.process_event(make_event("UserPromptSubmit", "working", "%0", "test"));
+
+        // Stop without hook active
+        let mut event = make_event("Stop", "idle", "%0", "test");
+        event.stop_hook_active = Some(false);
+        let _ = state.process_event(event);
+        assert!(!state.agents.get("%0").unwrap().stop_hook_active);
+    }
+
+    #[test]
+    fn test_subagent_start_with_agent_type() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // SubagentStart with agent_type
+        let mut event = make_event("SubagentStart", "working", "%0", "test");
+        event.subagent_id = Some("sub-789".to_string());
+        event.description = Some("Quick search".to_string());
+        event.agent_type = Some("Explore".to_string());
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert_eq!(agent.subagents.len(), 1);
+        assert_eq!(agent.subagents[0].subagent_type.as_deref(), Some("Explore"));
+    }
+
+    #[test]
+    fn test_model_tracking_from_session_start() {
+        let mut state = AppState::new();
+
+        let mut event = make_event("SessionStart", "working", "%0", "test");
+        event.model = Some("claude-opus-4-6".to_string());
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert_eq!(agent.model.as_deref(), Some("claude-opus-4-6"));
+    }
+
+    #[test]
+    fn test_context_window_tracking() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        let mut event = make_event("PreToolUse", "working", "%0", "test");
+        event.tool_name = Some("Read".to_string());
+        event.context_window = Some(crate::event::ContextWindow {
+            used_percentage: Some(73.5),
+            remaining_percentage: Some(26.5),
+            total_tokens: Some(150000),
+        });
+        let _ = state.process_event(event);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert_eq!(agent.context_usage_percent, Some(73.5));
+        assert_eq!(agent.context_remaining_percent, Some(26.5));
+        assert_eq!(agent.context_total_tokens, Some(150000));
+    }
+
+    #[test]
+    fn test_tool_failure_cleared_on_next_tool() {
+        let mut state = AppState::new();
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+
+        // Fail a tool
+        let mut pre = make_event("PreToolUse", "working", "%0", "test");
+        pre.tool_name = Some("Bash".to_string());
+        let _ = state.process_event(pre);
+
+        let mut fail = make_event("PostToolUseFailure", "working", "%0", "test");
+        fail.error = Some("error".to_string());
+        let _ = state.process_event(fail);
+
+        assert!(state.agents.get("%0").unwrap().last_tool_failed);
+
+        // New PreToolUse should clear failure state
+        let mut pre2 = make_event("PreToolUse", "working", "%0", "test");
+        pre2.tool_name = Some("Read".to_string());
+        let _ = state.process_event(pre2);
+
+        let agent = state.agents.get("%0").unwrap();
+        assert!(!agent.last_tool_failed);
+        assert!(agent.failed_tool_name.is_none());
+        assert!(agent.failed_tool_error.is_none());
+        assert!(!agent.failed_tool_interrupt);
+    }
 }

@@ -600,6 +600,9 @@ impl AppState {
                     // v1.3: Infer role from description keywords
                     let role = infer_role_from_description(&description);
 
+                    // v0.9.17: Capture subagent type from event (e.g., "Bash", "Explore", "Plan")
+                    let subagent_type = event.agent_type.clone();
+
                     agent.subagents.push(super::Subagent {
                         id: subagent_id.clone(),
                         description: description.clone(),
@@ -609,12 +612,14 @@ impl AppState {
                         parent_pane_id: pane_id.clone(),
                         depth: 0, // Direct child of this agent
                         role,
+                        subagent_type: subagent_type.clone(),
                     });
                     tracing::info!(
                         pane_id = %pane_id,
                         subagent_id = %subagent_id,
                         description = %description,
                         role = ?role,
+                        subagent_type = ?subagent_type,
                         "Subagent started"
                     );
                 }
