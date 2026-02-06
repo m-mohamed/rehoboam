@@ -2,7 +2,7 @@
 
 use crate::app::App;
 use crate::config::colors;
-use crate::state::{AgentRole, AttentionType, Status};
+use crate::state::{AttentionType, Status};
 use ratatui::{
     prelude::*,
     style::Modifier,
@@ -117,14 +117,6 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
             let is_selected = selected_pane_id == Some(agent.pane_id.as_str());
             let select_prefix = if is_selected { "\u{25b6} " } else { "  " }; // ▶ or spaces
 
-            // Role tag (only show non-General roles to avoid noise)
-            let role_tag = match agent.role {
-                AgentRole::Planner => Some("planner"),
-                AgentRole::Worker => Some("worker"),
-                AgentRole::Reviewer => Some("reviewer"),
-                AgentRole::General => None,
-            };
-
             // Build optional tags string
             let mut tags = String::new();
             if let Some(ref m) = model_tag {
@@ -135,12 +127,6 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
                     tags.push(' ');
                 }
                 tags.push_str(c);
-            }
-            if let Some(r) = role_tag {
-                if !tags.is_empty() {
-                    tags.push(' ');
-                }
-                tags.push_str(r);
             }
             if let Some(ref effort) = agent.effort_level {
                 if !tags.is_empty() {
