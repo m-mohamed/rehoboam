@@ -472,6 +472,10 @@ mod tests {
             team_agent_type: None,
             claude_code_version: None,
             model: None,
+            session_source: None,
+            stop_hook_active: None,
+            agent_transcript_path: None,
+            trigger: None,
         }
     }
 

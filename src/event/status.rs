@@ -27,6 +27,7 @@ pub fn derive_status_from_event(hook_name: &str) -> (&'static str, Option<&'stat
         "SubagentStop" => ("working", None),     // Subagent finished, may continue
         "Setup" => ("working", None),            // Claude Code 2.1.x: initialization/setup phase
         "PostToolUseFailure" => ("working", None), // Tool failed, but Claude continues
+        "TaskCompleted" => ("working", None),    // Shared task completed (transient)
 
         // ATTENTION: Claude is BLOCKED waiting for explicit user approval
         "PermissionRequest" => ("attention", Some("permission")),
@@ -35,6 +36,7 @@ pub fn derive_status_from_event(hook_name: &str) -> (&'static str, Option<&'stat
         "SessionStart" => ("attention", Some("waiting")), // Session started, waiting for prompt
         "Stop" => ("attention", Some("waiting")),         // Claude finished responding
         "SessionEnd" => ("attention", Some("waiting")),   // Session ended
+        "TeammateIdle" => ("attention", Some("waiting")), // Teammate agent idle
 
         // ATTENTION(Notification): Informational alert
         "Notification" => ("attention", Some("notification")),
@@ -75,6 +77,7 @@ mod tests {
             "SubagentStart",
             "SubagentStop",
             "Setup",
+            "TaskCompleted",
         ];
         for event in working_events {
             let (status, attention) = derive_status_from_event(event);
@@ -96,7 +99,7 @@ mod tests {
         assert_eq!(attention, Some("notification"));
 
         // Waiting events
-        for event in ["SessionStart", "Stop", "SessionEnd"] {
+        for event in ["SessionStart", "Stop", "SessionEnd", "TeammateIdle"] {
             let (status, attention) = derive_status_from_event(event);
             assert_eq!(status, "attention", "event: {}", event);
             assert_eq!(attention, Some("waiting"), "event: {}", event);

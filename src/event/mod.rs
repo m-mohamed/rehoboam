@@ -180,6 +180,20 @@ pub struct HookEvent {
     /// Claude model used for this session (e.g., "claude-opus-4-5-20251101")
     #[serde(default)]
     pub model: Option<String>,
+
+    // Claude Code 2.1.33 fields
+    /// Session source: "startup", "resume", "clear", "compact" (SessionStart)
+    #[serde(default)]
+    pub session_source: Option<String>,
+    /// Whether Claude continues due to stop hook (Stop/SubagentStop)
+    #[serde(default)]
+    pub stop_hook_active: Option<bool>,
+    /// Subagent's own transcript path (SubagentStop)
+    #[serde(default)]
+    pub agent_transcript_path: Option<String>,
+    /// What triggered compaction (PreCompact)
+    #[serde(default)]
+    pub trigger: Option<String>,
 }
 
 impl HookEvent {
@@ -283,6 +297,25 @@ pub struct ClaudeHookInput {
     /// Claude model used for this session (e.g., "claude-opus-4-5-20251101")
     #[serde(default)]
     pub model: Option<String>,
+
+    // Claude Code 2.1.33 fields
+    /// Session source: "startup", "resume", "clear", "compact" (SessionStart)
+    #[serde(default, rename = "source")]
+    pub session_source: Option<String>,
+    /// Whether Claude continues due to stop hook (Stop/SubagentStop)
+    #[serde(default)]
+    pub stop_hook_active: Option<bool>,
+    /// Subagent's own transcript path (SubagentStop)
+    #[serde(default)]
+    pub agent_transcript_path: Option<String>,
+    /// "Always allow" permission suggestions (PermissionRequest)
+    /// Parsed for completeness; not yet forwarded to HookEvent.
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub permission_suggestions: Option<serde_json::Value>,
+    /// What triggered compaction (PreCompact)
+    #[serde(default)]
+    pub trigger: Option<String>,
 }
 
 impl ClaudeHookInput {
@@ -383,6 +416,10 @@ mod tests {
             team_agent_type: None,
             claude_code_version: None,
             model: None,
+            session_source: None,
+            stop_hook_active: None,
+            agent_transcript_path: None,
+            trigger: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -416,6 +453,10 @@ mod tests {
             team_agent_type: None,
             claude_code_version: None,
             model: None,
+            session_source: None,
+            stop_hook_active: None,
+            agent_transcript_path: None,
+            trigger: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -449,6 +490,10 @@ mod tests {
             team_agent_type: None,
             claude_code_version: None,
             model: None,
+            session_source: None,
+            stop_hook_active: None,
+            agent_transcript_path: None,
+            trigger: None,
         };
         assert_eq!(
             event.validate(),
@@ -486,6 +531,10 @@ mod tests {
                 team_agent_type: None,
                 claude_code_version: None,
                 model: None,
+                session_source: None,
+                stop_hook_active: None,
+                agent_transcript_path: None,
+                trigger: None,
             };
             assert!(
                 event.validate().is_ok(),

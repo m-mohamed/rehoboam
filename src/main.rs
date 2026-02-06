@@ -329,6 +329,11 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         claude_code_version,
         // Model tracking (if available from hook input)
         model: hook_input.model.clone(),
+        // Claude Code 2.1.33 fields
+        session_source: hook_input.session_source.clone(),
+        stop_hook_active: hook_input.stop_hook_active,
+        agent_transcript_path: hook_input.agent_transcript_path.clone(),
+        trigger: hook_input.trigger.clone(),
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -609,6 +614,11 @@ async fn main() -> Result<()> {
                     claude_code_version: None,
                     // Model tracking - not yet available from sprites
                     model: None,
+                    // Claude Code 2.1.33 fields - not yet available from sprites
+                    session_source: None,
+                    stop_hook_active: None,
+                    agent_transcript_path: None,
+                    trigger: None,
                 };
 
                 // Send as RemoteHook event

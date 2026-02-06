@@ -338,6 +338,11 @@ fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str)
         claude_code_version: None,
         // Model tracking - not applicable for synthetic events
         model: None,
+        // Claude Code 2.1.33 fields - not applicable for synthetic events
+        session_source: None,
+        stop_hook_active: None,
+        agent_transcript_path: None,
+        trigger: None,
     }
 }
 
