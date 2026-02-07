@@ -1,10 +1,13 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
   "hooks": {
     "Notification": [
       {
         "hooks": [
           {
-            "command": "~/.local/bin/rehoboam hook -N",
+            "command": "~/.local/bin/rehoboam hook",
             "timeout": 5,
             "type": "command"
           }
@@ -16,7 +19,7 @@
       {
         "hooks": [
           {
-            "command": "~/.local/bin/rehoboam hook -N",
+            "command": "~/.local/bin/rehoboam hook",
             "timeout": 10,
             "type": "command"
           }
@@ -25,6 +28,18 @@
       }
     ],
     "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "~/.local/bin/rehoboam hook",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "PostToolUseFailure": [
       {
         "hooks": [
           {
@@ -77,6 +92,7 @@
         "hooks": [
           {
             "command": "~/.local/bin/rehoboam hook",
+            "once": true,
             "timeout": 5,
             "type": "command"
           }
@@ -88,7 +104,7 @@
       {
         "hooks": [
           {
-            "command": "~/.local/bin/rehoboam hook -N",
+            "command": "~/.local/bin/rehoboam hook",
             "timeout": 10,
             "type": "command"
           }
@@ -109,6 +125,30 @@
       }
     ],
     "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "command": "~/.local/bin/rehoboam hook",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "command": "~/.local/bin/rehoboam hook",
+            "timeout": 5,
+            "type": "command"
+          }
+        ],
+        "matcher": "*"
+      }
+    ],
+    "TeammateIdle": [
       {
         "hooks": [
           {
