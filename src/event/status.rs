@@ -25,7 +25,6 @@ pub fn derive_status_from_event(hook_name: &str) -> (&'static str, Option<&'stat
         "PostToolUse" => ("working", None),      // Just finished a tool, may continue
         "SubagentStart" => ("working", None),    // Spawned a subagent
         "SubagentStop" => ("working", None),     // Subagent finished, may continue
-        "Setup" => ("working", None),            // Claude Code 2.1.x: initialization/setup phase
         "PostToolUseFailure" => ("working", None), // Tool failed, but Claude continues
         "TaskCompleted" => ("working", None),    // Shared task completed (transient)
 
@@ -43,7 +42,6 @@ pub fn derive_status_from_event(hook_name: &str) -> (&'static str, Option<&'stat
 
         // COMPACTING: Context maintenance
         "PreCompact" => ("compacting", None),
-        "PostCompact" => ("compacting", None),
 
         // Unknown hooks default to attention(waiting) (conservative)
         _ => ("attention", Some("waiting")),
@@ -76,7 +74,6 @@ mod tests {
             "PostToolUseFailure",
             "SubagentStart",
             "SubagentStop",
-            "Setup",
             "TaskCompleted",
         ];
         for event in working_events {
@@ -108,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_compacting_events() {
-        for event in ["PreCompact", "PostCompact"] {
+        for event in ["PreCompact"] {
             let (status, attention) = derive_status_from_event(event);
             assert_eq!(status, "compacting", "event: {}", event);
             assert!(attention.is_none(), "event: {}", event);

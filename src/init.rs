@@ -114,10 +114,6 @@ fn hook_template() -> String {
       "matcher": "*",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5, "once": true }}]
     }}],
-    "Setup": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
-    }}],
     "UserPromptSubmit": [{{
       "matcher": "",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
@@ -151,10 +147,6 @@ fn hook_template() -> String {
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
     }}],
     "PreCompact": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
-    }}],
-    "PostCompact": [{{
       "matcher": "*",
       "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
     }}],
@@ -558,7 +550,7 @@ pub fn run(path: Option<PathBuf>, all: bool, list: bool, force: bool) -> Result<
         init_project(p, force)?;
         let settings_path = p.join(".claude").join("settings.json");
         println!("✓ Installed hooks to {}", settings_path.display());
-        println!("✓ Configured 16 hook events");
+        println!("✓ Configured 14 hook events");
         println!("\nNext steps:");
         println!("  1. Run 'rehoboam' in Terminal 1 (dashboard)");
         println!("  2. Run 'claude' in Terminal 2 (agent)");
@@ -859,20 +851,18 @@ mod tests {
         let parsed: serde_json::Value = serde_json::from_str(&template).unwrap();
         let hooks = parsed["hooks"].as_object().unwrap();
 
-        // Should have 16 hook events
-        assert_eq!(hooks.len(), 16, "template should have 16 hook events");
+        // Should have 14 hook events (all valid Claude Code hooks)
+        assert_eq!(hooks.len(), 14, "template should have 14 hook events");
 
-        // Verify the two new hooks are present
+        // Verify key hooks are present
         assert!(
             hooks.contains_key("PostToolUseFailure"),
             "should have PostToolUseFailure"
         );
-        assert!(hooks.contains_key("PostCompact"), "should have PostCompact");
 
         // Verify all expected hooks
         let expected = [
             "SessionStart",
-            "Setup",
             "UserPromptSubmit",
             "PermissionRequest",
             "Stop",
@@ -882,7 +872,6 @@ mod tests {
             "PostToolUseFailure",
             "SessionEnd",
             "PreCompact",
-            "PostCompact",
             "SubagentStart",
             "SubagentStop",
             "TeammateIdle",

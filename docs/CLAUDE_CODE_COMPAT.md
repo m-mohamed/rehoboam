@@ -79,7 +79,6 @@ These are the Claude Code hook events Rehoboam processes. The mapping shows how 
 | `PostToolUse` | working | - | Tool execution complete |
 | `SubagentStart` | working | - | Subagent spawned |
 | `SubagentStop` | working | - | Subagent finished |
-| `Setup` | working | - | Claude Code 2.1.x initialization/setup phase |
 | `PermissionRequest` | attention | permission | Blocking approval needed |
 | `SessionStart` | attention | waiting | Session ready for input |
 | `Stop` | attention | waiting | Response complete |
@@ -199,7 +198,6 @@ Rehoboam uses tmux to manage agent terminals:
 | `permission_mode` field | 2.1.0+ | Implemented | Shows [PLAN] in TUI |
 | `cwd` field | 2.0.0+ | Implemented | Stored per agent |
 | `transcript_path` field | 2.0.0+ | Implemented | Stored per agent |
-| `Setup` hook event | 2.1.10 | Implemented | Maps to "working" status |
 | `once: true` for hooks | 2.1.0+ | Implemented | Used in SessionStart |
 | `additionalContext` return | 2.1.9+ | Implemented | `--inject-context` flag |
 
