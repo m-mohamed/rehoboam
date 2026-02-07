@@ -603,12 +603,18 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ReconciliationConfig;
+    use crate::config::{HealthConfig, ReconciliationConfig};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     /// Create a test App instance
     fn test_app() -> App {
-        App::new(false, None, None, &ReconciliationConfig::default())
+        App::new(
+            false,
+            None,
+            None,
+            &ReconciliationConfig::default(),
+            &HealthConfig::default(),
+        )
     }
 
     /// Create a key event from a character

@@ -24,9 +24,10 @@ pub mod spawn;
 
 pub use spawn::SpawnState;
 
-use crate::config::ReconciliationConfig;
+use crate::config::{HealthConfig, ReconciliationConfig};
 use crate::diff::ParsedDiff;
 use crate::event::{Event, EventSource, SpriteStatusType};
+use crate::health::HealthChecker;
 use crate::reconcile::Reconciler;
 use crate::sprite::CheckpointRecord;
 use crate::state::AppState;
@@ -98,6 +99,8 @@ pub struct App {
     pub session_start: std::time::Instant,
     /// Tmux reconciler for detecting stuck agents
     reconciler: Reconciler,
+    /// hooks.log health checker
+    health_checker: HealthChecker,
 }
 
 impl App {
@@ -106,6 +109,7 @@ impl App {
         sprites_client: Option<SpritesClient>,
         event_tx: Option<mpsc::Sender<Event>>,
         reconciliation_config: &ReconciliationConfig,
+        health_config: &HealthConfig,
     ) -> Self {
         Self {
             state: AppState::new(),
@@ -134,6 +138,7 @@ impl App {
             search_query: String::new(),
             session_start: std::time::Instant::now(),
             reconciler: Reconciler::new(reconciliation_config),
+            health_checker: HealthChecker::new(health_config),
         }
     }
 
@@ -211,6 +216,12 @@ impl App {
         // Detects stuck agents by checking pane output for permission prompts
         if self.reconciler.should_run() {
             let modified = self.reconciler.run(&mut self.state);
+            self.needs_render = self.needs_render || modified;
+        }
+
+        // Run hooks.log health check (throttled to every 60s by default)
+        if self.health_checker.should_run() {
+            let modified = self.health_checker.check(&mut self.state);
             self.needs_render = self.needs_render || modified;
         }
 

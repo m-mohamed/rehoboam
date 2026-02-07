@@ -25,6 +25,10 @@ pub struct RehoboamConfig {
     /// Reconciliation configuration
     #[serde(default)]
     pub reconciliation: ReconciliationConfig,
+
+    /// Health check configuration (hooks.log monitoring)
+    #[serde(default)]
+    pub health: HealthConfig,
 }
 
 /// Timeout configuration for state transitions
@@ -95,6 +99,66 @@ fn default_reconcile_interval() -> u64 {
 
 fn default_uncertain_threshold() -> i64 {
     5 // Agent is uncertain after 5 seconds of no events (was 30s, too slow)
+}
+
+/// Health check configuration for hooks.log monitoring
+///
+/// Claude Code writes to `~/.claude/hooks.log` on every hook invocation.
+/// With many hooks firing, this file can grow unboundedly and silently
+/// kill all hooks. This checker monitors the file size and auto-truncates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthConfig {
+    /// Enable hooks.log health monitoring (default: true)
+    #[serde(default = "default_health_enabled")]
+    pub enabled: bool,
+
+    /// Seconds between health checks (default: 60)
+    #[serde(default = "default_health_interval")]
+    pub interval_secs: u64,
+
+    /// File size in MB that triggers a warning (default: 100)
+    #[serde(default = "default_health_warn_mb")]
+    pub warn_mb: u64,
+
+    /// File size in MB that triggers auto-truncation (default: 500)
+    #[serde(default = "default_health_truncate_mb")]
+    pub truncate_mb: u64,
+
+    /// Number of lines to keep when truncating (default: 1000)
+    #[serde(default = "default_health_truncate_keep_lines")]
+    pub truncate_keep_lines: usize,
+}
+
+impl Default for HealthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_health_enabled(),
+            interval_secs: default_health_interval(),
+            warn_mb: default_health_warn_mb(),
+            truncate_mb: default_health_truncate_mb(),
+            truncate_keep_lines: default_health_truncate_keep_lines(),
+        }
+    }
+}
+
+fn default_health_enabled() -> bool {
+    true
+}
+
+fn default_health_interval() -> u64 {
+    60
+}
+
+fn default_health_warn_mb() -> u64 {
+    100
+}
+
+fn default_health_truncate_mb() -> u64 {
+    500
+}
+
+fn default_health_truncate_keep_lines() -> usize {
+    1000
 }
 
 /// Sprites-specific configuration
@@ -288,6 +352,37 @@ impl RehoboamConfig {
                 self.sprites.default_ram_mb,
                 old_cpus,
                 self.sprites.default_cpus
+            );
+        }
+
+        // Clamp health check values
+        let old_interval = self.health.interval_secs;
+        let old_warn = self.health.warn_mb;
+        let old_truncate = self.health.truncate_mb;
+        let old_keep = self.health.truncate_keep_lines;
+        self.health.interval_secs = self.health.interval_secs.clamp(10, 300);
+        self.health.warn_mb = self.health.warn_mb.clamp(10, 2000);
+        self.health.truncate_mb = self.health.truncate_mb.clamp(50, 5000);
+        self.health.truncate_keep_lines = self.health.truncate_keep_lines.clamp(100, 10000);
+        // Ensure truncate threshold > warn threshold
+        if self.health.truncate_mb <= self.health.warn_mb {
+            self.health.truncate_mb = self.health.warn_mb + 100;
+        }
+        if old_interval != self.health.interval_secs
+            || old_warn != self.health.warn_mb
+            || old_truncate != self.health.truncate_mb
+            || old_keep != self.health.truncate_keep_lines
+        {
+            tracing::warn!(
+                "Health values clamped: interval {}->{}s, warn {}->{}MB, truncate {}->{}MB, keep {}->{}",
+                old_interval,
+                self.health.interval_secs,
+                old_warn,
+                self.health.warn_mb,
+                old_truncate,
+                self.health.truncate_mb,
+                old_keep,
+                self.health.truncate_keep_lines
             );
         }
     }

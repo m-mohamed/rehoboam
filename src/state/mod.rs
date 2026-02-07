@@ -44,6 +44,8 @@ pub struct AppState {
     pub sprite_agent_ids: HashSet<String>,
     /// Set of currently connected sprite IDs
     pub connected_sprites: HashSet<String>,
+    /// Health warning message (hooks.log size issue)
+    pub health_warning: Option<String>,
 }
 
 impl Default for AppState {
@@ -57,6 +59,7 @@ impl Default for AppState {
             selected_agents: HashSet::new(),
             sprite_agent_ids: HashSet::new(),
             connected_sprites: HashSet::new(),
+            health_warning: None,
         }
     }
 }

@@ -42,6 +42,7 @@ mod diff;
 mod errors;
 mod event;
 mod git;
+mod health;
 mod init;
 mod notify;
 mod picker;
@@ -763,6 +764,7 @@ async fn run_tui(
         sprites_client,
         Some(event_tx.clone()),
         &config.reconciliation,
+        &config.health,
     );
 
     // Create cancellation token for graceful shutdown
