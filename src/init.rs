@@ -111,60 +111,46 @@ fn hook_template() -> String {
   }},
   "hooks": {{
     "SessionStart": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5, "once": true }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3 }}]
     }}],
     "UserPromptSubmit": [{{
-      "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3 }}]
     }}],
     "PermissionRequest": [{{
-      "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3 }}]
     }}],
     "Stop": [{{
-      "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3 }}]
     }}],
     "Notification": [{{
-      "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3, "async": true }}]
     }}],
     "PreToolUse": [{{
-      "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3 }}]
     }}],
     "PostToolUse": [{{
-      "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3, "async": true }}]
     }}],
     "PostToolUseFailure": [{{
-      "matcher": "",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3, "async": true }}]
     }}],
     "SessionEnd": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3, "async": true }}]
     }}],
     "PreCompact": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 10 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3, "async": true }}]
     }}],
     "SubagentStart": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3, "async": true }}]
     }}],
     "SubagentStop": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3, "async": true }}]
     }}],
     "TeammateIdle": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3 }}]
     }}],
     "TaskCompleted": [{{
-      "matcher": "*",
-      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 5 }}]
+      "hooks": [{{ "type": "command", "command": "{path} hook", "timeout": 3 }}]
     }}]
   }}
 }}"#

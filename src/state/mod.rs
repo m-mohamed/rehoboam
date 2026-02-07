@@ -482,6 +482,11 @@ mod tests {
             agent_transcript_path: None,
             trigger: None,
             effort_level: None,
+            teammate_name: None,
+            task_id: None,
+            task_subject: None,
+            task_description: None,
+            tool_response: None,
         }
     }
 

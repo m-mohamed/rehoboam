@@ -215,6 +215,25 @@ pub struct HookEvent {
     /// Effort level from CLAUDE_CODE_EFFORT_LEVEL env var (e.g., "low", "medium", "high")
     #[serde(default)]
     pub effort_level: Option<String>,
+
+    // TeammateIdle / TaskCompleted fields (Claude Code 2.1.33+)
+    /// Teammate name (TeammateIdle/TaskCompleted)
+    #[serde(default)]
+    pub teammate_name: Option<String>,
+    /// Task ID (TaskCompleted)
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Task subject (TaskCompleted)
+    #[serde(default)]
+    pub task_subject: Option<String>,
+    /// Task description (TaskCompleted)
+    #[serde(default)]
+    pub task_description: Option<String>,
+
+    // PostToolUse response
+    /// Tool response output (PostToolUse)
+    #[serde(default)]
+    pub tool_response: Option<serde_json::Value>,
 }
 
 impl HookEvent {
@@ -353,6 +372,28 @@ pub struct ClaudeHookInput {
     /// What triggered compaction (PreCompact)
     #[serde(default)]
     pub trigger: Option<String>,
+
+    // TeammateIdle / TaskCompleted fields (Claude Code 2.1.33+)
+    /// Team name from JSON input (fallback when env var is absent)
+    #[serde(default)]
+    pub team_name: Option<String>,
+    /// Teammate name (TeammateIdle/TaskCompleted)
+    #[serde(default)]
+    pub teammate_name: Option<String>,
+    /// Task ID (TaskCompleted)
+    #[serde(default)]
+    pub task_id: Option<String>,
+    /// Task subject (TaskCompleted)
+    #[serde(default)]
+    pub task_subject: Option<String>,
+    /// Task description (TaskCompleted)
+    #[serde(default)]
+    pub task_description: Option<String>,
+
+    // PostToolUse response
+    /// Tool response output (PostToolUse)
+    #[serde(default)]
+    pub tool_response: Option<serde_json::Value>,
 }
 
 impl ClaudeHookInput {
@@ -463,6 +504,11 @@ mod tests {
             agent_transcript_path: None,
             trigger: None,
             effort_level: None,
+            teammate_name: None,
+            task_id: None,
+            task_subject: None,
+            task_description: None,
+            tool_response: None,
         };
         assert_eq!(event.validate(), Err("pane_id is required"));
     }
@@ -506,6 +552,11 @@ mod tests {
             agent_transcript_path: None,
             trigger: None,
             effort_level: None,
+            teammate_name: None,
+            task_id: None,
+            task_subject: None,
+            task_description: None,
+            tool_response: None,
         };
         assert_eq!(event.validate(), Err("project is required"));
     }
@@ -549,6 +600,11 @@ mod tests {
             agent_transcript_path: None,
             trigger: None,
             effort_level: None,
+            teammate_name: None,
+            task_id: None,
+            task_subject: None,
+            task_description: None,
+            tool_response: None,
         };
         assert_eq!(
             event.validate(),
@@ -596,6 +652,11 @@ mod tests {
                 agent_transcript_path: None,
                 trigger: None,
                 effort_level: None,
+                teammate_name: None,
+                task_id: None,
+                task_subject: None,
+                task_description: None,
+                tool_response: None,
             };
             assert!(
                 event.validate().is_ok(),
@@ -603,5 +664,87 @@ mod tests {
                 status
             );
         }
+    }
+
+    #[test]
+    fn test_claude_hook_input_teammate_idle() {
+        let json = r#"{
+            "session_id": "abc-123",
+            "hook_event_name": "TeammateIdle",
+            "team_name": "my-team",
+            "teammate_name": "researcher"
+        }"#;
+
+        let input: ClaudeHookInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.hook_event_name, "TeammateIdle");
+        assert_eq!(input.team_name.as_deref(), Some("my-team"));
+        assert_eq!(input.teammate_name.as_deref(), Some("researcher"));
+        assert!(input.task_id.is_none());
+    }
+
+    #[test]
+    fn test_claude_hook_input_task_completed() {
+        let json = r#"{
+            "session_id": "abc-123",
+            "hook_event_name": "TaskCompleted",
+            "team_name": "my-team",
+            "teammate_name": "coder",
+            "task_id": "task-456",
+            "task_subject": "Implement login",
+            "task_description": "Add OAuth login flow"
+        }"#;
+
+        let input: ClaudeHookInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.hook_event_name, "TaskCompleted");
+        assert_eq!(input.teammate_name.as_deref(), Some("coder"));
+        assert_eq!(input.task_id.as_deref(), Some("task-456"));
+        assert_eq!(input.task_subject.as_deref(), Some("Implement login"));
+        assert_eq!(
+            input.task_description.as_deref(),
+            Some("Add OAuth login flow")
+        );
+    }
+
+    #[test]
+    fn test_claude_hook_input_post_tool_use_with_response() {
+        let json = r#"{
+            "session_id": "abc-123",
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_use_id": "tu-789",
+            "tool_response": {"stdout": "hello", "exit_code": 0}
+        }"#;
+
+        let input: ClaudeHookInput = serde_json::from_str(json).unwrap();
+        assert_eq!(input.hook_event_name, "PostToolUse");
+        assert_eq!(input.tool_name.as_deref(), Some("Bash"));
+        assert!(input.tool_response.is_some());
+        let resp = input.tool_response.unwrap();
+        assert_eq!(resp["stdout"], "hello");
+        assert_eq!(resp["exit_code"], 0);
+    }
+
+    #[test]
+    fn test_hook_event_deserialize_with_teammate_fields() {
+        let json = r#"{
+            "event": "TaskCompleted",
+            "status": "working",
+            "pane_id": "42",
+            "project": "my-project",
+            "timestamp": 1704067200,
+            "teammate_name": "coder",
+            "task_id": "task-1",
+            "task_subject": "Fix bug",
+            "task_description": "Fix the login bug"
+        }"#;
+
+        let event: HookEvent = serde_json::from_str(json).unwrap();
+        assert_eq!(event.teammate_name.as_deref(), Some("coder"));
+        assert_eq!(event.task_id.as_deref(), Some("task-1"));
+        assert_eq!(event.task_subject.as_deref(), Some("Fix bug"));
+        assert_eq!(
+            event.task_description.as_deref(),
+            Some("Fix the login bug")
+        );
     }
 }

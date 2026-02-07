@@ -291,7 +291,10 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         .unwrap_or(0);
 
     // Capture TeammateTool env vars (v3.0)
-    let team_name = std::env::var("CLAUDE_CODE_TEAM_NAME").ok();
+    // Use hook_input.team_name as fallback when env var is absent
+    let team_name = std::env::var("CLAUDE_CODE_TEAM_NAME")
+        .ok()
+        .or_else(|| hook_input.team_name.clone());
     let team_agent_id = std::env::var("CLAUDE_CODE_AGENT_ID").ok();
     let team_agent_name = std::env::var("CLAUDE_CODE_AGENT_NAME").ok();
     let team_agent_type = std::env::var("CLAUDE_CODE_AGENT_TYPE").ok();
@@ -345,6 +348,13 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         trigger: hook_input.trigger.clone(),
         // Effort level from env var
         effort_level,
+        // TeammateIdle / TaskCompleted fields (Claude Code 2.1.33+)
+        teammate_name: hook_input.teammate_name.clone(),
+        task_id: hook_input.task_id.clone(),
+        task_subject: hook_input.task_subject.clone(),
+        task_description: hook_input.task_description.clone(),
+        // PostToolUse response
+        tool_response: hook_input.tool_response.clone(),
     };
 
     // Try to send to TUI via socket (non-blocking, best effort)
@@ -647,6 +657,13 @@ async fn main() -> Result<()> {
                     trigger: None,
                     // Effort level - not yet available from sprites
                     effort_level: None,
+                    // TeammateIdle/TaskCompleted - not yet available from sprites
+                    teammate_name: None,
+                    task_id: None,
+                    task_subject: None,
+                    task_description: None,
+                    // PostToolUse response - not yet available from sprites
+                    tool_response: None,
                 };
 
                 // Send as RemoteHook event

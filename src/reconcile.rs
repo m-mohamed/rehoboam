@@ -350,6 +350,13 @@ fn synthetic_event(pane_id: &str, event_name: &str, status: &str, project: &str)
         trigger: None,
         // Effort level - not applicable for synthetic events
         effort_level: None,
+        // TeammateIdle/TaskCompleted - not applicable for synthetic events
+        teammate_name: None,
+        task_id: None,
+        task_subject: None,
+        task_description: None,
+        // PostToolUse response - not applicable for synthetic events
+        tool_response: None,
     }
 }
 
