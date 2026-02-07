@@ -24,7 +24,7 @@ pub mod spawn;
 
 pub use spawn::SpawnState;
 
-use crate::config::{HealthConfig, ReconciliationConfig};
+use crate::config::{HealthConfig, ReconciliationConfig, TimeoutConfig};
 use crate::diff::ParsedDiff;
 use crate::event::{Event, EventSource, SpriteStatusType};
 use crate::health::HealthChecker;
@@ -110,9 +110,13 @@ impl App {
         event_tx: Option<mpsc::Sender<Event>>,
         reconciliation_config: &ReconciliationConfig,
         health_config: &HealthConfig,
+        timeout_config: &TimeoutConfig,
     ) -> Self {
         Self {
-            state: AppState::new(),
+            state: AppState::with_timeouts(
+                timeout_config.idle_timeout_secs,
+                timeout_config.stale_timeout_secs,
+            ),
             should_quit: false,
             debug_mode,
             show_help: false,

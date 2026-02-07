@@ -14,7 +14,14 @@ fn default_socket_path() -> PathBuf {
     if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
         return PathBuf::from(runtime_dir).join("rehoboam.sock");
     }
-    // Fall back to /tmp (macOS and fallback)
+    // Fall back to $HOME/.cache/rehoboam/ (safer than world-writable /tmp)
+    if let Ok(home) = std::env::var("HOME") {
+        let cache_dir = PathBuf::from(home).join(".cache").join("rehoboam");
+        // Create directory if it doesn't exist (best-effort)
+        let _ = std::fs::create_dir_all(&cache_dir);
+        return cache_dir.join("rehoboam.sock");
+    }
+    // Last resort: /tmp (macOS /tmp is per-user via /private/tmp)
     PathBuf::from("/tmp/rehoboam.sock")
 }
 

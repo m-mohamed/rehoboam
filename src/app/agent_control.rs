@@ -114,19 +114,24 @@ pub fn reject_selected(state: &AppState, sprites_client: Option<&SpritesClient>)
 /// Bulk send a signal to all selected agents
 ///
 /// Handles both tmux and sprite agents with unified logging.
+/// Returns a status message if some agents were skipped.
 pub fn bulk_send_signal(
     state: &mut AppState,
     sprites_client: Option<&SpritesClient>,
     tmux_signal: &str,
     action_name: &str,
-) {
+) -> Option<String> {
     let tmux_panes = state.selected_tmux_panes();
     let sprite_agents = state.selected_sprite_agents();
 
     if tmux_panes.is_empty() && sprite_agents.is_empty() {
         tracing::warn!("No agents selected for bulk {}", action_name);
-        return;
+        state.clear_selection();
+        return Some(format!("No agents selected for {}", action_name));
     }
+
+    let mut sent = 0usize;
+    let mut skipped = 0usize;
 
     // Handle tmux agents
     if !tmux_panes.is_empty() {
@@ -139,6 +144,8 @@ pub fn bulk_send_signal(
             };
             if let Err(e) = result {
                 tracing::error!(pane_id = %pane_id, error = %e, "Failed to {}", action_name);
+            } else {
+                sent += 1;
             }
         }
     }
@@ -151,12 +158,14 @@ pub fn bulk_send_signal(
                 "Bulk {} sprite agents",
                 action_name
             );
-            for sprite_id in sprite_agents {
-                send_sprite_signal(Some(client), &sprite_id, tmux_signal, action_name);
+            for sprite_id in &sprite_agents {
+                send_sprite_signal(Some(client), sprite_id, tmux_signal, action_name);
+                sent += 1;
             }
         } else {
+            skipped = sprite_agents.len();
             tracing::warn!(
-                count = sprite_agents.len(),
+                count = skipped,
                 "Cannot {} sprites: sprites client not configured",
                 action_name
             );
@@ -164,21 +173,30 @@ pub fn bulk_send_signal(
     }
 
     state.clear_selection();
+
+    if skipped > 0 {
+        Some(format!(
+            "Bulk {}: {} sent, {} sprite(s) skipped (no token)",
+            action_name, sent, skipped
+        ))
+    } else {
+        None
+    }
 }
 
 /// Bulk approve all selected agents
-pub fn bulk_approve(state: &mut AppState, sprites_client: Option<&SpritesClient>) {
-    bulk_send_signal(state, sprites_client, "y", "approval");
+pub fn bulk_approve(state: &mut AppState, sprites_client: Option<&SpritesClient>) -> Option<String> {
+    bulk_send_signal(state, sprites_client, "y", "approval")
 }
 
 /// Bulk reject all selected agents
-pub fn bulk_reject(state: &mut AppState, sprites_client: Option<&SpritesClient>) {
-    bulk_send_signal(state, sprites_client, "n", "rejection");
+pub fn bulk_reject(state: &mut AppState, sprites_client: Option<&SpritesClient>) -> Option<String> {
+    bulk_send_signal(state, sprites_client, "n", "rejection")
 }
 
 /// Bulk kill all selected agents (send Ctrl+C)
-pub fn bulk_kill(state: &mut AppState, sprites_client: Option<&SpritesClient>) {
-    bulk_send_signal(state, sprites_client, "C-c", "kill");
+pub fn bulk_kill(state: &mut AppState, sprites_client: Option<&SpritesClient>) -> Option<String> {
+    bulk_send_signal(state, sprites_client, "C-c", "kill")
 }
 
 /// Send custom input to selected agent

@@ -151,13 +151,19 @@ impl App {
                 );
             }
             KeyCode::Char('Y') => {
-                agent_control::bulk_approve(&mut self.state, self.sprites_client.as_ref());
+                if let Some(msg) = agent_control::bulk_approve(&mut self.state, self.sprites_client.as_ref()) {
+                    self.show_status(&msg);
+                }
             }
             KeyCode::Char('N') => {
-                agent_control::bulk_reject(&mut self.state, self.sprites_client.as_ref());
+                if let Some(msg) = agent_control::bulk_reject(&mut self.state, self.sprites_client.as_ref()) {
+                    self.show_status(&msg);
+                }
             }
             KeyCode::Char('K') => {
-                agent_control::bulk_kill(&mut self.state, self.sprites_client.as_ref());
+                if let Some(msg) = agent_control::bulk_kill(&mut self.state, self.sprites_client.as_ref()) {
+                    self.show_status(&msg);
+                }
             }
             KeyCode::Char('x') => {
                 self.state.clear_selection();
@@ -166,7 +172,9 @@ impl App {
 
             // === Git Operations ===
             KeyCode::Char('g') => {
-                operations::git_commit_selected(&self.state);
+                if let Some(msg) = operations::git_commit_selected(&self.state) {
+                    self.show_status(&msg);
+                }
             }
             KeyCode::Char('p') => {
                 operations::git_push_selected(&self.state);
@@ -553,8 +561,9 @@ impl App {
 
             // Git commit from diff view
             KeyCode::Char('g') => {
-                operations::git_commit_selected(&self.state);
-                self.show_status("Committed changes");
+                let msg = operations::git_commit_selected(&self.state)
+                    .unwrap_or_else(|| "Committed changes".to_string());
+                self.show_status(&msg);
             }
 
             // Git push from diff view
@@ -603,7 +612,7 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{HealthConfig, ReconciliationConfig};
+    use crate::config::{HealthConfig, ReconciliationConfig, TimeoutConfig};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     /// Create a test App instance
@@ -614,6 +623,7 @@ mod tests {
             None,
             &ReconciliationConfig::default(),
             &HealthConfig::default(),
+            &TimeoutConfig::default(),
         )
     }
 

@@ -38,10 +38,11 @@ use tokio::sync::mpsc;
 /// Git commit on selected agent's worktree
 ///
 /// Stages all changes and creates a checkpoint commit.
-pub fn git_commit_selected(state: &AppState) {
+/// Returns a status message for UI display.
+pub fn git_commit_selected(state: &AppState) -> Option<String> {
     let Some(agent) = state.selected_agent() else {
         tracing::warn!("No agent selected for git commit");
-        return;
+        return Some("No agent selected".to_string());
     };
 
     let Some(ref working_dir) = agent.working_dir else {
@@ -50,7 +51,7 @@ pub fn git_commit_selected(state: &AppState) {
             project = %agent.project,
             "No working directory set for agent"
         );
-        return;
+        return Some("No working directory set".to_string());
     };
 
     let git = GitController::new(working_dir.clone());
@@ -63,7 +64,7 @@ pub fn git_commit_selected(state: &AppState) {
                 project = %agent.project,
                 "No changes to commit"
             );
-            return;
+            return Some("No changes to commit".to_string());
         }
         Err(e) => {
             tracing::error!(
@@ -71,7 +72,7 @@ pub fn git_commit_selected(state: &AppState) {
                 pane_id = %agent.pane_id,
                 "Failed to check for changes"
             );
-            return;
+            return Some(format!("Git error: {}", e));
         }
         Ok(true) => {}
     }
@@ -91,6 +92,7 @@ pub fn git_commit_selected(state: &AppState) {
                 message = %message,
                 "Git commit created"
             );
+            None // Success, no error to show
         }
         Err(e) => {
             tracing::error!(
@@ -99,6 +101,7 @@ pub fn git_commit_selected(state: &AppState) {
                 project = %agent.project,
                 "Git commit failed"
             );
+            Some(format!("Commit failed: {}", e))
         }
     }
 }

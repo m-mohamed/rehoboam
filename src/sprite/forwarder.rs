@@ -76,12 +76,12 @@ pub struct HookEventForwarder {
     status_tx: Option<mpsc::Sender<ConnectionStatus>>,
 
     /// Active connections (sprite_id -> connection metadata)
-    connections: Arc<RwLock<HashMap<String, ConnectionInfo>>>,
+    pub(crate) connections: Arc<RwLock<HashMap<String, ConnectionInfo>>>,
 }
 
 /// Connection state for a sprite
 #[derive(Debug, Clone)]
-struct ConnectionInfo {
+pub(crate) struct ConnectionInfo {
     /// Last activity timestamp
     last_seen: std::time::Instant,
 
@@ -100,6 +100,44 @@ impl HookEventForwarder {
             status_tx: Some(status_tx),
             connections: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Spawn a periodic sweep task that removes stale connection entries.
+    ///
+    /// If a sprite disconnects without sending a Close frame (e.g., network drop),
+    /// the connection handler's read loop may hang. This sweep catches entries
+    /// whose `last_seen` is older than `stale_secs` and emits disconnect events.
+    pub fn spawn_stale_reaper(
+        connections: Arc<RwLock<HashMap<String, ConnectionInfo>>>,
+        status_tx: Option<mpsc::Sender<ConnectionStatus>>,
+        stale_secs: u64,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            let interval = tokio::time::Duration::from_secs(60);
+            let stale_threshold = std::time::Duration::from_secs(stale_secs);
+            loop {
+                tokio::time::sleep(interval).await;
+                let now = std::time::Instant::now();
+                let mut conns = connections.write().await;
+                let stale_ids: Vec<String> = conns
+                    .iter()
+                    .filter(|(_, info)| now.duration_since(info.last_seen) > stale_threshold)
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for id in stale_ids {
+                    conns.remove(&id);
+                    warn!("Reaped stale sprite connection: {}", id);
+                    if let Some(tx) = &status_tx {
+                        let _ = tx
+                            .send(ConnectionStatus::Disconnected {
+                                sprite_id: id,
+                                reason: "Stale connection reaped".to_string(),
+                            })
+                            .await;
+                    }
+                }
+            }
+        })
     }
 
     /// Start listening for WebSocket connections
@@ -301,17 +339,25 @@ impl HookEventForwarder {
     }
 }
 
-/// Start the hook event forwarder with status channel
+/// Start the hook event forwarder with status channel and stale connection reaper
 pub fn spawn_forwarder_with_status(
     port: u16,
 ) -> (
     mpsc::Receiver<RemoteHookEvent>,
     mpsc::Receiver<ConnectionStatus>,
     tokio::task::JoinHandle<()>,
+    tokio::task::JoinHandle<()>,
 ) {
     let (event_tx, event_rx) = mpsc::channel(100);
     let (status_tx, status_rx) = mpsc::channel(50);
-    let forwarder = HookEventForwarder::with_status_channel(event_tx, status_tx);
+    let forwarder = HookEventForwarder::with_status_channel(event_tx, status_tx.clone());
+
+    // Start stale connection reaper (every 60s, reap connections idle >120s)
+    let reaper_handle = HookEventForwarder::spawn_stale_reaper(
+        forwarder.connections.clone(),
+        Some(status_tx),
+        120,
+    );
 
     let handle = tokio::spawn(async move {
         if let Err(e) = forwarder.listen(port).await {
@@ -319,5 +365,5 @@ pub fn spawn_forwarder_with_status(
         }
     });
 
-    (event_rx, status_rx, handle)
+    (event_rx, status_rx, handle, reaper_handle)
 }

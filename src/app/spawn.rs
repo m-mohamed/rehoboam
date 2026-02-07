@@ -73,7 +73,7 @@ pub struct SpawnState {
 /// Check if a string looks like a GitHub repository reference
 ///
 /// Returns true for:
-/// - `owner/repo` (only if path doesn't exist locally)
+/// - `owner/repo` (only if path doesn't exist locally and owner matches GitHub username pattern)
 /// - `https://github.com/owner/repo`
 /// - `github.com/owner/repo`
 /// - `git@github.com:owner/repo.git`
@@ -90,16 +90,28 @@ pub fn is_github_url(s: &str) -> bool {
 
     // Check for owner/repo format (must have exactly one slash, no spaces)
     // But first ensure it's not a local path that exists
-    if !s.contains(' ') && !s.starts_with('/') && !s.starts_with('.') {
+    if !s.contains(' ') && !s.starts_with('/') && !s.starts_with('.') && !s.starts_with('~') {
         let parts: Vec<&str> = s.split('/').collect();
         if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
-            // Could be owner/repo OR a local path like foo/bar
+            // Validate GitHub username pattern: alphanumeric and hyphens, 1-39 chars
+            let owner = parts[0];
+            let is_valid_github_owner = !owner.is_empty()
+                && owner.len() <= 39
+                && owner
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+                && !owner.starts_with('-')
+                && !owner.ends_with('-');
+
+            if !is_valid_github_owner {
+                return false;
+            }
+
             // Check if it exists locally - if so, it's a local path
-            let expanded = expand_tilde(s);
-            if std::path::Path::new(&expanded).exists() {
+            if std::path::Path::new(s).exists() {
                 return false; // Local path takes precedence
             }
-            // Doesn't exist locally, assume it's a GitHub repo
+            // Doesn't exist locally and matches GitHub pattern, assume it's a GitHub repo
             return true;
         }
     }
@@ -404,7 +416,7 @@ fn spawn_sprite_agent(spawn_state: &SpawnState, client: &SpritesClient) {
 
 /// Generate a task list ID if not provided
 fn generate_task_list_id(project_path: &str) -> String {
-    // Use project name + timestamp for uniqueness
+    // Use project name + millisecond timestamp for uniqueness (prevents same-second collisions)
     let project_name = std::path::Path::new(project_path)
         .file_name()
         .and_then(|n| n.to_str())
@@ -412,7 +424,7 @@ fn generate_task_list_id(project_path: &str) -> String {
 
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs())
+        .map(|d| d.as_millis())
         .unwrap_or(0);
 
     format!("{}-{}", project_name, timestamp)
@@ -448,10 +460,11 @@ fn spawn_tmux_agent(
                     worktree_path
                 }
                 Err(e) => {
-                    tracing::error!(
+                    tracing::warn!(
                         error = %e,
                         branch = %branch_name,
-                        "Failed to create worktree, using project path"
+                        project = %project_path,
+                        "Worktree creation failed, falling back to project root"
                     );
                     PathBuf::from(project_path)
                 }

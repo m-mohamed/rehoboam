@@ -491,14 +491,18 @@ impl Agent {
         // Verify tool_use_id matches (if both are present)
         if let (Some(pending), Some(incoming)) = (&self.pending_tool_use_id, tool_use_id) {
             if pending != incoming {
-                // IDs don't match, this PostToolUse is for a different tool
+                // IDs don't match - log warning and still clean up pending state
                 tracing::warn!(
                     pane_id = %self.pane_id,
                     pending_id = %pending,
                     incoming_id = %incoming,
                     current_tool = ?self.current_tool,
-                    "Tool use ID mismatch - skipping latency calculation"
+                    "Tool use ID mismatch - skipping latency, cleaning up pending state"
                 );
+                // Clean up to avoid stale tool state
+                self.current_tool = None;
+                self.pending_tool_start = None;
+                self.pending_tool_use_id = None;
                 return;
             }
         }
@@ -562,6 +566,11 @@ impl Agent {
         // Claude Code Tasks API (read operations)
         "TaskList",
         "TaskGet",
+        // User interaction / mode transition tools (read-only side-effects)
+        "Skill",
+        "AskUserQuestion",
+        "EnterPlanMode",
+        "ExitPlanMode",
     ];
 
     /// Mutation tools (used for Worker role detection)
@@ -574,6 +583,10 @@ impl Agent {
         // Claude Code Tasks API (write operations)
         "TaskCreate",
         "TaskUpdate",
+        // Team coordination tools (write/side-effect operations)
+        "SendMessage",
+        "TeamCreate",
+        "TeamDelete",
     ];
 
     /// Record a tool call and update role inference

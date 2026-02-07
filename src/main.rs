@@ -552,8 +552,8 @@ async fn main() -> Result<()> {
             cli.sprite_ws_port
         );
 
-        // Spawn the WebSocket forwarder with status channel
-        let (mut sprite_rx, mut status_rx, forwarder_handle) =
+        // Spawn the WebSocket forwarder with status channel and stale reaper
+        let (mut sprite_rx, mut status_rx, forwarder_handle, reaper_handle) =
             sprite::forwarder::spawn_forwarder_with_status(cli.sprite_ws_port);
 
         // Spawn task to forward ConnectionStatus -> Event::SpriteStatus
@@ -681,7 +681,7 @@ async fn main() -> Result<()> {
             }
         });
 
-        Some((forwarder_handle, converter_handle, status_handle))
+        Some((forwarder_handle, converter_handle, status_handle, reaper_handle))
     } else {
         None
     };
@@ -699,13 +699,17 @@ async fn main() -> Result<()> {
         sprites::SpritesClient::new(token)
     });
 
+    // Clamp rates to prevent division-by-zero or extreme values
+    let tick_rate = cli.tick_rate.clamp(0.1, 60.0);
+    let frame_rate = cli.frame_rate.clamp(0.1, 120.0);
+
     // Run TUI
     let result = run_tui(
         event_tx,
         event_rx,
         cli.debug,
-        cli.tick_rate,
-        cli.frame_rate,
+        tick_rate,
+        frame_rate,
         sprites_client,
         &app_config,
     )
@@ -715,10 +719,11 @@ async fn main() -> Result<()> {
     socket_handle.abort();
 
     // Cleanup sprite handles if enabled
-    if let Some((forwarder_handle, converter_handle, status_handle)) = sprite_handle {
+    if let Some((forwarder_handle, converter_handle, status_handle, reaper_handle)) = sprite_handle {
         forwarder_handle.abort();
         converter_handle.abort();
         status_handle.abort();
+        reaper_handle.abort();
         tracing::debug!("Sprite forwarder shut down");
     }
 
@@ -765,6 +770,7 @@ async fn run_tui(
         Some(event_tx.clone()),
         &config.reconciliation,
         &config.health,
+        &config.timeouts,
     );
 
     // Create cancellation token for graceful shutdown

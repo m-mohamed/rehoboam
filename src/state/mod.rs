@@ -14,14 +14,6 @@ use crate::event::HookEvent;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Timeout for Working → Attention(Waiting) transition (seconds)
-/// Increased from 10s to 60s - Claude often thinks for 10-30s between tool calls
-/// The in_response guard prevents false timeouts during active responses
-const WAITING_TIMEOUT_SECS: i64 = 60;
-
-/// Timeout for removing stale sessions (seconds)
-const STALE_TIMEOUT_SECS: i64 = 300; // 5 minutes
-
 /// Number of status columns in Kanban view (Attention, Working, Compacting)
 pub const NUM_COLUMNS: usize = 3;
 
@@ -46,6 +38,10 @@ pub struct AppState {
     pub connected_sprites: HashSet<String>,
     /// Health warning message (hooks.log size issue)
     pub health_warning: Option<String>,
+    /// Configurable timeout: Working → Attention(Waiting) transition (seconds)
+    pub idle_timeout_secs: i64,
+    /// Configurable timeout: removing stale sessions (seconds)
+    pub stale_timeout_secs: i64,
 }
 
 impl Default for AppState {
@@ -60,6 +56,8 @@ impl Default for AppState {
             sprite_agent_ids: HashSet::new(),
             connected_sprites: HashSet::new(),
             health_warning: None,
+            idle_timeout_secs: 60,
+            stale_timeout_secs: 300,
         }
     }
 }
@@ -74,8 +72,18 @@ pub fn status_to_column(status: &Status) -> usize {
 }
 
 impl AppState {
+    #[allow(dead_code)] // Used in tests; production uses with_timeouts()
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create with config-driven timeouts
+    pub fn with_timeouts(idle_timeout_secs: i64, stale_timeout_secs: i64) -> Self {
+        Self {
+            idle_timeout_secs,
+            stale_timeout_secs,
+            ..Self::default()
+        }
     }
 
     // NOTE: process_event() is defined in event_processing.rs
@@ -93,6 +101,8 @@ impl AppState {
         if let Some(pane_id) = oldest_waiting {
             self.status_counts[0] = self.status_counts[0].saturating_sub(1); // Attention is column 0
             self.agents.remove(&pane_id);
+            self.selected_agents.remove(&pane_id);
+            self.sprite_agent_ids.remove(&pane_id);
         } else {
             // No idle agents, evict oldest of any status
             let oldest = self
@@ -104,6 +114,8 @@ impl AppState {
             if let Some((pane_id, col)) = oldest {
                 self.status_counts[col] = self.status_counts[col].saturating_sub(1);
                 self.agents.remove(&pane_id);
+                self.selected_agents.remove(&pane_id);
+                self.sprite_agent_ids.remove(&pane_id);
             }
         }
     }
@@ -111,18 +123,21 @@ impl AppState {
     /// Periodic tick for timeout-based state transitions
     ///
     /// Handles:
-    /// - Working → Attention(Waiting) after WAITING_TIMEOUT_SECS (60s) of no events
-    /// - Remove stale sessions after STALE_TIMEOUT_SECS (5 min) of no events
+    /// - Working → Attention(Waiting) after idle_timeout_secs of no events
+    /// - Remove stale sessions after stale_timeout_secs of no events
     pub fn tick(&mut self) {
         let now = current_timestamp();
         let mut to_remove: Vec<String> = Vec::new();
         let mut waiting_transitions: Vec<String> = Vec::new();
 
+        let idle_timeout = self.idle_timeout_secs;
+        let stale_timeout = self.stale_timeout_secs;
+
         for (pane_id, agent) in &self.agents {
             let elapsed = now - agent.last_update;
 
-            // Remove stale sessions (5 minutes of no events)
-            if elapsed > STALE_TIMEOUT_SECS {
+            // Remove stale sessions
+            if elapsed > stale_timeout {
                 to_remove.push(pane_id.clone());
                 continue;
             }
@@ -139,12 +154,12 @@ impl AppState {
                         elapsed_secs = elapsed,
                         in_response = agent.in_response,
                         current_tool = ?agent.current_tool,
-                        timeout_threshold = WAITING_TIMEOUT_SECS,
+                        timeout_threshold = idle_timeout,
                         "Timeout check"
                     );
                 }
 
-                if elapsed > WAITING_TIMEOUT_SECS
+                if elapsed > idle_timeout
                     && agent.current_tool.is_none()
                     && !agent.in_response
                 {
@@ -181,10 +196,13 @@ impl AppState {
                 tracing::info!(
                     pane_id = %pane_id,
                     project = %agent.project,
-                    "Removed stale session (5 min timeout)"
+                    stale_timeout_secs = stale_timeout,
+                    "Removed stale session"
                 );
             }
             self.agents.remove(&pane_id);
+            self.selected_agents.remove(&pane_id);
+            self.sprite_agent_ids.remove(&pane_id);
         }
     }
 

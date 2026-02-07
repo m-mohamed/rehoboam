@@ -17,6 +17,9 @@ pub fn status_base_color(status: &Status) -> Color {
 
 /// Truncate a string to max_len with ellipsis
 pub fn truncate(s: &str, max_len: usize) -> String {
+    if max_len == 0 {
+        return String::new();
+    }
     if s.len() <= max_len {
         s.to_string()
     } else {

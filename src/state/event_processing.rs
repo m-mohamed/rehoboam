@@ -8,6 +8,10 @@ use crate::config::{MAX_EVENTS, MAX_SPARKLINE_POINTS};
 use crate::event::{EventSource, HookEvent};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// Tools that require user input and don't fire PostToolUse until the user responds.
+/// Used to detect when an agent is waiting for user input on Stop events.
+const USER_INPUT_TOOLS: &[&str] = &["AskUserQuestion"];
+
 /// v1.3: Infer agent role from subagent description keywords
 ///
 /// Uses keyword matching to classify subagent tasks:
@@ -275,16 +279,16 @@ impl AppState {
             }
         }
 
-        // Fix: AskUserQuestion waiting for user response should be ATTENTION, not IDLE
-        // PostToolUse doesn't fire until user responds, so current_tool is still set
+        // Fix: Tools requiring user input (e.g., AskUserQuestion) waiting for user response
+        // should be ATTENTION, not IDLE. PostToolUse doesn't fire until user responds.
         if event.event == "Stop" {
             if let Some(tool) = &agent.current_tool {
-                if tool == "AskUserQuestion" {
+                if USER_INPUT_TOOLS.contains(&tool.as_str()) {
                     agent.status = Status::Attention(AttentionType::Input);
                     tracing::info!(
                         pane_id = %pane_id,
                         tool = %tool,
-                        "Stop with AskUserQuestion pending → Attention(Input)"
+                        "Stop with user-input tool pending → Attention(Input)"
                     );
                 }
             }
@@ -548,13 +552,14 @@ impl AppState {
                         );
                     }
 
-                    // AskUserQuestion immediately needs user input - transition now
+                    // Tools requiring user input immediately need attention - transition now
                     // (PostToolUse won't fire until user responds)
-                    if tool == "AskUserQuestion" {
+                    if USER_INPUT_TOOLS.contains(&tool.as_str()) {
                         agent.status = Status::Attention(AttentionType::Input);
                         tracing::info!(
                             pane_id = %pane_id,
-                            "PreToolUse AskUserQuestion → Attention(Input)"
+                            tool = %tool,
+                            "PreToolUse user-input tool → Attention(Input)"
                         );
                     } else {
                         tracing::debug!(
