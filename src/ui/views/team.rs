@@ -135,6 +135,12 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
                 tags.push_str("effort:");
                 tags.push_str(effort);
             }
+            if agent.compaction_count > 0 {
+                if !tags.is_empty() {
+                    tags.push(' ');
+                }
+                tags.push_str(&format!("compact:{}", agent.compaction_count));
+            }
             let tags_display = if tags.is_empty() {
                 String::new()
             } else {

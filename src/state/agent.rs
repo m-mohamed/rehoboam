@@ -119,6 +119,10 @@ pub struct Subagent {
     /// Subagent type from SubagentStart/Stop agent_type field
     /// e.g., "Bash", "Explore", "Plan", "general-purpose"
     pub subagent_type: Option<String>,
+
+    /// Subagent's own transcript path (set on SubagentStop)
+    #[allow(dead_code)] // Tracked for future "open transcript" feature
+    pub transcript_path: Option<String>,
 }
 
 /// Current status of a Claude Code agent
@@ -356,8 +360,26 @@ pub struct Agent {
     /// Whether stop hook is active (Claude continues after Stop)
     pub stop_hook_active: bool,
 
+    // Compaction tracking (v0.9.16)
+    /// Number of context compactions this session
+    pub compaction_count: u32,
+    /// What triggered the last compaction: "manual" or "auto"
+    pub last_compact_trigger: Option<String>,
+
     /// Effort level from CLAUDE_CODE_EFFORT_LEVEL env var
     pub effort_level: Option<String>,
+
+    // MCP tool tracking (v0.9.16)
+    /// Count of MCP tool calls this session
+    pub mcp_tool_count: u32,
+
+    // Tool response tracking (v3.1)
+    /// Last Bash exit code from tool_response (PostToolUse)
+    pub last_exit_code: Option<i64>,
+    /// Count of non-zero exit codes this session
+    pub failed_command_count: u32,
+    /// Count of successful tool completions this session
+    pub successful_tool_count: u32,
 }
 
 impl Agent {
@@ -429,8 +451,17 @@ impl Agent {
             // Session metadata (v0.9.15)
             session_source: None,
             stop_hook_active: false,
+            // Compaction tracking (v0.9.16)
+            compaction_count: 0,
+            last_compact_trigger: None,
+            // MCP tool tracking (v0.9.16)
+            mcp_tool_count: 0,
             // Effort level
             effort_level: None,
+            // Tool response tracking (v3.1)
+            last_exit_code: None,
+            failed_command_count: 0,
+            successful_tool_count: 0,
         }
     }
 
@@ -538,9 +569,18 @@ impl Agent {
     /// Get display string for tool/latency column
     ///
     /// Shows current tool if executing, otherwise last latency.
+    /// For completed Bash commands with non-zero exit codes, shows "Bash (exit N)".
     pub fn tool_display(&self) -> String {
         if let Some(tool) = &self.current_tool {
             truncate_tool_name(tool)
+        } else if let Some(exit_code) = self.last_exit_code {
+            if exit_code != 0 {
+                format!("exit {exit_code}")
+            } else if let Some(ms) = self.last_latency_ms {
+                format_latency(ms)
+            } else {
+                "-".to_string()
+            }
         } else if let Some(ms) = self.last_latency_ms {
             format_latency(ms)
         } else {
@@ -594,6 +634,11 @@ impl Agent {
     /// Called on each PreToolUse event. Maintains a rolling history of the
     /// last 10 tools and infers agent role from the pattern.
     pub fn record_tool(&mut self, tool: &str) {
+        // Track MCP tool usage
+        if is_mcp_tool(tool) {
+            self.mcp_tool_count += 1;
+        }
+
         // Add to history (max 10)
         if self.tool_history.len() >= 10 {
             self.tool_history.pop_front();
@@ -675,12 +720,27 @@ impl Agent {
     }
 }
 
+/// Format MCP tool name for display: `mcp__server__tool` → `MCP:server:tool`
+/// Returns None if the tool is not an MCP tool.
+pub fn format_mcp_tool(tool: &str) -> Option<String> {
+    let rest = tool.strip_prefix("mcp__")?;
+    let (server, tool_name) = rest.split_once("__")?;
+    Some(format!("MCP:{}:{}", server, tool_name))
+}
+
+/// Check if a tool name is an MCP tool
+pub fn is_mcp_tool(tool: &str) -> bool {
+    tool.starts_with("mcp__")
+}
+
 /// Truncate tool name for display (max 12 chars)
+/// MCP tools are formatted as `MCP:server:tool` first, then truncated.
 fn truncate_tool_name(tool: &str) -> String {
-    if tool.len() <= 12 {
-        tool.to_string()
+    let display = format_mcp_tool(tool).unwrap_or_else(|| tool.to_string());
+    if display.len() <= 12 {
+        display
     } else {
-        format!("{}…", &tool[..11])
+        format!("{}…", &display[..11])
     }
 }
 
@@ -753,5 +813,41 @@ mod tests {
             agent.record_tool("Read");
         }
         assert_eq!(agent.role, AgentRole::Planner);
+    }
+
+    #[test]
+    fn test_mcp_tool_formatting() {
+        // MCP tool detection
+        assert!(is_mcp_tool("mcp__github__search"));
+        assert!(is_mcp_tool("mcp__slack__post_message"));
+        assert!(!is_mcp_tool("Bash"));
+        assert!(!is_mcp_tool("Read"));
+
+        // MCP tool formatting
+        assert_eq!(
+            format_mcp_tool("mcp__github__search"),
+            Some("MCP:github:search".to_string())
+        );
+        assert_eq!(
+            format_mcp_tool("mcp__slack__post_message"),
+            Some("MCP:slack:post_message".to_string())
+        );
+        assert_eq!(format_mcp_tool("Bash"), None);
+
+        // Truncation preserves MCP format
+        let display = truncate_tool_name("mcp__gh__ls");
+        assert_eq!(display, "MCP:gh:ls"); // Short enough, no truncation
+
+        let display = truncate_tool_name("mcp__github__search_repos");
+        assert!(display.ends_with('…')); // Truncated
+        assert!(display.starts_with("MCP:github")); // Preserves prefix
+    }
+
+    #[test]
+    fn test_tool_display_mcp() {
+        let mut agent = Agent::new("%0".to_string(), "test".to_string());
+        agent.start_tool("mcp__github__search", None, 100);
+        let display = agent.tool_display();
+        assert!(display.starts_with("MCP:"), "MCP tool should show MCP: prefix, got: {}", display);
     }
 }

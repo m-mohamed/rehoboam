@@ -410,6 +410,18 @@ impl AppState {
             agent.stop_hook_active = event.stop_hook_active.unwrap_or(false);
         }
 
+        // v0.9.16: Track compaction from PreCompact
+        if event.event == "PreCompact" {
+            agent.compaction_count += 1;
+            agent.last_compact_trigger = event.trigger.clone();
+            tracing::info!(
+                pane_id = %pane_id,
+                count = agent.compaction_count,
+                trigger = ?event.trigger,
+                "Compaction tracked"
+            );
+        }
+
         // Track tool latency (v1.0) and role classification (v1.2)
         match event.event.as_str() {
             "PreToolUse" => {
@@ -572,6 +584,30 @@ impl AppState {
             }
             "PostToolUse" => {
                 let tool_name = agent.current_tool.clone();
+
+                // Extract exit_code from tool_response for Bash commands
+                agent.last_exit_code = None; // Reset per tool call
+                if let Some(ref response) = event.tool_response {
+                    if let Some(exit_code) = response.get("exit_code").and_then(|v| v.as_i64()) {
+                        agent.last_exit_code = Some(exit_code);
+                        if exit_code != 0 {
+                            agent.failed_command_count += 1;
+                            tracing::warn!(
+                                pane_id = %pane_id,
+                                tool = ?tool_name,
+                                exit_code = exit_code,
+                                "Bash command failed with non-zero exit code"
+                            );
+                        } else {
+                            agent.successful_tool_count += 1;
+                        }
+                    } else {
+                        agent.successful_tool_count += 1;
+                    }
+                } else {
+                    agent.successful_tool_count += 1;
+                }
+
                 agent.end_tool(event.tool_use_id.as_deref(), event.timestamp);
                 if let Some(latency) = agent.last_latency_ms {
                     tracing::info!(
@@ -623,6 +659,7 @@ impl AppState {
                         depth: 0, // Direct child of this agent
                         role,
                         subagent_type: subagent_type.clone(),
+                        transcript_path: None,
                     });
                     tracing::info!(
                         pane_id = %pane_id,
@@ -642,10 +679,12 @@ impl AppState {
                     {
                         subagent.status = "completed".to_string();
                         subagent.duration_ms = event.subagent_duration_ms;
+                        subagent.transcript_path = event.agent_transcript_path.clone();
                         tracing::info!(
                             pane_id = %pane_id,
                             subagent_id = %subagent_id,
                             duration_ms = ?subagent.duration_ms,
+                            transcript = ?subagent.transcript_path,
                             "Subagent completed"
                         );
                     }
