@@ -105,11 +105,9 @@ mod tests {
 
     #[test]
     fn test_compacting_events() {
-        for event in ["PreCompact"] {
-            let (status, attention) = derive_status_from_event(event);
-            assert_eq!(status, "compacting", "event: {}", event);
-            assert!(attention.is_none(), "event: {}", event);
-        }
+        let (status, attention) = derive_status_from_event("PreCompact");
+        assert_eq!(status, "compacting");
+        assert!(attention.is_none());
     }
 
     #[test]
