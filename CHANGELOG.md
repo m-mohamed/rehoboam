@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.19] - 2026-02-08
+
+### Added
+
+- Add tool_response, compaction tracking, MCP tagging, transcript path
+- Add hooks.log health monitor with auto-truncation
+- Add agent teams fields, tool_response, and optimize hook template
+
+### Changed
+
+- Cargo fmt
+- Force-refresh hooks template for rehoboam project
+
+### Fixed
+
+- Resolve clippy single_element_loop in status tests
+- Codebase audit — bugs, security, schema alignment, UX polish
+- Remove invalid Setup and PostCompact hook events from init template
+- Remove legacy AgentRole display from TUI
+[0.9.19]: https://github.com/m-mohamed/rehoboam/compare/v0.9.18...v0.9.19
+
+
 ## [0.9.18] - 2026-02-06
 
 ### Added
