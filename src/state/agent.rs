@@ -848,6 +848,10 @@ mod tests {
         let mut agent = Agent::new("%0".to_string(), "test".to_string());
         agent.start_tool("mcp__github__search", None, 100);
         let display = agent.tool_display();
-        assert!(display.starts_with("MCP:"), "MCP tool should show MCP: prefix, got: {}", display);
+        assert!(
+            display.starts_with("MCP:"),
+            "MCP tool should show MCP: prefix, got: {}",
+            display
+        );
     }
 }

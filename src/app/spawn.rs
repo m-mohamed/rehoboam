@@ -97,9 +97,7 @@ pub fn is_github_url(s: &str) -> bool {
             let owner = parts[0];
             let is_valid_github_owner = !owner.is_empty()
                 && owner.len() <= 39
-                && owner
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+                && owner.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
                 && !owner.starts_with('-')
                 && !owner.ends_with('-');
 

@@ -151,17 +151,23 @@ impl App {
                 );
             }
             KeyCode::Char('Y') => {
-                if let Some(msg) = agent_control::bulk_approve(&mut self.state, self.sprites_client.as_ref()) {
+                if let Some(msg) =
+                    agent_control::bulk_approve(&mut self.state, self.sprites_client.as_ref())
+                {
                     self.show_status(&msg);
                 }
             }
             KeyCode::Char('N') => {
-                if let Some(msg) = agent_control::bulk_reject(&mut self.state, self.sprites_client.as_ref()) {
+                if let Some(msg) =
+                    agent_control::bulk_reject(&mut self.state, self.sprites_client.as_ref())
+                {
                     self.show_status(&msg);
                 }
             }
             KeyCode::Char('K') => {
-                if let Some(msg) = agent_control::bulk_kill(&mut self.state, self.sprites_client.as_ref()) {
+                if let Some(msg) =
+                    agent_control::bulk_kill(&mut self.state, self.sprites_client.as_ref())
+                {
                     self.show_status(&msg);
                 }
             }

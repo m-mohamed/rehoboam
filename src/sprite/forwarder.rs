@@ -353,11 +353,8 @@ pub fn spawn_forwarder_with_status(
     let forwarder = HookEventForwarder::with_status_channel(event_tx, status_tx.clone());
 
     // Start stale connection reaper (every 60s, reap connections idle >120s)
-    let reaper_handle = HookEventForwarder::spawn_stale_reaper(
-        forwarder.connections.clone(),
-        Some(status_tx),
-        120,
-    );
+    let reaper_handle =
+        HookEventForwarder::spawn_stale_reaper(forwarder.connections.clone(), Some(status_tx), 120);
 
     let handle = tokio::spawn(async move {
         if let Err(e) = forwarder.listen(port).await {

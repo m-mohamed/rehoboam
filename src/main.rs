@@ -681,7 +681,12 @@ async fn main() -> Result<()> {
             }
         });
 
-        Some((forwarder_handle, converter_handle, status_handle, reaper_handle))
+        Some((
+            forwarder_handle,
+            converter_handle,
+            status_handle,
+            reaper_handle,
+        ))
     } else {
         None
     };
@@ -719,7 +724,8 @@ async fn main() -> Result<()> {
     socket_handle.abort();
 
     // Cleanup sprite handles if enabled
-    if let Some((forwarder_handle, converter_handle, status_handle, reaper_handle)) = sprite_handle {
+    if let Some((forwarder_handle, converter_handle, status_handle, reaper_handle)) = sprite_handle
+    {
         forwarder_handle.abort();
         converter_handle.abort();
         status_handle.abort();

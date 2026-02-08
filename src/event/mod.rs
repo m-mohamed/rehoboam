@@ -742,9 +742,6 @@ mod tests {
         assert_eq!(event.teammate_name.as_deref(), Some("coder"));
         assert_eq!(event.task_id.as_deref(), Some("task-1"));
         assert_eq!(event.task_subject.as_deref(), Some("Fix bug"));
-        assert_eq!(
-            event.task_description.as_deref(),
-            Some("Fix the login bug")
-        );
+        assert_eq!(event.task_description.as_deref(), Some("Fix the login bug"));
     }
 }

@@ -185,7 +185,10 @@ pub fn bulk_send_signal(
 }
 
 /// Bulk approve all selected agents
-pub fn bulk_approve(state: &mut AppState, sprites_client: Option<&SpritesClient>) -> Option<String> {
+pub fn bulk_approve(
+    state: &mut AppState,
+    sprites_client: Option<&SpritesClient>,
+) -> Option<String> {
     bulk_send_signal(state, sprites_client, "y", "approval")
 }
 

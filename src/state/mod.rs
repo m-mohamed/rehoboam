@@ -159,10 +159,7 @@ impl AppState {
                     );
                 }
 
-                if elapsed > idle_timeout
-                    && agent.current_tool.is_none()
-                    && !agent.in_response
-                {
+                if elapsed > idle_timeout && agent.current_tool.is_none() && !agent.in_response {
                     waiting_transitions.push(pane_id.clone());
                 }
             }

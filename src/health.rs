@@ -87,9 +87,8 @@ impl HealthChecker {
 
             if let Err(e) = truncate_file(&self.path, self.truncate_keep_lines) {
                 tracing::error!(error = %e, "Failed to truncate hooks.log");
-                state.health_warning = Some(format!(
-                    "hooks.log is {size_mb}MB — truncation failed: {e}"
-                ));
+                state.health_warning =
+                    Some(format!("hooks.log is {size_mb}MB — truncation failed: {e}"));
                 return true;
             }
 

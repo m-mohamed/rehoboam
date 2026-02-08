@@ -241,9 +241,7 @@ fn render_activity(f: &mut Frame, area: Rect, app: &App) {
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {
     // Health warning takes highest priority (persistent red text)
     if let Some(ref warning) = app.state.health_warning {
-        let style = Style::default()
-            .fg(Color::Red)
-            .add_modifier(Modifier::BOLD);
+        let style = Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
         let msg = Paragraph::new(warning.as_str())
             .style(style)
             .alignment(Alignment::Center);
