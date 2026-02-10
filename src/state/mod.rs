@@ -7,8 +7,11 @@
 
 mod agent;
 mod event_processing;
+#[allow(dead_code)] // Used by refresh_team_metadata; full TUI tick integration planned
+mod team_discovery;
 
 pub use agent::{Agent, AgentRole, AttentionType, Status, Subagent, TaskInfo, TaskStatus};
+pub use team_discovery::TeamDiscovery;
 
 use crate::event::HookEvent;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -42,6 +45,11 @@ pub struct AppState {
     pub idle_timeout_secs: i64,
     /// Configurable timeout: removing stale sessions (seconds)
     pub stale_timeout_secs: i64,
+    /// Session ID → team name mapping for cross-event correlation
+    pub session_to_team: HashMap<String, String>,
+    /// Last filesystem team scan timestamp (throttle to once per 60s)
+    #[allow(dead_code)] // Used by refresh_team_metadata, called from TUI tick
+    pub last_team_scan: i64,
 }
 
 impl Default for AppState {
@@ -58,6 +66,8 @@ impl Default for AppState {
             health_warning: None,
             idle_timeout_secs: 60,
             stale_timeout_secs: 300,
+            session_to_team: HashMap::new(),
+            last_team_scan: 0,
         }
     }
 }
@@ -426,6 +436,42 @@ impl AppState {
     /// Get count of connected sprites
     pub fn connected_sprite_count(&self) -> usize {
         self.connected_sprites.len()
+    }
+
+    /// Map a session ID to a team name for cross-event correlation
+    pub fn map_session_to_team(&mut self, session_id: String, team_name: String) {
+        self.session_to_team.insert(session_id, team_name);
+    }
+
+    /// Look up team name for a session ID
+    #[allow(dead_code)] // API for future use when TUI tick calls refresh
+    pub fn get_team_for_session(&self, session_id: &str) -> Option<&str> {
+        self.session_to_team.get(session_id).map(|s| s.as_str())
+    }
+
+    /// Periodically scan ~/.claude/teams/ and enrich agents with discovered team membership
+    #[allow(dead_code)] // Will be called from TUI tick loop
+    pub fn refresh_team_metadata(&mut self) {
+        let now = current_timestamp();
+        if now - self.last_team_scan < 60 {
+            return;
+        }
+        self.last_team_scan = now;
+
+        if let Ok(teams) = TeamDiscovery::scan_teams() {
+            for config in teams.values() {
+                for member in &config.members {
+                    for agent in self.agents.values_mut() {
+                        if agent.team_name.is_none()
+                            && agent.team_agent_name.as_deref() == Some(&member.name)
+                        {
+                            agent.team_name = Some(config.team_name.clone());
+                            agent.team_agent_type = Some(member.agent_type.clone());
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Set the working directory for an agent (for git operations)
@@ -968,6 +1014,70 @@ mod tests {
             agent.effort_level.is_none(),
             "effort_level should be None when not set"
         );
+    }
+
+    #[test]
+    fn test_session_to_team_correlation() {
+        let mut state = AppState::new();
+
+        // Map session to team
+        state.map_session_to_team("session-abc".to_string(), "refactor-auth".to_string());
+
+        // Verify lookup works
+        assert_eq!(
+            state.get_team_for_session("session-abc"),
+            Some("refactor-auth")
+        );
+
+        // Unknown session returns None
+        assert_eq!(state.get_team_for_session("session-unknown"), None);
+    }
+
+    #[test]
+    fn test_phantom_agent_creation() {
+        let mut state = AppState::new();
+
+        // Simulate TeammateIdle event creating a phantom agent
+        let mut event = make_event("TeammateIdle", "working", "team:my-team:researcher", "test");
+        event.team_name = Some("my-team".to_string());
+        event.teammate_name = Some("researcher".to_string());
+        let _ = state.process_event(event);
+
+        // Phantom agent should exist
+        assert!(state.agents.contains_key("team:my-team:researcher"));
+        let agent = state.agents.get("team:my-team:researcher").unwrap();
+        assert_eq!(agent.team_name.as_deref(), Some("my-team"));
+        assert_eq!(agent.team_agent_name.as_deref(), Some("researcher"));
+    }
+
+    #[test]
+    fn test_agents_by_team_with_phantoms() {
+        let mut state = AppState::new();
+
+        // Create a real team lead
+        let mut event = make_event("SessionStart", "working", "%lead", "auth-project");
+        event.team_name = Some("refactor-auth".to_string());
+        event.team_agent_type = Some("lead".to_string());
+        event.team_agent_name = Some("lead-agent".to_string());
+        let _ = state.process_event(event);
+
+        // Create a phantom teammate via TeammateIdle
+        let mut event = make_event(
+            "TeammateIdle",
+            "working",
+            "team:refactor-auth:worker-1",
+            "auth-project",
+        );
+        event.team_name = Some("refactor-auth".to_string());
+        event.teammate_name = Some("worker-1".to_string());
+        let _ = state.process_event(event);
+
+        let teams = state.agents_by_team();
+
+        // Should have 1 team group with both agents
+        assert_eq!(teams.len(), 1);
+        assert_eq!(teams[0].0, "refactor-auth");
+        assert_eq!(teams[0].1.len(), 2);
     }
 
     #[test]

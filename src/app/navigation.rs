@@ -18,11 +18,15 @@ pub fn jump_to_selected(state: &AppState) {
     let pane_id = &agent.pane_id;
     tracing::debug!("Jumping to pane {}", pane_id);
 
-    let result = if pane_id.starts_with('%') {
+    let result = if pane_id.starts_with("team:") {
+        // Phantom agent (team member without tmux pane) — cannot jump
+        tracing::debug!(pane_id = %pane_id, "Cannot jump to phantom agent (no tmux pane)");
+        return;
+    } else if pane_id.starts_with('%') {
         // Tmux pane format: %0, %1, etc.
-        // Use switch-client instead of select-pane to work across sessions
+        // Use select-pane for better cross-window handling
         Command::new("tmux")
-            .args(["switch-client", "-t", pane_id])
+            .args(["select-pane", "-t", pane_id])
             .output()
     } else if std::env::var("KITTY_WINDOW_ID").is_ok() {
         // Kitty terminal — focus window by ID

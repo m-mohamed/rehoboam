@@ -258,7 +258,23 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     // Get pane ID from terminal-specific env vars, fall back to session_id
     // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
     let wezterm_pane = std::env::var("WEZTERM_PANE").ok();
-    let tmux_pane = std::env::var("TMUX_PANE").ok();
+    let tmux_pane = std::env::var("TMUX_PANE").ok().or_else(|| {
+        // Recovery: if inside tmux but TMUX_PANE not propagated, query tmux directly
+        if std::env::var("TMUX").is_ok() {
+            let output = std::process::Command::new("tmux")
+                .args(["display-message", "-p", "#{pane_id}"])
+                .output()
+                .ok()?;
+            if output.status.success() {
+                let pane = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !pane.is_empty() && pane.starts_with('%') {
+                    tracing::debug!("Recovered TMUX_PANE via display-message: {}", pane);
+                    return Some(pane);
+                }
+            }
+        }
+        None
+    });
 
     // Clone for debug logging if fallback is needed
     let wezterm_debug = wezterm_pane.clone();

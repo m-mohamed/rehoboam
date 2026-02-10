@@ -102,6 +102,12 @@ fn get_rehoboam_path() -> String {
 /// automatically from hook_event_name, no manual flags needed.
 ///
 /// Claude Code 2.1.x: Supports `once: true` for one-time hooks like SessionStart.
+///
+/// NOTE: Claude Code does NOT propagate CLAUDE_CODE_TEAM_NAME, CLAUDE_CODE_AGENT_ID,
+/// CLAUDE_CODE_AGENT_NAME, CLAUDE_CODE_AGENT_TYPE to hook subprocesses.
+/// Team identity is recovered via: (1) JSON team_name field on TeammateIdle/TaskCompleted,
+/// (2) session-ID correlation, (3) ~/.claude/teams/ filesystem discovery,
+/// (4) tool_input parsing from TeamCreate/SendMessage calls.
 fn hook_template() -> String {
     let path = get_rehoboam_path();
     format!(

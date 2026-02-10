@@ -101,6 +101,21 @@ impl Reconciler {
             }
         }
 
+        // Also repair orphaned fields on phantom agents (non-tmux, team:* prefix)
+        let phantom_agents: Vec<String> = state
+            .agents
+            .iter()
+            .filter(|(id, agent)| {
+                id.starts_with("team:") && Self::is_uncertain(agent, now, threshold)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for pane_id in phantom_agents {
+            if self.repair_orphaned_fields(state, &pane_id, now) {
+                modified = true;
+            }
+        }
+
         modified
     }
 

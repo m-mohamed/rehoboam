@@ -143,6 +143,21 @@ fn extract_blocks(input: &Option<serde_json::Value>) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Extract team_name from tool_input JSON (TeamCreate, SendMessage)
+fn extract_team_name_from_tool(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("team_name")?.as_str().map(String::from)
+}
+
+/// Extract recipient from SendMessage tool_input
+fn extract_recipient(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("recipient")?.as_str().map(String::from)
+}
+
+/// Extract owner from TaskUpdate tool_input
+fn extract_owner(input: &Option<serde_json::Value>) -> Option<String> {
+    input.as_ref()?.get("owner")?.as_str().map(String::from)
+}
+
 /// Get human-readable name for column index
 fn column_name(col: usize) -> &'static str {
     match col {
@@ -176,6 +191,88 @@ impl AppState {
     /// Returns `true` if the event caused a state change that requires re-render.
     #[must_use = "check if state changed to trigger re-render"]
     pub fn process_event(&mut self, event: HookEvent) -> bool {
+        // Phantom agent creation: TeammateIdle/TaskCompleted carry teammate info
+        // that should create/update a phantom agent entry instead of updating the leader
+        if matches!(event.event.as_str(), "TeammateIdle" | "TaskCompleted") {
+            if let (Some(ref teammate_name), Some(ref team_name)) =
+                (&event.teammate_name, &event.team_name)
+            {
+                let phantom_id = format!("team:{team_name}:{teammate_name}");
+                let project = event.project.clone();
+                let now = current_timestamp();
+
+                // Map session to team if we have a session_id
+                if let Some(ref sid) = event.session_id {
+                    self.map_session_to_team(sid.clone(), team_name.clone());
+                }
+
+                // Create or update phantom agent
+                let is_new = !self.agents.contains_key(&phantom_id);
+                if is_new && self.agents.len() >= crate::config::MAX_AGENTS {
+                    self.evict_oldest_waiting();
+                }
+
+                let old_col = self
+                    .agents
+                    .get(&phantom_id)
+                    .map(|a| status_to_column(&a.status));
+
+                let agent = self
+                    .agents
+                    .entry(phantom_id.clone())
+                    .or_insert_with(|| Agent::new(phantom_id.clone(), project.clone()));
+
+                agent.project = project;
+                agent.team_name = Some(team_name.clone());
+                agent.team_agent_name = Some(teammate_name.clone());
+                agent.last_event = event.event.clone();
+                agent.last_update = now;
+
+                // TeammateIdle → Attention(Waiting), TaskCompleted → Working
+                let new_status = if event.event == "TeammateIdle" {
+                    Status::Attention(AttentionType::Waiting)
+                } else {
+                    Status::Working
+                };
+
+                // Update task info if present
+                if let Some(ref subject) = event.task_subject {
+                    agent.current_task_subject = Some(subject.clone());
+                }
+                if let Some(ref task_id) = event.task_id {
+                    agent.current_task_id = Some(task_id.clone());
+                }
+
+                agent.status = new_status.clone();
+
+                // Update status counts
+                let new_col = status_to_column(&new_status);
+                if let Some(old) = old_col {
+                    if old != new_col {
+                        self.status_counts[old] = self.status_counts[old].saturating_sub(1);
+                        self.status_counts[new_col] += 1;
+                    }
+                } else {
+                    self.status_counts[new_col] += 1;
+                }
+
+                tracing::info!(
+                    phantom_id = %phantom_id,
+                    team = %team_name,
+                    event = %event.event,
+                    "Phantom agent created/updated from teammate event"
+                );
+
+                // Add to event log
+                self.events.push_front(event);
+                if self.events.len() > MAX_EVENTS {
+                    self.events.pop_back();
+                }
+
+                return true;
+            }
+        }
+
         let pane_id = event.pane_id.clone();
         let project = event.project.clone();
         let is_new_agent = !self.agents.contains_key(&pane_id);
@@ -201,6 +298,12 @@ impl AppState {
         if is_new_agent && self.agents.len() >= crate::config::MAX_AGENTS {
             self.evict_oldest_waiting();
         }
+
+        // Session-ID to team correlation: look up team BEFORE borrowing agents mutably
+        let session_team = event
+            .session_id
+            .as_ref()
+            .and_then(|sid| self.session_to_team.get(sid).cloned());
 
         // Track old status for count update (None if new agent)
         let old_status_col = self
@@ -375,6 +478,18 @@ impl AppState {
         }
         if let Some(ref agent_type) = event.team_agent_type {
             agent.team_agent_type = Some(agent_type.clone());
+        }
+
+        // Session-ID to team correlation: enrich agent from pre-fetched lookup
+        if agent.team_name.is_none() {
+            if let Some(ref team) = session_team {
+                agent.team_name = Some(team.clone());
+                tracing::debug!(
+                    pane_id = %pane_id,
+                    team = %team,
+                    "Enriched agent with team from session correlation"
+                );
+            }
         }
 
         // Claude Code version tracking
@@ -553,6 +668,36 @@ impl AppState {
                             }
                             _ => {}
                         }
+                    }
+
+                    // Team enrichment from tool_input
+                    match tool.as_str() {
+                        "TeamCreate" => {
+                            if let Some(team_name) = extract_team_name_from_tool(&event.tool_input)
+                            {
+                                agent.team_name = Some(team_name);
+                            }
+                        }
+                        "SendMessage" => {
+                            if let Some(recipient) = extract_recipient(&event.tool_input) {
+                                tracing::debug!(
+                                    pane_id = %pane_id,
+                                    recipient = %recipient,
+                                    "SendMessage to teammate"
+                                );
+                            }
+                        }
+                        "TaskUpdate" => {
+                            // Also extract owner for team observability
+                            if let Some(owner) = extract_owner(&event.tool_input) {
+                                tracing::debug!(
+                                    pane_id = %pane_id,
+                                    owner = %owner,
+                                    "TaskUpdate with owner assignment"
+                                );
+                            }
+                        }
+                        _ => {}
                     }
 
                     // v2.1.x: Detect background tasks (Task tool with run_in_background: true)
@@ -743,6 +888,15 @@ impl AppState {
             agent.activity.pop_front();
         }
 
+        // Map session to team (deferred to avoid borrow conflicts)
+        if let Some(ref sid) = event.session_id {
+            if let Some(agent) = self.agents.get(&pane_id) {
+                if let Some(ref team) = agent.team_name {
+                    self.session_to_team.insert(sid.clone(), team.clone());
+                }
+            }
+        }
+
         // Handle session end - remove agent
         if event.event == "SessionEnd" {
             // Decrement count before removal
@@ -762,5 +916,50 @@ impl AppState {
         }
 
         true // State was modified
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_team_name_from_tool() {
+        let input = Some(
+            serde_json::json!({"team_name": "refactor-auth", "description": "Team for auth refactor"}),
+        );
+        assert_eq!(
+            extract_team_name_from_tool(&input),
+            Some("refactor-auth".to_string())
+        );
+
+        // Missing key
+        let input = Some(serde_json::json!({"description": "no team"}));
+        assert_eq!(extract_team_name_from_tool(&input), None);
+
+        // None input
+        assert_eq!(extract_team_name_from_tool(&None), None);
+    }
+
+    #[test]
+    fn test_extract_recipient() {
+        let input = Some(
+            serde_json::json!({"type": "message", "recipient": "worker-1", "content": "hello"}),
+        );
+        assert_eq!(extract_recipient(&input), Some("worker-1".to_string()));
+
+        // Missing recipient
+        let input = Some(serde_json::json!({"type": "broadcast", "content": "all"}));
+        assert_eq!(extract_recipient(&input), None);
+    }
+
+    #[test]
+    fn test_extract_owner() {
+        let input = Some(serde_json::json!({"taskId": "1", "owner": "researcher"}));
+        assert_eq!(extract_owner(&input), Some("researcher".to_string()));
+
+        // Missing owner
+        let input = Some(serde_json::json!({"taskId": "1", "status": "completed"}));
+        assert_eq!(extract_owner(&input), None);
     }
 }

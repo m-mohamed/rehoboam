@@ -22,6 +22,10 @@ use color_eyre::eyre::{bail, Result, WrapErr};
 /// This prevents shell injection via malicious variable names.
 const ALLOWED_ENV_VARS: &[&str] = &[
     "CLAUDE_CODE_TASK_LIST_ID",
+    "CLAUDE_CODE_TEAM_NAME",
+    "CLAUDE_CODE_AGENT_ID",
+    "CLAUDE_CODE_AGENT_NAME",
+    "CLAUDE_CODE_AGENT_TYPE",
     "REHOBOAM_ROLE",
     "REHOBOAM_WORKER_INDEX",
 ];
