@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.20] - 2026-02-10
+
+### Added
+
+- Agent teams observability — phantom agents, session correlation, team discovery
+[0.9.20]: https://github.com/m-mohamed/rehoboam/compare/v0.9.19...v0.9.20
+
+
 ## [0.9.19] - 2026-02-08
 
 ### Added
