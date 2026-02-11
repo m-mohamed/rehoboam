@@ -216,6 +216,10 @@ impl App {
         // Process timeout-based state transitions
         self.state.tick();
 
+        // Scan ~/.claude/teams/ to enrich agents with team membership
+        // Throttled internally: every 5s at startup, every 120s in steady-state
+        self.state.refresh_team_metadata();
+
         // Run tmux reconciliation (throttled to every 5s internally)
         // Detects stuck agents by checking pane output for permission prompts
         if self.reconciler.should_run() {

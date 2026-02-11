@@ -7,7 +7,6 @@
 
 mod agent;
 mod event_processing;
-#[allow(dead_code)] // Used by refresh_team_metadata; full TUI tick integration planned
 mod team_discovery;
 
 pub use agent::{Agent, AgentRole, AttentionType, Status, Subagent, TaskInfo, TaskStatus};
@@ -47,8 +46,7 @@ pub struct AppState {
     pub stale_timeout_secs: i64,
     /// Session ID → team name mapping for cross-event correlation
     pub session_to_team: HashMap<String, String>,
-    /// Last filesystem team scan timestamp (throttle to once per 60s)
-    #[allow(dead_code)] // Used by refresh_team_metadata, called from TUI tick
+    /// Last filesystem team scan timestamp (throttled to every 30s)
     pub last_team_scan: i64,
 }
 
@@ -444,32 +442,61 @@ impl AppState {
     }
 
     /// Look up team name for a session ID
-    #[allow(dead_code)] // API for future use when TUI tick calls refresh
+    #[allow(dead_code)] // Public API used in tests; production uses session_to_team directly
     pub fn get_team_for_session(&self, session_id: &str) -> Option<&str> {
         self.session_to_team.get(session_id).map(|s| s.as_str())
     }
 
     /// Periodically scan ~/.claude/teams/ and enrich agents with discovered team membership
-    #[allow(dead_code)] // Will be called from TUI tick loop
+    ///
+    /// Throttled to every 30s. Matches agents to teams by team_agent_name or team_agent_id
+    /// from `~/.claude/teams/*/config.json` members.
     pub fn refresh_team_metadata(&mut self) {
         let now = current_timestamp();
-        if now - self.last_team_scan < 60 {
+        if self.last_team_scan != 0 && now - self.last_team_scan < 30 {
             return;
         }
         self.last_team_scan = now;
 
-        if let Ok(teams) = TeamDiscovery::scan_teams() {
-            for config in teams.values() {
-                for member in &config.members {
-                    for agent in self.agents.values_mut() {
-                        if agent.team_name.is_none()
-                            && agent.team_agent_name.as_deref() == Some(&member.name)
-                        {
-                            agent.team_name = Some(config.team_name.clone());
-                            agent.team_agent_type = Some(member.agent_type.clone());
+        match TeamDiscovery::scan_teams() {
+            Ok(teams) => {
+                let mut enriched = 0u32;
+                for config in teams.values() {
+                    for member in &config.members {
+                        for agent in self.agents.values_mut() {
+                            if agent.team_name.is_some() {
+                                continue;
+                            }
+                            // Match by team_agent_name → member.name
+                            let name_match = agent.team_agent_name.as_deref() == Some(&member.name);
+                            // Match by team_agent_id → member.agent_id
+                            let id_match = !member.agent_id.is_empty()
+                                && agent.team_agent_id.as_deref() == Some(&member.agent_id);
+
+                            if name_match || id_match {
+                                agent.team_name = Some(config.team_name.clone());
+                                agent.team_agent_type = Some(member.agent_type.clone());
+                                if agent.team_agent_name.is_none() {
+                                    agent.team_agent_name = Some(member.name.clone());
+                                }
+                                enriched += 1;
+                            }
                         }
                     }
                 }
+                if enriched > 0 {
+                    tracing::info!(
+                        enriched = enriched,
+                        teams_found = teams.len(),
+                        "Enriched agents from filesystem team discovery"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    "Failed to scan ~/.claude/teams/ for team discovery"
+                );
             }
         }
     }
