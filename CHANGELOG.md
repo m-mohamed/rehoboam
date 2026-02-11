@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.21] - 2026-02-11
+
+### Fixed
+
+- Wire refresh_team_metadata into TUI tick loop
+[0.9.21]: https://github.com/m-mohamed/rehoboam/compare/v0.9.20...v0.9.21
+
+
 ## [0.9.20] - 2026-02-10
 
 ### Added
