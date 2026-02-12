@@ -40,7 +40,11 @@ pub fn render(f: &mut Frame, app: &App) {
 
     render_header(f, chunks[0], app);
 
-    render_team_view(f, chunks[1], app);
+    if app.show_task_board {
+        views::render_task_board(f, chunks[1], app);
+    } else {
+        render_team_view(f, chunks[1], app);
+    }
 
     render_activity(f, chunks[2], app);
     render_footer(f, chunks[3], app);

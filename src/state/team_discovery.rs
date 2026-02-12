@@ -8,6 +8,7 @@ use std::path::PathBuf;
 
 /// A team member from config.json
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields populated from JSON, used for diagnostics/future features
 pub struct TeamMember {
     /// Human-readable name (used for messaging and task assignment)
     pub name: String,
@@ -15,15 +16,26 @@ pub struct TeamMember {
     pub agent_id: String,
     /// Role/type of the agent (e.g., "general-purpose", "Explore")
     pub agent_type: String,
+    /// Model name (e.g., "claude-opus-4-6")
+    pub model: Option<String>,
+    /// Working directory
+    pub cwd: Option<String>,
+    /// Tmux pane ID for matching to live agents
+    pub tmux_pane_id: Option<String>,
 }
 
 /// Parsed team configuration
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields populated from JSON, used for diagnostics/future features
 pub struct TeamConfig {
     /// Team name (directory name)
     pub team_name: String,
     /// Team members
     pub members: Vec<TeamMember>,
+    /// Agent ID of the team lead
+    pub lead_agent_id: Option<String>,
+    /// Session ID of the team lead
+    pub lead_session_id: Option<String>,
 }
 
 /// Filesystem scanner for Claude Code team configs
@@ -107,17 +119,47 @@ impl TeamDiscovery {
                             .and_then(|v| v.as_str())
                             .unwrap_or("general-purpose")
                             .to_string();
+                        let model = m
+                            .get("model")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let cwd = m
+                            .get("cwd")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
+                        let tmux_pane_id = m
+                            .get("tmuxPaneId")
+                            .and_then(|v| v.as_str())
+                            .map(String::from);
                         Some(TeamMember {
                             name,
                             agent_id,
                             agent_type,
+                            model,
+                            cwd,
+                            tmux_pane_id,
                         })
                     })
                     .collect()
             })
             .unwrap_or_default();
 
-        Ok(TeamConfig { team_name, members })
+        let lead_agent_id = json
+            .get("leadAgentId")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        let lead_session_id = json
+            .get("leadSessionId")
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        Ok(TeamConfig {
+            team_name,
+            members,
+            lead_agent_id,
+            lead_session_id,
+        })
     }
 
     /// Get the teams directory path (~/.claude/teams/)
@@ -140,8 +182,10 @@ mod tests {
         std::fs::create_dir_all(&team_dir).unwrap();
 
         let config = r#"{
+            "leadAgentId": "agent-1",
+            "leadSessionId": "sess-abc",
             "members": [
-                {"name": "lead", "agentId": "agent-1", "agentType": "general-purpose"},
+                {"name": "lead", "agentId": "agent-1", "agentType": "general-purpose", "model": "claude-opus-4-6", "cwd": "/tmp/work", "tmuxPaneId": "%0"},
                 {"name": "worker-1", "agentId": "agent-2", "agentType": "Bash"}
             ]
         }"#;
@@ -150,10 +194,18 @@ mod tests {
 
         let result = TeamDiscovery::parse_team_config(&config_path).unwrap();
         assert_eq!(result.team_name, "my-team");
+        assert_eq!(result.lead_agent_id.as_deref(), Some("agent-1"));
+        assert_eq!(result.lead_session_id.as_deref(), Some("sess-abc"));
         assert_eq!(result.members.len(), 2);
         assert_eq!(result.members[0].name, "lead");
         assert_eq!(result.members[0].agent_type, "general-purpose");
+        assert_eq!(result.members[0].model.as_deref(), Some("claude-opus-4-6"));
+        assert_eq!(result.members[0].cwd.as_deref(), Some("/tmp/work"));
+        assert_eq!(result.members[0].tmux_pane_id.as_deref(), Some("%0"));
         assert_eq!(result.members[1].name, "worker-1");
+        assert!(result.members[1].model.is_none());
+        assert!(result.members[1].cwd.is_none());
+        assert!(result.members[1].tmux_pane_id.is_none());
     }
 
     #[test]

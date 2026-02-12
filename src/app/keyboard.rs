@@ -16,6 +16,7 @@
 //! - `?`/`H` - Toggle help overlay
 //! - `d` - Toggle progress dashboard
 //! - `D` - Toggle diff view for selected agent
+//! - `T` - Toggle task board overlay
 //! - `f` - Freeze/unfreeze display updates
 //!
 //! ## Agent Actions
@@ -79,6 +80,8 @@ impl App {
                     self.show_help = false;
                 } else if self.show_dashboard {
                     self.show_dashboard = false;
+                } else if self.show_task_board {
+                    self.show_task_board = false;
                 } else {
                     self.should_quit = true;
                 }
@@ -187,6 +190,10 @@ impl App {
             }
             KeyCode::Char('D') => {
                 self.toggle_diff_view();
+            }
+            KeyCode::Char('T') => {
+                self.show_task_board = !self.show_task_board;
+                tracing::debug!(show_task_board = self.show_task_board, "Toggled task board");
             }
             KeyCode::Char('t') => {
                 self.toggle_checkpoint_timeline();
@@ -953,6 +960,31 @@ mod tests {
         assert!(
             !app.show_checkpoint_timeline,
             "Esc should close checkpoint timeline"
+        );
+    }
+
+    #[test]
+    fn test_task_board_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_task_board);
+
+        app.handle_key(key('T'));
+        assert!(app.show_task_board, "'T' should toggle task board on");
+
+        app.handle_key(key('T'));
+        assert!(!app.show_task_board, "'T' should toggle task board off");
+    }
+
+    #[test]
+    fn test_esc_closes_task_board() {
+        let mut app = test_app();
+        app.show_task_board = true;
+
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(!app.show_task_board, "Esc should close task board");
+        assert!(
+            !app.should_quit,
+            "Esc should not quit when task board is open"
         );
     }
 }

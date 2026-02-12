@@ -7,9 +7,11 @@
 
 mod agent;
 mod event_processing;
+mod task_discovery;
 mod team_discovery;
 
 pub use agent::{Agent, AgentRole, AttentionType, Status, Subagent, TaskInfo, TaskStatus};
+pub use task_discovery::{FsTaskList, TaskDiscovery};
 pub use team_discovery::TeamDiscovery;
 
 use crate::event::HookEvent;
@@ -18,6 +20,21 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Number of status columns in Kanban view (Attention, Working, Compacting)
 pub const NUM_COLUMNS: usize = 3;
+
+/// A task with contextual metadata for display in the task board
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // Fields used by UI renderer and tests
+pub struct TaskWithContext {
+    pub task_id: String,
+    pub subject: String,
+    pub status: TaskStatus,
+    pub blocked_by: Vec<String>,
+    pub blocks: Vec<String>,
+    pub owner_name: String,
+    pub team_name: Option<String>,
+    pub description: String,
+    pub active_form: Option<String>,
+}
 
 /// Application state
 #[derive(Debug)]
@@ -48,6 +65,10 @@ pub struct AppState {
     pub session_to_team: HashMap<String, String>,
     /// Last filesystem team scan timestamp (throttled to every 30s)
     pub last_team_scan: i64,
+    /// Filesystem task lists from ~/.claude/tasks/ (ground truth)
+    pub fs_task_lists: HashMap<String, FsTaskList>,
+    /// Last filesystem task scan timestamp (throttled to every 10s)
+    pub last_task_scan: i64,
 }
 
 impl Default for AppState {
@@ -66,6 +87,8 @@ impl Default for AppState {
             stale_timeout_secs: 300,
             session_to_team: HashMap::new(),
             last_team_scan: 0,
+            fs_task_lists: HashMap::new(),
+            last_task_scan: 0,
         }
     }
 }
@@ -472,12 +495,21 @@ impl AppState {
                             // Match by team_agent_id → member.agent_id
                             let id_match = !member.agent_id.is_empty()
                                 && agent.team_agent_id.as_deref() == Some(&member.agent_id);
+                            // Match by tmux pane ID
+                            let pane_match = member
+                                .tmux_pane_id
+                                .as_deref()
+                                .is_some_and(|pane| pane == agent.pane_id);
 
-                            if name_match || id_match {
+                            if name_match || id_match || pane_match {
                                 agent.team_name = Some(config.team_name.clone());
                                 agent.team_agent_type = Some(member.agent_type.clone());
                                 if agent.team_agent_name.is_none() {
                                     agent.team_agent_name = Some(member.name.clone());
+                                }
+                                // Detect team lead
+                                if config.lead_agent_id.as_deref() == Some(&member.agent_id) {
+                                    agent.team_agent_type = Some("lead".to_string());
                                 }
                                 enriched += 1;
                             }
@@ -491,6 +523,19 @@ impl AppState {
                         "Enriched agents from filesystem team discovery"
                     );
                 }
+
+                // Task list correlation: link agents to their team's task list
+                for team_name in teams.keys() {
+                    if self.fs_task_lists.contains_key(team_name) {
+                        for agent in self.agents.values_mut() {
+                            if agent.team_name.as_deref() == Some(team_name)
+                                && agent.task_list_id.is_none()
+                            {
+                                agent.task_list_id = Some(team_name.clone());
+                            }
+                        }
+                    }
+                }
             }
             Err(e) => {
                 tracing::warn!(
@@ -499,6 +544,186 @@ impl AppState {
                 );
             }
         }
+    }
+
+    /// Periodically scan ~/.claude/tasks/ and update filesystem task lists
+    ///
+    /// Throttled to every 10s. Provides ground truth for task state.
+    pub fn refresh_task_data(&mut self) {
+        let now = current_timestamp();
+        if self.last_task_scan != 0 && now - self.last_task_scan < 10 {
+            return;
+        }
+        self.last_task_scan = now;
+        match TaskDiscovery::scan_tasks() {
+            Ok(lists) => {
+                self.fs_task_lists = lists;
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to scan ~/.claude/tasks/");
+            }
+        }
+    }
+
+    /// Get tasks grouped by team name
+    ///
+    /// Returns `Vec<(String, [Vec<TaskWithContext>; 3])>` — grouped by team,
+    /// each with \[pending, in_progress, completed\] arrays.
+    ///
+    /// Merges filesystem tasks (ground truth) with hook-captured tasks from
+    /// agent.tasks. Deduplicates by task_id (filesystem wins for status).
+    /// Includes phantom agent current_task_subject as in_progress tasks.
+    /// Sorts: blocked tasks to end, then alphabetical by subject.
+    pub fn tasks_by_team(&self) -> Vec<(String, [Vec<TaskWithContext>; 3])> {
+        let mut team_tasks: HashMap<String, HashMap<String, TaskWithContext>> = HashMap::new();
+
+        // Build a map of team names from agents_by_team() for correlating fs list IDs
+        let known_teams: HashMap<String, String> = self
+            .agents_by_team()
+            .into_iter()
+            .filter(|(name, _)| name != "Independent")
+            .map(|(name, _)| (name.clone(), name))
+            .collect();
+
+        // Step 1: Filesystem tasks (ground truth)
+        for (list_id, fs_list) in &self.fs_task_lists {
+            // Determine team name: use known team name if it matches, otherwise use list_id
+            let team_name = if known_teams.contains_key(list_id) {
+                list_id.clone()
+            } else {
+                // Try to correlate UUID-based list via agent.task_list_id
+                let mut found_team = None;
+                for agent in self.agents.values() {
+                    if agent.task_list_id.as_deref() == Some(list_id) {
+                        if let Some(tn) = &agent.team_name {
+                            found_team = Some(tn.clone());
+                            break;
+                        }
+                    }
+                }
+                found_team.unwrap_or_else(|| list_id.clone())
+            };
+
+            let tasks = team_tasks.entry(team_name.clone()).or_default();
+            for fs_task in &fs_list.tasks {
+                tasks.insert(
+                    fs_task.id.clone(),
+                    TaskWithContext {
+                        task_id: fs_task.id.clone(),
+                        subject: fs_task.subject.clone(),
+                        status: TaskStatus::from_str(&fs_task.status),
+                        blocked_by: fs_task.blocked_by.clone(),
+                        blocks: fs_task.blocks.clone(),
+                        owner_name: String::new(),
+                        team_name: Some(team_name.clone()),
+                        description: fs_task.description.clone(),
+                        active_form: fs_task.active_form.clone(),
+                    },
+                );
+            }
+        }
+
+        // Step 2: Merge hook-captured tasks from agents (deduplicate, fs wins)
+        for agent in self.agents.values() {
+            let team_name = agent
+                .team_name
+                .clone()
+                .unwrap_or_else(|| "Independent".to_string());
+            let tasks = team_tasks.entry(team_name.clone()).or_default();
+
+            for (task_id, task_info) in &agent.tasks {
+                if !tasks.contains_key(task_id) {
+                    tasks.insert(
+                        task_id.clone(),
+                        TaskWithContext {
+                            task_id: task_id.clone(),
+                            subject: task_info.subject.clone(),
+                            status: task_info.status,
+                            blocked_by: task_info.blocked_by.clone(),
+                            blocks: task_info.blocks.clone(),
+                            owner_name: agent
+                                .team_agent_name
+                                .clone()
+                                .unwrap_or_default(),
+                            team_name: Some(team_name.clone()),
+                            description: String::new(),
+                            active_form: None,
+                        },
+                    );
+                }
+            }
+        }
+
+        // Step 3: Include phantom agent current_task_subject as in_progress tasks
+        for agent in self.agents.values() {
+            if agent.pane_id.starts_with("team:") {
+                if let Some(subject) = &agent.current_task_subject {
+                    let team_name = agent
+                        .team_name
+                        .clone()
+                        .unwrap_or_else(|| "Independent".to_string());
+                    let tasks = team_tasks.entry(team_name.clone()).or_default();
+
+                    // Use a synthetic task ID to avoid collisions
+                    let synthetic_id = format!("phantom:{}", agent.pane_id);
+                    if !tasks.values().any(|t| t.subject == *subject) {
+                        tasks.insert(
+                            synthetic_id,
+                            TaskWithContext {
+                                task_id: String::new(),
+                                subject: subject.clone(),
+                                status: TaskStatus::InProgress,
+                                blocked_by: Vec::new(),
+                                blocks: Vec::new(),
+                                owner_name: agent
+                                    .team_agent_name
+                                    .clone()
+                                    .unwrap_or_default(),
+                                team_name: Some(team_name.clone()),
+                                description: String::new(),
+                                active_form: None,
+                            },
+                        );
+                    }
+                }
+            }
+        }
+
+        // Step 4: Group by team, sort within each status column
+        let mut result: Vec<(String, [Vec<TaskWithContext>; 3])> = team_tasks
+            .into_iter()
+            .map(|(team_name, tasks_map)| {
+                let mut columns: [Vec<TaskWithContext>; 3] = Default::default();
+                for task in tasks_map.into_values() {
+                    let col = match task.status {
+                        TaskStatus::Pending => 0,
+                        TaskStatus::InProgress => 1,
+                        TaskStatus::Completed => 2,
+                    };
+                    columns[col].push(task);
+                }
+                // Sort each column: blocked tasks to end, then alphabetical
+                for col in &mut columns {
+                    col.sort_by(|a, b| {
+                        let a_blocked = !a.blocked_by.is_empty();
+                        let b_blocked = !b.blocked_by.is_empty();
+                        a_blocked
+                            .cmp(&b_blocked)
+                            .then_with(|| a.subject.cmp(&b.subject))
+                    });
+                }
+                (team_name, columns)
+            })
+            .collect();
+
+        // Sort teams: "Independent" last, otherwise alphabetical
+        result.sort_by(|a, b| {
+            (a.0 == "Independent")
+                .cmp(&(b.0 == "Independent"))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+
+        result
     }
 
     /// Set the working directory for an agent (for git operations)
@@ -531,6 +756,7 @@ fn current_timestamp() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::event_processing::infer_role_from_description;
+    use super::task_discovery::FsTask;
     use super::*;
     use crate::event::HookEvent;
 
@@ -1133,5 +1359,144 @@ mod tests {
         assert!(agent.failed_tool_name.is_none());
         assert!(agent.failed_tool_error.is_none());
         assert!(!agent.failed_tool_interrupt);
+    }
+
+    // =========================================================================
+    // Tasks by team tests
+    // =========================================================================
+
+    #[test]
+    fn test_tasks_by_team_empty() {
+        let state = AppState::new();
+        let teams = state.tasks_by_team();
+        assert!(teams.is_empty(), "empty state should return empty vec");
+    }
+
+    #[test]
+    fn test_tasks_by_team_from_filesystem() {
+        let mut state = AppState::new();
+
+        // Directly set fs_task_lists (simulating filesystem scan)
+        let mut lists = HashMap::new();
+        lists.insert(
+            "my-team".to_string(),
+            FsTaskList {
+                list_id: "my-team".to_string(),
+                tasks: vec![
+                    FsTask {
+                        id: "1".to_string(),
+                        subject: "Build API".to_string(),
+                        description: "Build the REST API".to_string(),
+                        active_form: Some("Building API".to_string()),
+                        status: "pending".to_string(),
+                        blocks: vec!["2".to_string()],
+                        blocked_by: Vec::new(),
+                    },
+                    FsTask {
+                        id: "2".to_string(),
+                        subject: "Write tests".to_string(),
+                        description: "Write integration tests".to_string(),
+                        active_form: None,
+                        status: "in_progress".to_string(),
+                        blocks: Vec::new(),
+                        blocked_by: vec!["1".to_string()],
+                    },
+                    FsTask {
+                        id: "3".to_string(),
+                        subject: "Setup CI".to_string(),
+                        description: "Configure CI pipeline".to_string(),
+                        active_form: None,
+                        status: "completed".to_string(),
+                        blocks: Vec::new(),
+                        blocked_by: Vec::new(),
+                    },
+                ],
+            },
+        );
+        state.fs_task_lists = lists;
+
+        let teams = state.tasks_by_team();
+        assert_eq!(teams.len(), 1);
+        assert_eq!(teams[0].0, "my-team");
+
+        let [pending, in_progress, completed] = &teams[0].1;
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].subject, "Build API");
+        assert_eq!(in_progress.len(), 1);
+        assert_eq!(in_progress[0].subject, "Write tests");
+        assert_eq!(completed.len(), 1);
+        assert_eq!(completed[0].subject, "Setup CI");
+    }
+
+    #[test]
+    fn test_tasks_by_team_merge_dedup() {
+        let mut state = AppState::new();
+
+        // Create an agent with hook-captured tasks
+        let mut event = make_event("SessionStart", "working", "%0", "test");
+        event.team_name = Some("my-team".to_string());
+        event.team_agent_name = Some("worker-1".to_string());
+        let _ = state.process_event(event);
+
+        // Add hook-captured tasks to the agent
+        let agent = state.agents.get_mut("%0").unwrap();
+        agent.tasks.insert(
+            "1".to_string(),
+            TaskInfo {
+                id: "1".to_string(),
+                subject: "Build API (hook)".to_string(),
+                status: TaskStatus::InProgress, // Hook says in_progress
+                blocked_by: Vec::new(),
+                blocks: Vec::new(),
+            },
+        );
+        agent.tasks.insert(
+            "99".to_string(),
+            TaskInfo {
+                id: "99".to_string(),
+                subject: "Hook-only task".to_string(),
+                status: TaskStatus::Pending,
+                blocked_by: Vec::new(),
+                blocks: Vec::new(),
+            },
+        );
+
+        // Filesystem says task 1 is still pending (filesystem wins)
+        let mut lists = HashMap::new();
+        lists.insert(
+            "my-team".to_string(),
+            FsTaskList {
+                list_id: "my-team".to_string(),
+                tasks: vec![FsTask {
+                    id: "1".to_string(),
+                    subject: "Build API".to_string(),
+                    description: "".to_string(),
+                    active_form: None,
+                    status: "pending".to_string(),
+                    blocks: Vec::new(),
+                    blocked_by: Vec::new(),
+                }],
+            },
+        );
+        state.fs_task_lists = lists;
+
+        let teams = state.tasks_by_team();
+        assert_eq!(teams.len(), 1);
+        assert_eq!(teams[0].0, "my-team");
+
+        let [pending, in_progress, _completed] = &teams[0].1;
+
+        // Task "1" should be pending (filesystem wins over hook's in_progress)
+        let task_1 = pending.iter().find(|t| t.task_id == "1");
+        assert!(task_1.is_some(), "filesystem task should be present");
+        assert_eq!(task_1.unwrap().subject, "Build API"); // filesystem subject
+
+        // Hook-only task "99" should also appear in pending (its hook status)
+        let task_99 = pending.iter().find(|t| t.task_id == "99");
+        assert!(task_99.is_some(), "hook-only task should be included");
+        assert_eq!(task_99.unwrap().subject, "Hook-only task");
+
+        assert_eq!(pending.len(), 2, "should have fs task + hook-only task");
+        assert_eq!(in_progress.len(), 0, "task 1 should NOT be in_progress (fs wins)");
     }
 }

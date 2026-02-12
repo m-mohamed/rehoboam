@@ -93,6 +93,8 @@ pub struct App {
     pub status_message: Option<(String, std::time::Instant)>,
     /// Show progress dashboard overlay
     pub show_dashboard: bool,
+    /// Show task board overlay
+    pub show_task_board: bool,
     /// Search query for agent filtering
     pub search_query: String,
     /// Session start time for dashboard
@@ -139,6 +141,7 @@ impl App {
             selected_checkpoint: 0,
             status_message: None,
             show_dashboard: false,
+            show_task_board: false,
             search_query: String::new(),
             session_start: std::time::Instant::now(),
             reconciler: Reconciler::new(reconciliation_config),
@@ -219,6 +222,10 @@ impl App {
         // Scan ~/.claude/teams/ to enrich agents with team membership
         // Throttled internally: every 5s at startup, every 120s in steady-state
         self.state.refresh_team_metadata();
+
+        // Scan ~/.claude/tasks/ for task board data
+        // Throttled internally alongside team metadata refresh
+        self.state.refresh_task_data();
 
         // Run tmux reconciliation (throttled to every 5s internally)
         // Detects stuck agents by checking pane output for permission prompts

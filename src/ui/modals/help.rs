@@ -27,6 +27,7 @@ pub fn render_help(f: &mut Frame) {
   Display
   d           Dashboard overview
   f           Freeze display
+  T           Task board
   ?, H        This help
 
   Git
