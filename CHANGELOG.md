@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.22] - 2026-02-12
+
+### Added
+
+- Filesystem task discovery + task board view
+
+### Fixed
+
+- Apply rustfmt to task discovery and board view
+[0.9.22]: https://github.com/m-mohamed/rehoboam/compare/v0.9.21...v0.9.22
+
+
 ## [0.9.21] - 2026-02-11
 
 ### Fixed
