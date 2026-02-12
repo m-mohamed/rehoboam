@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.23] - 2026-02-12
+
+### Fixed
+
+- Clean up help modal and footer shortcuts
+[0.9.23]: https://github.com/m-mohamed/rehoboam/compare/v0.9.22...v0.9.23
+
+
 ## [0.9.22] - 2026-02-12
 
 ### Added
