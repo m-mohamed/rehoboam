@@ -114,10 +114,7 @@ fn render_team_section(
                 }
 
                 let lines = if meta_parts.is_empty() {
-                    vec![Line::from(Span::styled(
-                        line1,
-                        Style::default().fg(*color),
-                    ))]
+                    vec![Line::from(Span::styled(line1, Style::default().fg(*color)))]
                 } else {
                     vec![
                         Line::from(Span::styled(line1, Style::default().fg(*color))),

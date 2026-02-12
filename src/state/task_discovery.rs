@@ -224,7 +224,10 @@ mod tests {
         let task = TaskDiscovery::parse_task(&task_path).unwrap();
         assert_eq!(task.id, "1");
         assert_eq!(task.subject, "Create use-debounced-value hook");
-        assert_eq!(task.description, "Create apps/web/src/hooks/use-debounced-value.ts");
+        assert_eq!(
+            task.description,
+            "Create apps/web/src/hooks/use-debounced-value.ts"
+        );
         assert_eq!(task.active_form.as_deref(), Some("Creating debounce hook"));
         assert_eq!(task.status, "completed");
         assert_eq!(task.blocks, vec!["3"]);
@@ -272,10 +275,7 @@ mod tests {
         std::fs::create_dir_all(&team_dir).unwrap();
 
         // Manually call parse on the team dir to verify empty results
-        let entries: Vec<_> = std::fs::read_dir(&team_dir)
-            .unwrap()
-            .flatten()
-            .collect();
+        let entries: Vec<_> = std::fs::read_dir(&team_dir).unwrap().flatten().collect();
         assert!(entries.is_empty());
     }
 
@@ -293,12 +293,7 @@ mod tests {
         let json_files: Vec<_> = std::fs::read_dir(&team_dir)
             .unwrap()
             .flatten()
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("json")
-            })
+            .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("json"))
             .collect();
         assert!(json_files.is_empty(), "No JSON files should exist");
     }

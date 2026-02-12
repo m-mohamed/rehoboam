@@ -641,10 +641,7 @@ impl AppState {
                             status: task_info.status,
                             blocked_by: task_info.blocked_by.clone(),
                             blocks: task_info.blocks.clone(),
-                            owner_name: agent
-                                .team_agent_name
-                                .clone()
-                                .unwrap_or_default(),
+                            owner_name: agent.team_agent_name.clone().unwrap_or_default(),
                             team_name: Some(team_name.clone()),
                             description: String::new(),
                             active_form: None,
@@ -675,10 +672,7 @@ impl AppState {
                                 status: TaskStatus::InProgress,
                                 blocked_by: Vec::new(),
                                 blocks: Vec::new(),
-                                owner_name: agent
-                                    .team_agent_name
-                                    .clone()
-                                    .unwrap_or_default(),
+                                owner_name: agent.team_agent_name.clone().unwrap_or_default(),
                                 team_name: Some(team_name.clone()),
                                 description: String::new(),
                                 active_form: None,
@@ -1497,6 +1491,10 @@ mod tests {
         assert_eq!(task_99.unwrap().subject, "Hook-only task");
 
         assert_eq!(pending.len(), 2, "should have fs task + hook-only task");
-        assert_eq!(in_progress.len(), 0, "task 1 should NOT be in_progress (fs wins)");
+        assert_eq!(
+            in_progress.len(),
+            0,
+            "task 1 should NOT be in_progress (fs wins)"
+        );
     }
 }

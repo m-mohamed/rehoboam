@@ -119,14 +119,8 @@ impl TeamDiscovery {
                             .and_then(|v| v.as_str())
                             .unwrap_or("general-purpose")
                             .to_string();
-                        let model = m
-                            .get("model")
-                            .and_then(|v| v.as_str())
-                            .map(String::from);
-                        let cwd = m
-                            .get("cwd")
-                            .and_then(|v| v.as_str())
-                            .map(String::from);
+                        let model = m.get("model").and_then(|v| v.as_str()).map(String::from);
+                        let cwd = m.get("cwd").and_then(|v| v.as_str()).map(String::from);
                         let tmux_pane_id = m
                             .get("tmuxPaneId")
                             .and_then(|v| v.as_str())
