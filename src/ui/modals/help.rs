@@ -14,47 +14,33 @@ pub fn render_help(f: &mut Frame) {
 
     let help_text = r"
   Navigation
+  j/k         Move between agents
   h/l         Move between columns
-  j/k         Move between cards
   Enter       Jump to agent's terminal
-  /           Search agents by name
+  /           Search agents
 
-  Agent Actions
+  Actions
   y/n         Approve/reject permission
-  c           Send custom input
-  s           Spawn new agent
+  c           Custom input
+  s           Spawn agent
 
-  Display
-  d           Dashboard overview
-  f           Freeze display
+  Views
+  d           Dashboard
   T           Task board
+  D           Diff viewer
+  f           Freeze display
   ?, H        This help
 
   Git
-  D           Open diff viewer
-  g           Git commit
-  p           Git push
+  g           Commit
+  p           Push
 
-  Bulk Operations
-  Space       Toggle selection
+  Selection
+  Space       Toggle select
   Y/N         Bulk approve/reject
-  K           Kill selected agents
+  K           Kill selected
   x           Clear selection
 
-  Sprites
-  t           Checkpoint timeline
-
-  Diff Viewer (when open)
-  j/k         Scroll line
-  Ctrl+U/D    Scroll page
-  n/p/Tab     Next/prev file
-  [/]         Next/prev hunk
-  o/O         Collapse hunk/all
-  g           Commit
-  G           Push
-  q/Esc/D     Close
-
-  A           Auto-accept (use caution)
   q, Esc      Quit (Esc closes modals first)
   Ctrl+C      Force quit
 ";
