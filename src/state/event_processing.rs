@@ -4,7 +4,7 @@
 //! for handling Claude Code hook events.
 
 use super::{status_to_column, Agent, AgentRole, AppState, AttentionType, Status};
-use crate::config::{MAX_EVENTS, MAX_SPARKLINE_POINTS};
+use crate::config::MAX_EVENTS;
 use crate::event::{EventSource, HookEvent};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -419,6 +419,11 @@ impl AppState {
         } else {
             // New agent
             self.status_counts[new_status_col] += 1;
+
+            // Auto-select first agent if nothing is selected
+            if self.selected_pane_id.is_none() {
+                self.selected_pane_id = Some(pane_id.clone());
+            }
 
             tracing::info!(
                 pane_id = %pane_id,
@@ -873,21 +878,6 @@ impl AppState {
             }
         }
 
-        // Add activity point for sparkline
-        let activity_value = match &agent.status {
-            Status::Working => 1.0,
-            Status::Attention(attn) => match attn {
-                AttentionType::Permission | AttentionType::Input => 0.8,
-                AttentionType::Notification => 0.5,
-                AttentionType::Waiting => 0.1,
-            },
-            Status::Compacting => 0.6,
-        };
-        agent.activity.push_back(activity_value);
-        if agent.activity.len() > MAX_SPARKLINE_POINTS {
-            agent.activity.pop_front();
-        }
-
         // Map session to team (deferred to avoid borrow conflicts)
         if let Some(ref sid) = event.session_id {
             if let Some(agent) = self.agents.get(&pane_id) {
@@ -907,6 +897,10 @@ impl AppState {
             // Clean up sprite tracking
             self.sprite_agent_ids.remove(&pane_id);
             self.agents.remove(&pane_id);
+            // Clear stale selection
+            if self.selected_pane_id.as_deref() == Some(&pane_id) {
+                self.selected_pane_id = None;
+            }
         }
 
         // Add to event log

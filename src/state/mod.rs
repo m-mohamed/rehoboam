@@ -18,7 +18,7 @@ use crate::event::HookEvent;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Number of status columns in Kanban view (Attention, Working, Compacting)
+/// Number of status categories (Attention, Working, Compacting)
 pub const NUM_COLUMNS: usize = 3;
 
 /// A task with contextual metadata for display in the task board
@@ -43,10 +43,8 @@ pub struct AppState {
     pub agents: HashMap<String, Agent>,
     /// Recent events for the event log
     pub events: VecDeque<HookEvent>,
-    /// Currently selected column (0=Attention, 1=Working, 2=Compacting)
-    pub selected_column: usize,
-    /// Currently selected card index within the column
-    pub selected_card: usize,
+    /// Currently selected agent by pane_id (identity-based navigation)
+    pub selected_pane_id: Option<String>,
     /// Cached status counts: [attention, working, compacting]
     pub status_counts: [usize; NUM_COLUMNS],
     /// Set of selected pane_ids for bulk operations
@@ -76,8 +74,7 @@ impl Default for AppState {
         Self {
             agents: HashMap::new(),
             events: VecDeque::new(),
-            selected_column: 0,
-            selected_card: 0,
+            selected_pane_id: None,
             status_counts: [0; NUM_COLUMNS],
             selected_agents: HashSet::new(),
             sprite_agent_ids: HashSet::new(),
@@ -134,6 +131,9 @@ impl AppState {
             self.agents.remove(&pane_id);
             self.selected_agents.remove(&pane_id);
             self.sprite_agent_ids.remove(&pane_id);
+            if self.selected_pane_id.as_deref() == Some(&pane_id) {
+                self.selected_pane_id = None;
+            }
         } else {
             // No idle agents, evict oldest of any status
             let oldest = self
@@ -147,6 +147,9 @@ impl AppState {
                 self.agents.remove(&pane_id);
                 self.selected_agents.remove(&pane_id);
                 self.sprite_agent_ids.remove(&pane_id);
+                if self.selected_pane_id.as_deref() == Some(&pane_id) {
+                    self.selected_pane_id = None;
+                }
             }
         }
     }
@@ -231,36 +234,10 @@ impl AppState {
             self.agents.remove(&pane_id);
             self.selected_agents.remove(&pane_id);
             self.sprite_agent_ids.remove(&pane_id);
+            if self.selected_pane_id.as_deref() == Some(&pane_id) {
+                self.selected_pane_id = None;
+            }
         }
-    }
-
-    /// Get agents grouped by status column
-    ///
-    /// Returns 3 vectors: [Attention, Working, Compacting]
-    /// Attention column sorted by AttentionType priority, then by project name
-    pub fn agents_by_column(&self) -> [Vec<&Agent>; NUM_COLUMNS] {
-        let mut columns: [Vec<&Agent>; NUM_COLUMNS] = Default::default();
-        for agent in self.agents.values() {
-            let col = match &agent.status {
-                Status::Attention(_) => 0,
-                Status::Working => 1,
-                Status::Compacting => 2,
-            };
-            columns[col].push(agent);
-        }
-        // Sort Attention column by AttentionType priority, then by project name
-        columns[0].sort_by(|a, b| match (&a.status, &b.status) {
-            (Status::Attention(a_type), Status::Attention(b_type)) => a_type
-                .priority()
-                .cmp(&b_type.priority())
-                .then_with(|| a.project.cmp(&b.project)),
-            _ => a.project.cmp(&b.project),
-        });
-        // Sort other columns by project name for consistent ordering
-        for col in &mut columns[1..] {
-            col.sort_by(|a, b| a.project.cmp(&b.project));
-        }
-        columns
     }
 
     /// Get agents grouped by team name
@@ -297,103 +274,56 @@ impl AppState {
         result
     }
 
-    /// Move to next agent in flat order (across all columns)
+    /// Move to next agent in flat order (across all teams)
     ///
-    /// Navigates across all status columns in flat order.
-    /// Order: Attention agents, then Working agents, then Compacting agents.
-    pub fn next_agent_flat(&mut self) {
-        let columns = self.agents_by_column();
-
-        // Build flat list of (column_index, card_index) pairs
-        let flat: Vec<(usize, usize)> = columns
+    /// Traverses agents in `agents_by_team()` order (matches rendered order).
+    /// Wraps around at the end.
+    pub fn next_agent(&mut self) {
+        let flat: Vec<String> = self
+            .agents_by_team()
             .iter()
-            .enumerate()
-            .flat_map(|(col_idx, agents)| {
-                (0..agents.len()).map(move |card_idx| (col_idx, card_idx))
-            })
+            .flat_map(|(_, agents)| agents.iter().map(|a| a.pane_id.clone()))
             .collect();
-
         if flat.is_empty() {
+            self.selected_pane_id = None;
             return;
         }
-
-        // Find current position in flat list
-        let current = (self.selected_column, self.selected_card);
-        let current_idx = flat.iter().position(|&pos| pos == current).unwrap_or(0);
-
-        // Move to next
-        let next_idx = (current_idx + 1) % flat.len();
-        let (col, card) = flat[next_idx];
-        self.selected_column = col;
-        self.selected_card = card;
+        let idx = self
+            .selected_pane_id
+            .as_ref()
+            .and_then(|id| flat.iter().position(|p| p == id))
+            .unwrap_or(0);
+        self.selected_pane_id = Some(flat[(idx + 1) % flat.len()].clone());
     }
 
-    /// Move to previous agent in flat order (across all columns)
+    /// Move to previous agent in flat order (across all teams)
     ///
-    /// Navigates across all status columns in flat order.
-    /// Order: Attention agents, then Working agents, then Compacting agents.
-    pub fn previous_agent_flat(&mut self) {
-        let columns = self.agents_by_column();
-
-        // Build flat list of (column_index, card_index) pairs
-        let flat: Vec<(usize, usize)> = columns
+    /// Traverses agents in `agents_by_team()` order (matches rendered order).
+    /// Wraps around at the beginning.
+    pub fn prev_agent(&mut self) {
+        let flat: Vec<String> = self
+            .agents_by_team()
             .iter()
-            .enumerate()
-            .flat_map(|(col_idx, agents)| {
-                (0..agents.len()).map(move |card_idx| (col_idx, card_idx))
-            })
+            .flat_map(|(_, agents)| agents.iter().map(|a| a.pane_id.clone()))
             .collect();
-
         if flat.is_empty() {
+            self.selected_pane_id = None;
             return;
         }
-
-        // Find current position in flat list
-        let current = (self.selected_column, self.selected_card);
-        let current_idx = flat.iter().position(|&pos| pos == current).unwrap_or(0);
-
-        // Move to previous (wrap around)
-        let prev_idx = if current_idx == 0 {
-            flat.len() - 1
-        } else {
-            current_idx - 1
-        };
-        let (col, card) = flat[prev_idx];
-        self.selected_column = col;
-        self.selected_card = card;
-    }
-
-    /// Move to column on the left
-    pub fn move_column_left(&mut self) {
-        self.selected_column = (self.selected_column + NUM_COLUMNS - 1) % NUM_COLUMNS;
-        // Clamp card selection to new column's bounds
-        self.clamp_card_selection();
-    }
-
-    /// Move to column on the right
-    pub fn move_column_right(&mut self) {
-        self.selected_column = (self.selected_column + 1) % NUM_COLUMNS;
-        // Clamp card selection to new column's bounds
-        self.clamp_card_selection();
-    }
-
-    /// Clamp card selection to valid range for current column
-    fn clamp_card_selection(&mut self) {
-        let columns = self.agents_by_column();
-        let col_len = columns[self.selected_column].len();
-        if col_len == 0 {
-            self.selected_card = 0;
-        } else if self.selected_card >= col_len {
-            self.selected_card = col_len - 1;
-        }
+        let idx = self
+            .selected_pane_id
+            .as_ref()
+            .and_then(|id| flat.iter().position(|p| p == id))
+            .unwrap_or(0);
+        let prev_idx = if idx == 0 { flat.len() - 1 } else { idx - 1 };
+        self.selected_pane_id = Some(flat[prev_idx].clone());
     }
 
     /// Get currently selected agent
     pub fn selected_agent(&self) -> Option<&Agent> {
-        let columns = self.agents_by_column();
-        columns[self.selected_column]
-            .get(self.selected_card)
-            .copied()
+        self.selected_pane_id
+            .as_ref()
+            .and_then(|id| self.agents.get(id))
     }
 
     /// Toggle selection of the currently focused agent
@@ -420,12 +350,6 @@ impl AppState {
             .filter(|id| id.starts_with('%'))
             .cloned()
             .collect()
-    }
-
-    /// Get the pane_id of the currently selected agent
-    #[allow(dead_code)] // API consistency: convenience method
-    pub fn selected_pane_id(&self) -> Option<String> {
-        self.selected_agent().map(|a| a.pane_id.clone())
     }
 
     // v0.10.0 Sprite Methods
@@ -1496,5 +1420,118 @@ mod tests {
             0,
             "task 1 should NOT be in_progress (fs wins)"
         );
+    }
+
+    // =========================================================================
+    // Identity-based navigation tests
+    // =========================================================================
+
+    #[test]
+    fn test_next_agent_identity_based() {
+        let mut state = AppState::new();
+
+        // Create 3 agents
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "alpha"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%1", "beta"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%2", "gamma"));
+
+        // First agent should be auto-selected
+        assert!(
+            state.selected_pane_id.is_some(),
+            "first agent auto-selected"
+        );
+
+        // Navigate through all agents (should visit all 3 and wrap)
+        let mut visited = std::collections::HashSet::new();
+        for _ in 0..3 {
+            visited.insert(state.selected_pane_id.clone().unwrap());
+            state.next_agent();
+        }
+        assert_eq!(visited.len(), 3, "should visit all 3 agents");
+
+        // One more should wrap back to one we've seen
+        let wrapped = state.selected_pane_id.clone().unwrap();
+        assert!(visited.contains(&wrapped), "should wrap around");
+    }
+
+    #[test]
+    fn test_prev_agent_identity_based() {
+        let mut state = AppState::new();
+
+        // Create 3 agents
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "alpha"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%1", "beta"));
+        let _ = state.process_event(make_event("SessionStart", "working", "%2", "gamma"));
+
+        // Navigate backward through all agents
+        let mut visited = std::collections::HashSet::new();
+        for _ in 0..3 {
+            visited.insert(state.selected_pane_id.clone().unwrap());
+            state.prev_agent();
+        }
+        assert_eq!(visited.len(), 3, "should visit all 3 agents backward");
+    }
+
+    #[test]
+    fn test_selected_agent_follows_identity() {
+        let mut state = AppState::new();
+
+        // Create an agent in Working status
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        state.selected_pane_id = Some("%0".to_string());
+
+        // Verify selection
+        assert_eq!(
+            state.selected_agent().unwrap().pane_id,
+            "%0",
+            "selected agent should be %0"
+        );
+
+        // Transition agent to Attention (status change)
+        let _ = state.process_event(make_event("Stop", "idle", "%0", "test"));
+
+        // Selection should STILL follow the agent
+        assert_eq!(
+            state.selected_pane_id.as_deref(),
+            Some("%0"),
+            "selection should survive status transition"
+        );
+        assert!(
+            state.selected_agent().is_some(),
+            "selected_agent() should still resolve"
+        );
+    }
+
+    #[test]
+    fn test_selection_cleared_on_agent_removal() {
+        let mut state = AppState::new();
+
+        // Create and select an agent
+        let _ = state.process_event(make_event("SessionStart", "working", "%0", "test"));
+        state.selected_pane_id = Some("%0".to_string());
+
+        // End the session (removes the agent)
+        let _ = state.process_event(make_event("SessionEnd", "idle", "%0", "test"));
+
+        // Selection should be cleared
+        assert_eq!(
+            state.selected_pane_id, None,
+            "selection should clear when agent is removed"
+        );
+    }
+
+    #[test]
+    fn test_navigation_empty_state() {
+        let mut state = AppState::new();
+
+        // Navigate on empty state — should not crash
+        state.next_agent();
+        assert_eq!(state.selected_pane_id, None, "next on empty stays None");
+
+        state.prev_agent();
+        assert_eq!(state.selected_pane_id, None, "prev on empty stays None");
+
+        // selected_agent on empty returns None
+        assert!(state.selected_agent().is_none(), "no agent in empty state");
     }
 }

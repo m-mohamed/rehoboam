@@ -1,7 +1,6 @@
-//! Agent state management for Claude Code sessions
+//! Tmux-based agent state management for Claude Code sessions
 //!
-//! Tracks the status and activity of each Claude Code agent running in terminal panes.
-//! Supports multiple terminal emulators: Tmux, WezTerm, Kitty, iTerm2.
+//! Tracks the status and activity of each Claude Code agent running in tmux panes.
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -209,14 +208,10 @@ impl AttentionType {
     }
 }
 
-/// A Claude Code agent instance running in a WezTerm pane
+/// A Claude Code agent instance running in a tmux pane
 ///
 /// Tracks an agent's current state and activity history. Each agent is uniquely
-/// identified by its `pane_id` (WezTerm pane where it's running).
-///
-/// # Activity Tracking
-/// The `activity` field stores the last 60 activity values (0.0-1.0) for
-/// sparkline visualization. Higher values indicate more activity.
+/// identified by its `pane_id` (tmux pane where it's running).
 ///
 /// # Session Timing
 /// - `start_time`: When the session was first started (or restarted)
@@ -227,7 +222,7 @@ impl AttentionType {
 /// correlation. Provides real-time insight into tool execution times.
 #[derive(Debug, Clone)]
 pub struct Agent {
-    /// WezTerm pane ID (unique identifier for this agent)
+    /// Tmux pane ID (unique identifier for this agent)
     pub pane_id: String,
     /// Git project name or current directory name
     pub project: String,
@@ -239,9 +234,6 @@ pub struct Agent {
     pub last_update: i64,
     /// Name of the last hook event received
     pub last_event: String,
-    /// Activity history for sparkline visualization (0.0-1.0)
-    pub activity: VecDeque<f64>,
-
     // v1.0 rich data fields
     /// Claude Code session identifier
     pub session_id: Option<String>,
@@ -391,7 +383,6 @@ impl Agent {
             start_time: 0,
             last_update: 0,
             last_event: String::new(),
-            activity: VecDeque::with_capacity(60),
             // v1.0 fields
             session_id: None,
             current_tool: None,

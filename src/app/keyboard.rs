@@ -5,10 +5,8 @@
 //! # Keyboard Shortcuts (Normal Mode)
 //!
 //! ## Navigation
-//! - `h`/`←` - Move to left column
-//! - `l`/`→` - Move to right column
-//! - `j`/`↓` - Move to next card in column
-//! - `k`/`↑` - Move to previous card in column
+//! - `j`/`↓` - Move to next agent
+//! - `k`/`↑` - Move to previous agent
 //! - `Enter` - Jump to selected agent's tmux pane
 //! - `/` - Enter search mode
 //!
@@ -86,25 +84,18 @@ impl App {
                     self.should_quit = true;
                 }
             }
-            // Column navigation (horizontal)
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.state.move_column_left();
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.state.move_column_right();
-            }
-            // Agent navigation (vertical, flat across all columns)
+            // Agent navigation (flat across all teams)
             KeyCode::Char('j') | KeyCode::Down => {
-                self.state.next_agent_flat();
+                self.state.next_agent();
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.state.previous_agent_flat();
+                self.state.prev_agent();
             }
             // Jump to agent
             KeyCode::Enter => {
                 navigation::jump_to_selected(&self.state);
             }
-            // Toggle help (use '?' since 'h' is now column navigation)
+            // Toggle help
             KeyCode::Char('?' | 'H') => {
                 self.show_help = !self.show_help;
             }
@@ -817,25 +808,6 @@ mod tests {
         assert!(
             !app.should_quit,
             "Esc should not quit when dashboard is open"
-        );
-    }
-
-    #[test]
-    fn test_navigation_h_l_columns() {
-        let mut app = test_app();
-        let initial_col = app.state.selected_column;
-
-        app.handle_key(key('l'));
-        assert_eq!(
-            app.state.selected_column,
-            (initial_col + 1) % 3,
-            "'l' should move right"
-        );
-
-        app.handle_key(key('h'));
-        assert_eq!(
-            app.state.selected_column, initial_col,
-            "'h' should move left"
         );
     }
 

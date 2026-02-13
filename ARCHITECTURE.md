@@ -28,7 +28,7 @@ src/
 │   └── navigation.rs Jump to pane, search, capture output
 │
 ├── state/
-│   ├── mod.rs        AppState, process_event(), agents_by_column()
+│   ├── mod.rs        AppState, process_event(), agents_by_team()
 │   └── agent.rs      Agent struct, Status enum, LoopMode
 │
 ├── event/
@@ -119,7 +119,7 @@ The `derive_status()` function maps hook events to TUI status:
 - **UI is read-only**: Never writes to socket or modifies external state
 - **State is single source of truth**: All rendering reads from AppState
 - **Events processed in order**: mpsc channel preserves FIFO ordering
-- **Bounded memory**: Max 50 agents (LRU eviction), 60 sparkline points, 50 event log entries
+- **Bounded memory**: Max 50 agents (LRU eviction), 50 event log entries
 - **Non-blocking hooks**: 500ms timeout ensures Claude Code never waits
 - **Agent identity**: Agents keyed by pane_id (tmux: `%N`, sprite: `sp_xxx`)
 
@@ -238,7 +238,6 @@ Users care about one question: "Does any agent need my attention?" Four columns 
 | Agent lookup | O(1) HashMap |
 | Status counts | O(1) cached |
 | Column grouping | O(n log k) |
-| Sparkline update | O(1) VecDeque push |
 
 ### Limits
 
@@ -246,7 +245,6 @@ Users care about one question: "Does any agent need my attention?" Four columns 
 |----------|-------|-----------|
 | Max agents | 500 | Memory bound, LRU eviction |
 | Max connections | 100 | Prevent resource exhaustion |
-| Sparkline points | 60 | ~1 minute of history |
 | Event log | 50 | Debug visibility |
 | Channel capacity | 100 | Backpressure buffer |
 
@@ -260,25 +258,15 @@ Users care about one question: "Does any agent need my attention?" Four columns 
 | Missing terminal env var | Falls back to session_id (agent still tracked) |
 | SessionEnd never sent | Agent cleaned up after 5 min inactivity |
 
-## Terminal Support
+## Terminal Support (tmux-only)
 
-### Pane Identification Priority
+### Pane Identification
 
-The hook command checks environment variables in this order:
-1. `WEZTERM_PANE` - WezTerm pane ID (numeric)
-2. `TMUX_PANE` - Tmux pane ID (`%0`, `%1`, etc.)
-3. `KITTY_WINDOW_ID` - Kitty terminal
-4. `ITERM_SESSION_ID` - iTerm2 session
-5. `session_id[0:8]` - Fallback (first 8 chars of Claude session ID)
+The hook command uses `TMUX_PANE` (with recovery via `tmux display-message` if env var is missing but tmux session is active). Falls back to `session_id[0:8]` (first 8 chars of Claude session ID) with a warning.
 
-### Jump-to-Pane Support
+### Jump-to-Pane
 
-| Terminal | Pane ID Format | CLI Command |
-|----------|----------------|-------------|
-| Tmux | `%0`, `%1` | `tmux select-pane -t %N` |
-| WezTerm | numeric | `wezterm cli activate-pane --pane-id N` |
-| Kitty | numeric | Not yet implemented |
-| iTerm2 | string | Not yet implemented |
+Uses `tmux select-pane -t %N` for tmux panes (`%0`, `%1`, etc.). Non-tmux pane IDs (e.g., session_id fallbacks) cannot be jumped to.
 
 ## Testing
 

@@ -1,19 +1,6 @@
 //! UI helper functions
 
-use crate::state::Status;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-use ratatui::style::Color;
-
-use crate::config::colors;
-
-/// Get base color for a status
-pub fn status_base_color(status: &Status) -> Color {
-    match status {
-        Status::Working => colors::WORKING,
-        Status::Attention(_) => colors::ATTENTION,
-        Status::Compacting => colors::COMPACTING,
-    }
-}
 
 /// Truncate a string to max_len with ellipsis
 pub fn truncate(s: &str, max_len: usize) -> String {

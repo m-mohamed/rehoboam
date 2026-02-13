@@ -3,7 +3,7 @@
 #![allow(clippy::missing_panics_doc)] // Internal functions don't need # Panics docs
 #![allow(clippy::must_use_candidate)] // Not all getters need #[must_use]
 #![allow(clippy::module_name_repetitions)] // e.g., SpriteConfig in sprite module is fine
-#![allow(clippy::doc_markdown)] // Don't require backticks around WezTerm, JSON, etc.
+#![allow(clippy::doc_markdown)] // Don't require backticks around JSON, etc.
 #![allow(clippy::too_many_lines)] // Some functions are naturally long
 #![allow(clippy::struct_excessive_bools)] // Config structs can have multiple bool fields
 #![allow(clippy::similar_names)] // Allow similar variable names like tmux/tmux_pane
@@ -196,11 +196,8 @@ async fn handle_sprites_command(action: SpritesAction, token: Option<String>) ->
 /// Reads JSON from stdin (piped by Claude Code hooks), parses all available fields,
 /// enriches with terminal context, and sends to TUI via Unix socket.
 ///
-/// Agent identification priority:
-/// 1. WEZTERM_PANE (WezTerm)
-/// 2. KITTY_WINDOW_ID (Kitty)
-/// 3. ITERM_SESSION_ID (iTerm2)
-/// 4. session_id prefix (any terminal)
+/// Agent identification: TMUX_PANE (with recovery via `tmux display-message`),
+/// falls back to session_id prefix.
 ///
 /// Silently succeeds if:
 /// - No stdin input (empty hook call)
@@ -255,9 +252,7 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
     // Capture effort level configuration
     let effort_level = std::env::var("CLAUDE_CODE_EFFORT_LEVEL").ok();
 
-    // Get pane ID from terminal-specific env vars, fall back to session_id
-    // Priority: WEZTERM_PANE > TMUX_PANE > KITTY_WINDOW_ID > ITERM_SESSION_ID > session_id
-    let wezterm_pane = std::env::var("WEZTERM_PANE").ok();
+    // Get pane ID from TMUX_PANE, fall back to session_id
     let tmux_pane = std::env::var("TMUX_PANE").ok().or_else(|| {
         // Recovery: if inside tmux but TMUX_PANE not propagated, query tmux directly
         if std::env::var("TMUX").is_ok() {
@@ -276,21 +271,12 @@ async fn handle_hook(socket_path: &PathBuf, should_notify: bool) -> Result<()> {
         None
     });
 
-    // Clone for debug logging if fallback is needed
-    let wezterm_debug = wezterm_pane.clone();
-    let tmux_debug = tmux_pane.clone();
-
-    let pane_id = wezterm_pane
-        .or(tmux_pane) // Tmux: %0, %1, etc.
-        .or_else(|| std::env::var("KITTY_WINDOW_ID").ok())
-        .or_else(|| std::env::var("ITERM_SESSION_ID").ok())
+    let pane_id = tmux_pane
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| {
             // Fallback: first 8 chars of session_id (always available)
-            tracing::debug!(
-                "No terminal pane ID found (WEZTERM_PANE={:?}, TMUX_PANE={:?}), using session_id fallback",
-                wezterm_debug,
-                tmux_debug
+            tracing::warn!(
+                "TMUX_PANE not found — using session_id fallback. Rehoboam requires tmux for full functionality."
             );
             hook_input.session_id.chars().take(SESSION_ID_PREFIX_LEN).collect()
         });

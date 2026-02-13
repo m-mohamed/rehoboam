@@ -2,14 +2,12 @@
 //!
 //! Provides commands for:
 //! - Sending input to agents (y/n approval, custom text)
-//! - Capturing pane output for monitoring
+//! - Checking pane health (alive/dead detection)
 //! - Creating new panes for agent spawning
-//! - Output pattern matching for status detection
 //!
 //! Key patterns from ecosystem research:
 //! - Enter must be a separate argument to send-keys
 //! - Use load-buffer + paste-buffer for long/multi-line content
-//! - capture-pane for reading agent output
 
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -33,15 +31,6 @@ const ALLOWED_ENV_VARS: &[&str] = &[
 /// Validate environment variable name against allowlist
 fn is_allowed_env_var(name: &str) -> bool {
     ALLOWED_ENV_VARS.contains(&name)
-}
-
-/// Type of prompt detected in pane output via reconciliation
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PromptType {
-    /// Permission request: tool needs approval ([y/n], approve, etc.)
-    Permission,
-    /// Input request: Claude asking a question
-    Input,
 }
 
 /// Controller for tmux operations
@@ -189,116 +178,6 @@ impl TmuxController {
         Ok(result != "1")
     }
 
-    /// Capture the last N lines from a pane
-    ///
-    /// More efficient than full capture for pattern matching during reconciliation.
-    /// Uses `capture-pane` with `-S` (start line) option.
-    ///
-    /// # Arguments
-    /// * `pane_id` - Tmux pane identifier
-    /// * `lines` - Number of lines to capture from bottom
-    ///
-    /// # Returns
-    /// The captured lines as a string
-    pub fn capture_pane_tail(pane_id: &str, lines: usize) -> Result<String> {
-        let start_line = format!("-{}", lines);
-        let output = Command::new("tmux")
-            .args(["capture-pane", "-t", pane_id, "-p", "-S", &start_line])
-            .output()
-            .wrap_err("Failed to execute tmux capture-pane")?;
-
-        if !output.status.success() {
-            bail!(
-                "tmux capture-pane failed: {}",
-                String::from_utf8_lossy(&output.stderr)
-            );
-        }
-
-        // Try proper UTF-8 conversion, fall back to lossy with warning
-        match String::from_utf8(output.stdout.clone()) {
-            Ok(s) => Ok(s),
-            Err(_) => {
-                tracing::warn!(pane_id = %pane_id, "Non-UTF-8 output from pane tail, using lossy conversion");
-                Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-            }
-        }
-    }
-
-    /// Pattern match captured pane output for permission/input prompts
-    ///
-    /// Pure function separated for testability without tmux dependency.
-    /// Used by reconciliation to detect prompts when hooks fail.
-    ///
-    /// # Arguments
-    /// * `output` - Captured pane content (typically last 30 lines)
-    ///
-    /// # Returns
-    /// - `Some(PromptType::Permission)` if permission prompt detected
-    /// - `Some(PromptType::Input)` if input prompt detected
-    /// - `None` if no prompt or still working (spinner visible)
-    pub fn match_prompt_patterns(output: &str) -> Option<PromptType> {
-        // Check for spinner/working indicators first (negative patterns)
-        // If spinner is visible, Claude is still working - don't match
-        const SPINNER_CHARS: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-        const WORKING_INDICATORS: &[&str] = &["Thinking", "Running", "Compacting"];
-
-        // Only check last few lines for freshness
-        let recent_lines: Vec<&str> = output.lines().rev().take(10).collect();
-        let recent_text = recent_lines.join("\n");
-
-        // If any spinner char in recent output, still working
-        if SPINNER_CHARS.iter().any(|c| recent_text.contains(*c)) {
-            return None;
-        }
-
-        // If working indicator present, still working
-        if WORKING_INDICATORS.iter().any(|s| recent_text.contains(s)) {
-            return None;
-        }
-
-        // Permission patterns (Claude Code approval prompts)
-        const PERMISSION_PATTERNS: &[&str] = &[
-            "[y/n]",
-            "(y/n)",
-            "[Y/N]",
-            "(Y/N)",
-            "(yes/no)",
-            "[yes/no]",
-            "Allow this",
-            "allow this",
-            "Allow once",
-            "Allow always",
-            "approve",
-            "Approve",
-            "Do you want to",
-            "Deny",
-            "Press y to",
-            "Press n to",
-        ];
-
-        // Check for permission prompt
-        if PERMISSION_PATTERNS.iter().any(|p| recent_text.contains(p)) {
-            return Some(PromptType::Permission);
-        }
-
-        // Input patterns (Claude asking for user input)
-        // More conservative - only match if we see clear input indicators
-        // at the end of lines
-        for line in recent_lines.iter().take(3) {
-            let trimmed = line.trim();
-            if trimmed.ends_with('?') && trimmed.len() > 10 {
-                return Some(PromptType::Input);
-            }
-        }
-
-        // Note: We don't detect shell prompts ("$", ">") because Claude Code
-        // has its own UI and doesn't show shell prompts when waiting.
-        // Shell prompts would only appear if Claude crashed and returned to shell,
-        // which would be caught by pane health checks instead.
-
-        None
-    }
-
     /// Create a new tmux pane via split
     ///
     /// # Arguments
@@ -411,72 +290,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_match_permission_patterns() {
-        // Table-driven test for permission prompt detection
-        let cases: Vec<(&str, &str)> = vec![
-            ("Do you want to allow this action? [y/n]", "[y/n] pattern"),
-            ("Allow this tool to execute?\n> ", "Allow this pattern"),
-            ("Please approve the following action:", "approve pattern"),
-        ];
-
-        for (output, desc) in cases {
-            assert_eq!(
-                TmuxController::match_prompt_patterns(output),
-                Some(PromptType::Permission),
-                "should match permission: {}",
-                desc
-            );
-        }
-    }
-
-    #[test]
-    fn test_match_working_blocks_and_input() {
-        // Working indicators should block permission matching
-        let working_cases: Vec<(&str, &str)> = vec![
-            ("⠋ Thinking about your request...\n[y/n]", "spinner blocks"),
-            (
-                "Running tool: Bash\nAllow this?",
-                "running indicator blocks",
-            ),
-        ];
-
-        for (output, desc) in working_cases {
-            assert_eq!(
-                TmuxController::match_prompt_patterns(output),
-                None,
-                "should not match: {}",
-                desc
-            );
-        }
-
-        // Input prompt should be detected
-        assert_eq!(
-            TmuxController::match_prompt_patterns(
-                "Some context here\nWhat would you like me to do next?"
-            ),
-            Some(PromptType::Input),
-            "should match input prompt"
-        );
-    }
-
-    #[test]
-    fn test_match_no_prompt() {
-        // Table-driven test for non-matching patterns
-        let cases: Vec<(&str, &str)> = vec![
-            (
-                "Reading file contents...\nProcessing data...",
-                "normal output",
-            ),
-            ("", "empty output"),
-        ];
-
-        for (output, desc) in cases {
-            assert_eq!(
-                TmuxController::match_prompt_patterns(output),
-                None,
-                "should not match: {}",
-                desc
-            );
-        }
+    fn test_allowed_env_vars() {
+        assert!(is_allowed_env_var("CLAUDE_CODE_TEAM_NAME"));
+        assert!(is_allowed_env_var("REHOBOAM_ROLE"));
+        assert!(!is_allowed_env_var("PATH"));
+        assert!(!is_allowed_env_var("HOME"));
     }
 }

@@ -15,7 +15,6 @@ pub fn render_help(f: &mut Frame) {
     let help_text = r"
   Navigation
   j/k         Move between agents
-  h/l         Move between columns
   Enter       Jump to agent's terminal
   /           Search agents
 

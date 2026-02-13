@@ -9,49 +9,45 @@ mod views;
 
 use crate::app::{App, InputMode};
 use crate::config::colors;
-use crate::state::Status;
-use helpers::{status_base_color, truncate};
 use modals::{
     render_checkpoint_timeline, render_dashboard, render_diff_modal, render_event_log, render_help,
     render_input_dialog, render_spawn_dialog,
 };
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout},
     prelude::*,
     style::Modifier,
-    symbols,
-    widgets::{Block, Borders, Paragraph, RenderDirection, Sparkline, SparklineBar},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use views::render_team_view;
 
 /// Main render function
 pub fn render(f: &mut Frame, app: &App) {
-    // Create layout
+    // Create layout: 3 zones (header, team view, footer)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Header
-            Constraint::Min(12),   // Agent columns (Kanban)
-            Constraint::Length(8), // Activity sparklines
+            Constraint::Min(12),   // Team view (always rendered)
             Constraint::Length(1), // Footer
         ])
         .split(f.area());
 
     render_header(f, chunks[0], app);
-
-    if app.show_task_board {
-        views::render_task_board(f, chunks[1], app);
-    } else {
-        render_team_view(f, chunks[1], app);
-    }
-
-    render_activity(f, chunks[2], app);
-    render_footer(f, chunks[3], app);
+    render_team_view(f, chunks[1], app);
+    render_footer(f, chunks[2], app);
 
     // Render event log if in debug mode
     if app.debug_mode && !app.state.events.is_empty() {
         render_event_log(f, app);
+    }
+
+    // Render task board overlay if active
+    if app.show_task_board {
+        let area = helpers::centered_rect(80, 80, f.area());
+        f.render_widget(ratatui::widgets::Clear, area);
+        views::render_task_board(f, area, app);
     }
 
     // Render help popup if active
@@ -157,89 +153,6 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
                 .border_type(ratatui::widgets::BorderType::Rounded),
         );
     f.render_widget(header, area);
-}
-
-fn render_activity(f: &mut Frame, area: Rect, app: &App) {
-    // Flatten already-sorted columns instead of O(n log n) sorted_agents()
-    let columns = app.state.agents_by_column();
-    let agents: Vec<&_> = columns.iter().flatten().copied().collect();
-
-    // Create horizontal layout for sparklines
-    let num_agents = agents.len().max(1);
-    let constraints: Vec<Constraint> = (0..num_agents)
-        .map(|_| Constraint::Ratio(1, num_agents as u32))
-        .collect();
-
-    let chunks = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints(constraints)
-        .split(area);
-
-    // Get current time for pulse animation
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
-
-    for (i, agent) in agents.iter().enumerate() {
-        if i >= chunks.len() {
-            break;
-        }
-
-        let base_color = status_base_color(&agent.status);
-        let is_working = matches!(agent.status, Status::Working);
-
-        // Create SparklineBars with pulse effect for working status
-        let data: Vec<SparklineBar> = agent
-            .activity
-            .iter()
-            .enumerate()
-            .map(|(idx, v)| {
-                let value = (v * 8.0) as u64;
-                let bar = SparklineBar::from(value);
-
-                // Pulse effect: recent bars glow brighter when working
-                if is_working && idx >= agent.activity.len().saturating_sub(5) {
-                    // Pulse based on time - creates a breathing effect
-                    let pulse = ((now / 100) % 10) as usize;
-                    let intensity = if (idx + pulse).is_multiple_of(3) {
-                        colors::WORKING_BRIGHT // Brighter pulse
-                    } else {
-                        base_color
-                    };
-                    bar.style(Style::default().fg(intensity))
-                } else {
-                    bar.style(Style::default().fg(base_color))
-                }
-            })
-            .collect();
-
-        let sparkline = Sparkline::default()
-            .data(data)
-            .direction(RenderDirection::LeftToRight)
-            .bar_set(symbols::bar::NINE_LEVELS)
-            .absent_value_style(Style::default().fg(colors::BG_LIGHT))
-            .absent_value_symbol(symbols::bar::NINE_LEVELS.empty)
-            .block(
-                Block::default()
-                    .title(format!(" {} ", truncate(&agent.project, 12)))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors::BORDER))
-                    .border_type(ratatui::widgets::BorderType::Rounded),
-            );
-
-        f.render_widget(sparkline, chunks[i]);
-    }
-
-    // Show placeholder if no agents
-    if agents.is_empty() {
-        let placeholder = Block::default()
-            .title(" Activity ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(colors::BORDER))
-            .border_type(ratatui::widgets::BorderType::Rounded);
-        f.render_widget(placeholder, area);
-    }
 }
 
 fn render_footer(f: &mut Frame, area: Rect, app: &App) {

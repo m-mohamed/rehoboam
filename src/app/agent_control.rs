@@ -32,7 +32,7 @@ pub fn send_to_selected(
     } else if pane_id.starts_with('%') {
         send_tmux_signal(pane_id, signal, action_name);
     } else {
-        tracing::warn!(pane_id = %pane_id, "Cannot {}: unknown pane type", action_name);
+        tracing::warn!(pane_id = %pane_id, "Cannot {}: agent not in tmux (requires tmux pane)", action_name);
     }
 }
 
@@ -262,7 +262,7 @@ pub fn send_custom_input(state: &AppState, sprites_client: Option<&SpritesClient
     } else {
         tracing::warn!(
             pane_id = %pane_id,
-            "Cannot send input: unknown pane type"
+            "Cannot send input: agent not in tmux (requires tmux pane)"
         );
     }
 }

@@ -36,12 +36,23 @@ pub fn render_team_view(f: &mut Frame, area: ratatui::layout::Rect, app: &App) {
         } else {
             "\u{1f465}" // 👥
         };
+        // Add pending task count from filesystem task lists
+        let task_suffix = app
+            .state
+            .fs_task_lists
+            .get(team_name.as_str())
+            .map(|list| list.tasks.iter().filter(|t| t.status == "pending").count())
+            .filter(|&n| n > 0)
+            .map(|n| format!(" | {} pending", n))
+            .unwrap_or_default();
+
         let header = format!(
-            "{} {} ({} agent{})",
+            "{} {} ({} agent{}){}",
             team_icon,
             team_name,
             agents.len(),
-            if agents.len() == 1 { "" } else { "s" }
+            if agents.len() == 1 { "" } else { "s" },
+            task_suffix
         );
         items.push(ListItem::new(Line::from(vec![Span::styled(
             header,

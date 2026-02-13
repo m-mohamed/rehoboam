@@ -1,9 +1,8 @@
 //! Tmux-based reconciliation for agent state
 //!
-//! Supplements unreliable Claude Code hooks by:
-//! 1. Detecting permission prompts via tmux pane capture
-//! 2. Detecting dead/crashed panes
-//! 3. Repairing orphaned state fields that block timeout transitions
+//! Checks tmux pane health and repairs stuck agent state fields:
+//! 1. Detecting dead/crashed panes
+//! 2. Repairing orphaned state fields that block timeout transitions
 //!
 //! Runs every `interval_secs` (default 3s) and only checks agents
 //! in "uncertain states" (Working with no events for > `uncertain_threshold_secs`).
@@ -13,16 +12,13 @@ use std::time::Instant;
 use crate::config::{ReconciliationConfig, MAX_EVENTS};
 use crate::event::{EventSource, HookEvent};
 use crate::state::{status_to_column, AppState, AttentionType, Status};
-use crate::tmux::{PromptType, TmuxController};
+use crate::tmux::TmuxController;
 
 /// Clear orphaned current_tool after this many seconds
 pub const ORPHANED_TOOL_TIMEOUT_SECS: i64 = 120;
 
 /// Clear orphaned in_response after this many seconds
 pub const ORPHANED_RESPONSE_TIMEOUT_SECS: i64 = 60;
-
-/// Number of lines to capture from pane for pattern matching
-const CAPTURE_LINES: usize = 30;
 
 /// Reconciler state for tmux-based state repair
 pub struct Reconciler {
@@ -149,27 +145,11 @@ impl Reconciler {
                 return false;
             }
             Ok(true) => {
-                // Pane alive, continue with prompt detection
+                // Pane alive, continue with orphan repair
             }
         }
 
-        // Phase 2: Detect prompts in pane output
-        match TmuxController::capture_pane_tail(pane_id, CAPTURE_LINES) {
-            Ok(output) => {
-                if let Some(prompt_type) = TmuxController::match_prompt_patterns(&output) {
-                    return self.handle_prompt_detected(state, pane_id, prompt_type);
-                }
-            }
-            Err(e) => {
-                tracing::debug!(
-                    pane_id = %pane_id,
-                    error = %e,
-                    "Reconciler: failed to capture pane output"
-                );
-            }
-        }
-
-        // Phase 3: Repair orphaned state fields
+        // Phase 2: Repair orphaned state fields
         self.repair_orphaned_fields(state, pane_id, now)
     }
 
@@ -214,62 +194,6 @@ impl Reconciler {
         push_event(
             state,
             synthetic_event(pane_id, event, "attention", &project),
-        );
-
-        true
-    }
-
-    /// Handle prompt detected in pane output
-    fn handle_prompt_detected(
-        &self,
-        state: &mut AppState,
-        pane_id: &str,
-        prompt_type: PromptType,
-    ) -> bool {
-        let Some(agent) = state.agents.get_mut(pane_id) else {
-            return false;
-        };
-
-        let old_status = agent.status.clone();
-        let new_status = match prompt_type {
-            PromptType::Permission => Status::Attention(AttentionType::Permission),
-            PromptType::Input => Status::Attention(AttentionType::Input),
-        };
-
-        if old_status == new_status {
-            return false;
-        }
-
-        let project = agent.project.clone();
-        let event_name = format!("Reconciler:{prompt_type:?}");
-
-        tracing::info!(
-            pane_id = %pane_id,
-            project = %project,
-            old = ?old_status,
-            new = ?new_status,
-            prompt = ?prompt_type,
-            "Reconciler: detected prompt, fixing state"
-        );
-
-        // Update status counts
-        let old_col = status_to_column(&old_status);
-        let new_col = status_to_column(&new_status);
-        state.status_counts[old_col] = state.status_counts[old_col].saturating_sub(1);
-        state.status_counts[new_col] += 1;
-
-        agent.status = new_status;
-        agent.last_event = event_name.clone();
-        agent.last_update = current_timestamp();
-
-        // Clear orphaned flags
-        agent.in_response = false;
-        agent.current_tool = None;
-
-        // Add to event log for debug panel visibility
-        push_event(
-            state,
-            synthetic_event(pane_id, &event_name, "attention", &project),
         );
 
         true

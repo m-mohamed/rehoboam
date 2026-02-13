@@ -15,7 +15,7 @@ pub fn render_task_board(f: &mut Frame, area: Rect, app: &App) {
     let teams = app.state.tasks_by_team();
 
     if teams.is_empty() {
-        let empty = Paragraph::new("No tasks tracked. Press T to return.")
+        let empty = Paragraph::new("No tasks tracked. Press T or Esc to close.")
             .alignment(Alignment::Center)
             .style(Style::default().fg(colors::IDLE))
             .block(
