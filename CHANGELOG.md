@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.24] - 2026-02-13
+
+### Added
+
+- Director's control surface — identity nav, 3-zone layout, dead code cleanup
+[0.9.24]: https://github.com/m-mohamed/rehoboam/compare/v0.9.23...v0.9.24
+
+
 ## [0.9.23] - 2026-02-12
 
 ### Fixed
