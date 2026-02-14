@@ -10,38 +10,39 @@ use ratatui::{
 use super::super::helpers::centered_rect;
 
 pub fn render_help(f: &mut Frame) {
-    let area = centered_rect(55, 75, f.area());
+    let area = centered_rect(55, 80, f.area());
 
     let help_text = r"
+  Views (uppercase)
+  T            Task board
+  P            Plan viewer
+  S            Stats dashboard
+  L            History log
+  D            Debug viewer
+  I            Insights report
+  ?, H         This help
+
   Navigation
-  j/k         Move between agents
-  Enter       Jump to agent's terminal
-  /           Search agents
+  j/k, Up/Dn   Move between agents
+  Enter        Jump to agent's terminal
+  /            Search agents
 
   Actions
-  y/n         Approve/reject permission
-  c           Custom input
-  s           Spawn agent
+  s            Spawn agent
 
-  Views
-  d           Dashboard
-  T           Task board
-  D           Diff viewer
-  f           Freeze display
-  ?, H        This help
+  Search Mode
+  Esc          Cancel search
+  Enter        Confirm / jump to match
+  Type         Filter agents
 
-  Git
-  g           Commit
-  p           Push
+  Spawn Mode
+  Tab / Dn     Next field
+  Shift+Tab/Up Previous field
+  Enter        Submit / toggle
+  Esc          Cancel
 
-  Selection
-  Space       Toggle select
-  Y/N         Bulk approve/reject
-  K           Kill selected
-  x           Clear selection
-
-  q, Esc      Quit (Esc closes modals first)
-  Ctrl+C      Force quit
+  q, Esc       Quit (Esc closes modals first)
+  Ctrl+C       Force quit
 ";
 
     let help = Paragraph::new(help_text)

@@ -43,13 +43,6 @@ pub enum Event {
         /// New status
         status: SpriteStatusType,
     },
-    /// Checkpoint data fetched from sprites API
-    CheckpointData {
-        /// Sprite identifier
-        sprite_id: String,
-        /// List of checkpoints
-        checkpoints: Vec<sprites::Checkpoint>,
-    },
 }
 
 /// Sprite status types

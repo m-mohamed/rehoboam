@@ -23,13 +23,11 @@ src/
 │   ├── mod.rs        App struct, handle_event(), tick(), view modes
 │   ├── keyboard.rs   Key bindings (vim-style h/j/k/l navigation)
 │   ├── spawn.rs      Agent spawning (tmux panes, sprites)
-│   ├── operations.rs Git operations (commit, push, diff view)
-│   ├── agent_control.rs  Approve/reject/kill actions (single + bulk)
-│   └── navigation.rs Jump to pane, search, capture output
+│   └── navigation.rs Jump to pane, search
 │
 ├── state/
 │   ├── mod.rs        AppState, process_event(), agents_by_team()
-│   └── agent.rs      Agent struct, Status enum, LoopMode
+│   └── agent.rs      Agent struct, Status enum, AgentRole
 │
 ├── event/
 │   ├── mod.rs        HookEvent struct, ClaudeHookInput parsing, derive_status()
@@ -41,18 +39,12 @@ src/
 │   ├── column.rs     Kanban column layout
 │   └── card.rs       Agent card rendering
 │
-├── tmux.rs           Tmux pane control (send keys, capture output)
-├── git.rs            Git operations (checkpoint, push, diff)
-├── diff.rs           Enhanced diff parsing (files, hunks, line numbers)
-├── rehoboam_loop.rs  Loop mode logic (Rehoboam's Loop autonomous iterations)
-├── reconcile.rs      Tmux reconciliation for stuck agent detection
+├── tmux.rs           Tmux pane control (send keys, split panes)
 │
 └── sprite/           Remote agent support (experimental)
     ├── mod.rs        Module exports
     ├── config.rs     Network presets
-    ├── controller.rs Sprite input controller
-    ├── forwarder.rs  WebSocket event forwarder
-    └── manager.rs    Checkpoint records
+    └── forwarder.rs  WebSocket event forwarder
 ```
 
 ## Data Flow
@@ -123,32 +115,6 @@ The `derive_status()` function maps hook events to TUI status:
 - **Non-blocking hooks**: 500ms timeout ensures Claude Code never waits
 - **Agent identity**: Agents keyed by pane_id (tmux: `%N`, sprite: `sp_xxx`)
 
-## Loop Mode (Rehoboam's Loop)
-
-Rehoboam's Loop enables autonomous agent loops for long-running tasks:
-
-```
-Agent spawned with loop mode
-        │
-        ▼
-Claude Code runs → Stop event
-        │
-        ▼
-AppState checks stop conditions:
-  - Stop word found in reason? → Complete
-  - Max iterations reached? → Complete
-  - 5 identical Stop reasons? → Stalled
-  - Otherwise → Send Enter to continue
-        │
-        ▼
-Agent resumes, iteration counter increments
-```
-
-Key files:
-- `rehoboam_loop.rs` - Iteration tracking, state persistence, stop word detection
-- `state/agent.rs` - `LoopMode` enum (None, Active, Stalled, Complete)
-- `app/spawn.rs` - Loop config registration on spawn
-
 ## UI Views & Modes
 
 ### View Modes
@@ -166,7 +132,6 @@ Three primary layouts, cycled with `v`:
 ```rust
 pub enum InputMode {
     Normal,  // Default navigation
-    Input,   // Custom input to agent (c)
     Spawn,   // Agent spawning dialog (s)
     Search,  // Agent search (/)
 }
@@ -174,15 +139,9 @@ pub enum InputMode {
 
 ### Modal Overlays
 
-Six modal dialogs that overlay the main view:
-
 | Modal | Toggle | Purpose |
 |-------|--------|---------|
 | Help | `?` / `H` | Keybinding reference |
-| Dashboard | `d` | Progress statistics |
-| Diff | `D` | Git diff viewer with file navigation |
-| Checkpoint Timeline | `t` | Sprite checkpoint restore |
-| Input Dialog | `c` | Custom input to agent |
 | Spawn Dialog | `s` | New agent configuration |
 
 ### Keybinding Philosophy

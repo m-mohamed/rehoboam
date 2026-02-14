@@ -10,8 +10,8 @@ mod views;
 use crate::app::{App, InputMode};
 use crate::config::colors;
 use modals::{
-    render_checkpoint_timeline, render_dashboard, render_diff_modal, render_event_log, render_help,
-    render_input_dialog, render_spawn_dialog,
+    render_debug_viewer, render_event_log, render_help, render_history_viewer,
+    render_insights_viewer, render_plan_viewer, render_spawn_dialog, render_stats_viewer,
 };
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout},
@@ -23,7 +23,7 @@ use ratatui::{
 use views::render_team_view;
 
 /// Main render function
-pub fn render(f: &mut Frame, app: &App) {
+pub fn render(f: &mut Frame, app: &mut App) {
     // Create layout: 3 zones (header, team view, footer)
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -50,32 +50,42 @@ pub fn render(f: &mut Frame, app: &App) {
         views::render_task_board(f, area, app);
     }
 
-    // Render help popup if active
+    // Render plan viewer overlay if active
+    if app.show_plan_viewer {
+        let area = helpers::centered_rect(85, 85, f.area());
+        render_plan_viewer(f, area, app);
+    }
+
+    // Render stats dashboard overlay if active
+    if app.show_stats_viewer {
+        let area = helpers::centered_rect(90, 90, f.area());
+        render_stats_viewer(f, area, app);
+    }
+
+    // Render history timeline overlay if active
+    if app.show_history_viewer {
+        let area = helpers::centered_rect(85, 85, f.area());
+        render_history_viewer(f, area, app);
+    }
+
+    // Render debug log viewer overlay if active
+    if app.show_debug_viewer {
+        let area = helpers::centered_rect(85, 85, f.area());
+        render_debug_viewer(f, area, app);
+    }
+
+    // Render insights report overlay if active
+    if app.show_insights_viewer {
+        let area = helpers::centered_rect(90, 90, f.area());
+        render_insights_viewer(f, area, app);
+    }
+
+    // Render help popup if active (always on top)
     if app.show_help {
         render_help(f);
     }
 
-    // Render dashboard overlay if active
-    if app.show_dashboard {
-        render_dashboard(f, app);
-    }
-
-    // Render diff modal if active
-    if app.show_diff {
-        render_diff_modal(f, app);
-    }
-
-    // Render checkpoint timeline if active
-    if app.show_checkpoint_timeline {
-        render_checkpoint_timeline(f, app);
-    }
-
-    // Render input dialog if in input mode
-    if app.input_mode == InputMode::Input {
-        render_input_dialog(f, app);
-    }
-
-    // Render spawn dialog if in spawn mode
+    // Render spawn dialog if in spawn mode (always on top)
     if app.input_mode == InputMode::Spawn {
         render_spawn_dialog(f, &app.spawn_state);
     }
@@ -107,7 +117,6 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         .map(|v| format!(" [CC {v}]"))
         .unwrap_or_default();
 
-    let frozen_indicator = if app.frozen { " [FROZEN]" } else { "" };
     // Show sprite count with connection status if any remote agents
     let connected_count = app.state.connected_sprite_count();
     let sprite_indicator = if sprite_count > 0 {
@@ -131,15 +140,14 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         String::new()
     };
     let title = if total == 0 {
-        format!("Rehoboam{frozen_indicator}")
+        "Rehoboam".to_string()
     } else {
         format!(
-            "Rehoboam ({} agents: {}){}{}{}",
+            "Rehoboam ({} agents: {}){}{}",
             total,
             status_parts.join(", "),
             cc_version,
             sprite_indicator,
-            frozen_indicator,
         )
     };
 
@@ -166,28 +174,9 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    // Check if we have a status message to display
-    if let Some((ref msg, timestamp)) = app.status_message {
-        // Only show if less than 5 seconds old
-        if timestamp.elapsed() < std::time::Duration::from_secs(5) {
-            let style = if msg.starts_with("Error") || msg.starts_with("⚠") {
-                Style::default().fg(Color::Red)
-            } else if msg.starts_with("✓") {
-                Style::default().fg(Color::Green)
-            } else {
-                Style::default().fg(Color::Yellow)
-            };
-            let status = Paragraph::new(msg.as_str())
-                .style(style)
-                .alignment(Alignment::Center);
-            f.render_widget(status, area);
-            return;
-        }
-    }
-
     // Search mode: show search input
     if app.input_mode == InputMode::Search {
-        let search_text = format!("🔍 Search: {}█", app.search_query);
+        let search_text = format!("Search: {}|", app.search_query);
         let footer = Paragraph::new(search_text)
             .style(Style::default().fg(Color::Yellow))
             .alignment(Alignment::Center);
@@ -195,46 +184,15 @@ fn render_footer(f: &mut Frame, area: Rect, app: &App) {
         return;
     }
 
-    let selection_count = app.state.selected_agents.len();
-
     // Context-aware help based on selection state
-    let help = if selection_count > 0 {
-        // Multi-select mode
-        format!("[{selection_count} selected]  Y/N:bulk approve  K:kill all  x:clear  Space:toggle")
-    } else if let Some(_agent) = app.state.selected_agent() {
+    let help = if let Some(_agent) = app.state.selected_agent() {
         // Single agent selected - show relevant commands
-        let mode_indicators: Vec<&str> = [
-            app.debug_mode.then_some("[debug]"),
-            app.frozen.then_some("[frozen]"),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-
-        let prefix = if mode_indicators.is_empty() {
-            String::new()
-        } else {
-            format!("{} ", mode_indicators.join(" "))
-        };
-
-        format!("{prefix}Enter:jump  y/n:approve  c:input  T:tasks  d:dash  ?:help")
+        let debug = if app.debug_mode { "[debug] " } else { "" };
+        format!("{debug}Enter:jump  T:tasks  P:plans  S:stats  L:log  D:debug  I:insights  ?:help")
     } else {
         // No selection - show general commands
-        let mode_indicators: Vec<&str> = [
-            app.debug_mode.then_some("[debug]"),
-            app.frozen.then_some("[frozen]"),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-
-        let prefix = if mode_indicators.is_empty() {
-            String::new()
-        } else {
-            format!("{} ", mode_indicators.join(" "))
-        };
-
-        format!("{prefix}j/k:nav  s:spawn  T:tasks  d:dash  /:search  ?:help  q:quit")
+        let debug = if app.debug_mode { "[debug] " } else { "" };
+        format!("{debug}j/k:nav  s:spawn  T:tasks  P:plans  S:stats  L:log  D:debug  I:insights  ?:help  q:quit")
     };
 
     let footer = Paragraph::new(help)

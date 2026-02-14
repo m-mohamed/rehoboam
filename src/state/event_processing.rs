@@ -864,17 +864,6 @@ impl AppState {
             // v2.0: Reset session-specific tracking on session start
             if event.event == "SessionStart" {
                 agent.modified_files.clear();
-
-                // Capture session start commit for session-scoped diffs
-                if let Some(ref working_dir) = agent.working_dir {
-                    let git = crate::git::GitController::new(working_dir.clone());
-                    agent.session_start_commit = git.head_commit().ok();
-                    tracing::debug!(
-                        pane_id = %pane_id,
-                        commit = ?agent.session_start_commit,
-                        "Captured session start commit"
-                    );
-                }
             }
         }
 

@@ -3,7 +3,6 @@
 //! Tracks the status and activity of each Claude Code agent running in tmux panes.
 
 use std::collections::{HashSet, VecDeque};
-use std::path::PathBuf;
 
 /// Agent role classification based on tool usage patterns
 ///
@@ -63,6 +62,7 @@ impl TaskStatus {
 #[derive(Debug, Clone)]
 pub struct TaskInfo {
     /// Task ID (from TaskCreate response or TaskUpdate input)
+    #[allow(dead_code)] // Used as HashMap key externally; kept for data integrity
     pub id: String,
     /// Task subject/title
     pub subject: String,
@@ -263,10 +263,6 @@ pub struct Agent {
     /// Sprite ID (same as pane_id for sprite agents)
     pub sprite_id: Option<String>,
 
-    // v1.0 Git operations
-    /// Working directory for git operations (worktree path)
-    pub working_dir: Option<std::path::PathBuf>,
-
     // v1.2 Agent role classification (Cursor-inspired)
     /// Inferred agent role based on tool usage patterns
     pub role: AgentRole,
@@ -275,9 +271,7 @@ pub struct Agent {
 
     // v2.0 Per-agent file tracking (Phase 7)
     /// Files modified by this agent (tracked from Edit/Write tool_input)
-    pub modified_files: HashSet<PathBuf>,
-    /// Git commit hash at session start (for session-scoped diffs)
-    pub session_start_commit: Option<String>,
+    pub modified_files: HashSet<std::path::PathBuf>,
 
     // Claude Code 2.1.x integration fields
     /// Context window usage percentage (0.0-100.0)
@@ -397,14 +391,11 @@ impl Agent {
             // v0.10.0 Sprite tracking
             is_sprite: false,
             sprite_id: None,
-            // v1.0 Git operations
-            working_dir: None,
             // v1.2 Agent role classification
             role: AgentRole::General,
             tool_history: VecDeque::with_capacity(10),
             // v2.0 Per-agent file tracking
             modified_files: HashSet::new(),
-            session_start_commit: None,
             // Claude Code 2.1.x integration fields
             context_usage_percent: None,
             context_remaining_percent: None,

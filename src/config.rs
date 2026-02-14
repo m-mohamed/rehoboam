@@ -19,10 +19,6 @@ pub struct RehoboamConfig {
     #[serde(default)]
     pub timeouts: TimeoutConfig,
 
-    /// Reconciliation configuration
-    #[serde(default)]
-    pub reconciliation: ReconciliationConfig,
-
     /// Health check configuration (hooks.log monitoring)
     #[serde(default)]
     pub health: HealthConfig,
@@ -55,46 +51,6 @@ fn default_idle_timeout() -> i64 {
 
 fn default_stale_timeout() -> i64 {
     300
-}
-
-/// Configuration for tmux-based reconciliation
-///
-/// Reconciliation checks tmux pane health and repairs stuck agent state fields.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ReconciliationConfig {
-    /// Enable tmux reconciliation (default: true)
-    #[serde(default = "default_reconcile_enabled")]
-    pub enabled: bool,
-
-    /// Seconds between reconciliation runs (default: 5)
-    #[serde(default = "default_reconcile_interval")]
-    pub interval_secs: u64,
-
-    /// Agent is "uncertain" if no events for this many seconds (default: 30)
-    #[serde(default = "default_uncertain_threshold")]
-    pub uncertain_threshold_secs: i64,
-}
-
-impl Default for ReconciliationConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_reconcile_enabled(),
-            interval_secs: default_reconcile_interval(),
-            uncertain_threshold_secs: default_uncertain_threshold(),
-        }
-    }
-}
-
-fn default_reconcile_enabled() -> bool {
-    true
-}
-
-fn default_reconcile_interval() -> u64 {
-    3 // Check every 3 seconds for responsiveness
-}
-
-fn default_uncertain_threshold() -> i64 {
-    5 // Agent is uncertain after 5 seconds of no events (was 30s, too slow)
 }
 
 /// Health check configuration for hooks.log monitoring
@@ -315,24 +271,6 @@ impl RehoboamConfig {
                 self.timeouts.idle_timeout_secs,
                 old_stale,
                 self.timeouts.stale_timeout_secs
-            );
-        }
-
-        // Clamp reconciliation interval (1s - 60s)
-        let old_interval = self.reconciliation.interval_secs;
-        let old_uncertain = self.reconciliation.uncertain_threshold_secs;
-        self.reconciliation.interval_secs = self.reconciliation.interval_secs.clamp(1, 60);
-        self.reconciliation.uncertain_threshold_secs =
-            self.reconciliation.uncertain_threshold_secs.clamp(1, 300);
-        if old_interval != self.reconciliation.interval_secs
-            || old_uncertain != self.reconciliation.uncertain_threshold_secs
-        {
-            tracing::warn!(
-                "Reconciliation values clamped: interval {}->{}s, uncertain {}->{}s",
-                old_interval,
-                self.reconciliation.interval_secs,
-                old_uncertain,
-                self.reconciliation.uncertain_threshold_secs
             );
         }
 

@@ -4,9 +4,4 @@
 //! (remote VMs) while maintaining real-time monitoring through Rehoboam.
 
 pub mod config;
-pub mod controller;
 pub mod forwarder;
-pub mod manager;
-
-// Re-exports
-pub use manager::CheckpointRecord;

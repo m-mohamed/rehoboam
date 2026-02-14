@@ -44,7 +44,7 @@ src/
   state/       # Agent state, status tracking, role classification
   ui/          # Ratatui widgets (columns, cards, dialogs)
   sprite/      # Remote VM (Sprites) integration
-  git.rs       # Git worktree and checkpoint support
+  tmux.rs      # Tmux pane control (send keys, split panes)
 ```
 
 ## Code Style
@@ -65,7 +65,6 @@ src/
 
 ### Sprites
 - Remote VMs via Fly.io for distributed agent execution
-- Checkpoint/restore support for state persistence
 
 ## Git Standards
 

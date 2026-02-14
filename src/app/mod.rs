@@ -12,28 +12,21 @@
 //! - [`App::handle_event()`] - Event processing
 //! - [`App::tick()`] - Timer updates
 //! - [`App::rendered()`] - Mark frame as rendered
-//! - [`App::show_status()`] - Display status messages
 //!
 //! Direct field access is internal API and may change between versions.
 
-mod agent_control;
 mod keyboard;
 mod navigation;
-mod operations;
 pub mod spawn;
 
 pub use spawn::SpawnState;
 
-use crate::config::{HealthConfig, ReconciliationConfig, TimeoutConfig};
-use crate::diff::ParsedDiff;
+use crate::config::{HealthConfig, TimeoutConfig};
 use crate::event::{Event, EventSource, SpriteStatusType};
 use crate::health::HealthChecker;
-use crate::reconcile::Reconciler;
-use crate::sprite::CheckpointRecord;
+use crate::plans::PlanViewerState;
 use crate::state::AppState;
 use sprites::SpritesClient;
-use std::collections::HashSet;
-use tokio::sync::mpsc;
 
 /// Input mode for the application
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -41,12 +34,62 @@ pub enum InputMode {
     /// Normal navigation mode
     #[default]
     Normal,
-    /// Text input mode (typing custom input for agent)
-    Input,
     /// Spawn dialog mode (creating new agent)
     Spawn,
     /// Search mode (filtering agents)
     Search,
+    /// Plan viewer mode (browsing/reading plans)
+    PlanViewer,
+    /// Stats dashboard mode
+    StatsViewer,
+    /// History timeline mode
+    HistoryViewer,
+    /// Debug log viewer mode
+    DebugViewer,
+    /// Insights report viewer mode
+    InsightsViewer,
+}
+
+/// State for the stats dashboard overlay
+#[derive(Debug, Default)]
+pub struct StatsViewerState {
+    /// Active tab: 0=Overview, 1=Models, 2=Activity, 3=Quality
+    pub active_tab: usize,
+    /// Scroll offset within the current tab
+    pub scroll_offset: u16,
+}
+
+/// State for the history timeline overlay
+#[derive(Debug, Default)]
+pub struct HistoryViewerState {
+    /// Currently selected entry index
+    pub selected_index: usize,
+    /// Scroll offset for the visible window
+    pub scroll_offset: usize,
+}
+
+/// State for the debug log viewer overlay
+#[derive(Debug, Default)]
+pub struct DebugViewerState {
+    /// Currently selected entry in list mode
+    pub selected_index: usize,
+    /// true = reading log content, false = browsing list
+    pub viewing: bool,
+    /// Scroll offset in reader mode
+    pub scroll_offset: u16,
+    /// Total height of rendered content (for scroll bounds)
+    pub rendered_height: u16,
+    /// Loaded file content (one file at a time)
+    pub content: String,
+}
+
+/// State for the insights report viewer overlay
+#[derive(Debug, Default)]
+pub struct InsightsViewerState {
+    /// Active section index
+    pub active_section: usize,
+    /// Scroll offset within the current section
+    pub scroll_offset: u16,
 }
 
 /// Application state and logic
@@ -55,52 +98,38 @@ pub struct App {
     pub should_quit: bool,
     pub debug_mode: bool,
     pub show_help: bool,
-    /// Freeze display - stops UI updates but events still received
-    pub frozen: bool,
     /// Dirty flag: true if UI needs re-render (render-on-change optimization)
     pub needs_render: bool,
-    /// Current input mode (Normal or Input)
+    /// Current input mode
     pub input_mode: InputMode,
-    /// Text buffer for input mode
-    pub input_buffer: String,
     /// Spawn dialog state
     pub spawn_state: SpawnState,
     /// Sprites API client (None if sprites not enabled)
     pub sprites_client: Option<SpritesClient>,
-    /// Event sender for async operations
-    pub event_tx: Option<mpsc::Sender<Event>>,
-    /// Show diff modal
-    pub show_diff: bool,
-    /// Raw diff content (for backwards compatibility)
-    pub diff_content: String,
-    /// Parsed diff with structured data (for enhanced modal)
-    pub parsed_diff: Option<ParsedDiff>,
-    /// Vertical scroll position in diff view
-    pub diff_scroll: u16,
-    /// Currently selected file index in diff
-    pub diff_selected_file: usize,
-    /// Set of collapsed hunks: (file_idx, hunk_idx)
-    pub diff_collapsed_hunks: HashSet<(usize, usize)>,
-    /// Currently selected hunk index within the file
-    pub diff_selected_hunk: usize,
-    /// Show checkpoint timeline modal
-    pub show_checkpoint_timeline: bool,
-    /// Checkpoint history for timeline display
-    pub checkpoint_timeline: Vec<CheckpointRecord>,
-    /// Selected checkpoint index in timeline
-    pub selected_checkpoint: usize,
-    /// Status message to display in footer (message, timestamp)
-    pub status_message: Option<(String, std::time::Instant)>,
-    /// Show progress dashboard overlay
-    pub show_dashboard: bool,
     /// Show task board overlay
     pub show_task_board: bool,
+    /// Show plan viewer overlay
+    pub show_plan_viewer: bool,
+    /// Plan viewer state
+    pub plan_viewer: PlanViewerState,
     /// Search query for agent filtering
     pub search_query: String,
-    /// Session start time for dashboard
-    pub session_start: std::time::Instant,
-    /// Tmux reconciler for detecting stuck agents
-    reconciler: Reconciler,
+    /// Show stats dashboard overlay
+    pub show_stats_viewer: bool,
+    /// Stats viewer state
+    pub stats_viewer: StatsViewerState,
+    /// Show history timeline overlay
+    pub show_history_viewer: bool,
+    /// History viewer state
+    pub history_viewer: HistoryViewerState,
+    /// Show debug log viewer overlay
+    pub show_debug_viewer: bool,
+    /// Debug viewer state
+    pub debug_viewer: DebugViewerState,
+    /// Show insights report overlay
+    pub show_insights_viewer: bool,
+    /// Insights viewer state
+    pub insights_viewer: InsightsViewerState,
     /// hooks.log health checker
     health_checker: HealthChecker,
 }
@@ -109,8 +138,6 @@ impl App {
     pub fn new(
         debug_mode: bool,
         sprites_client: Option<SpritesClient>,
-        event_tx: Option<mpsc::Sender<Event>>,
-        reconciliation_config: &ReconciliationConfig,
         health_config: &HealthConfig,
         timeout_config: &TimeoutConfig,
     ) -> Self {
@@ -122,63 +149,44 @@ impl App {
             should_quit: false,
             debug_mode,
             show_help: false,
-            frozen: false,
             needs_render: true, // Always render first frame
             input_mode: InputMode::Normal,
-            input_buffer: String::new(),
             spawn_state: SpawnState::default(),
             sprites_client,
-            event_tx,
-            show_diff: false,
-            diff_content: String::new(),
-            parsed_diff: None,
-            diff_scroll: 0,
-            diff_selected_file: 0,
-            diff_collapsed_hunks: HashSet::new(),
-            diff_selected_hunk: 0,
-            show_checkpoint_timeline: false,
-            checkpoint_timeline: Vec::new(),
-            selected_checkpoint: 0,
-            status_message: None,
-            show_dashboard: false,
             show_task_board: false,
+            show_plan_viewer: false,
+            plan_viewer: PlanViewerState::default(),
             search_query: String::new(),
-            session_start: std::time::Instant::now(),
-            reconciler: Reconciler::new(reconciliation_config),
+            show_stats_viewer: false,
+            stats_viewer: StatsViewerState::default(),
+            show_history_viewer: false,
+            history_viewer: HistoryViewerState::default(),
+            show_debug_viewer: false,
+            debug_viewer: DebugViewerState::default(),
+            show_insights_viewer: false,
+            insights_viewer: InsightsViewerState::default(),
             health_checker: HealthChecker::new(health_config),
         }
-    }
-
-    /// Show a status message in the footer (clears after 5 seconds)
-    pub fn show_status(&mut self, msg: &str) {
-        self.status_message = Some((msg.to_string(), std::time::Instant::now()));
-        self.needs_render = true;
     }
 
     /// Handle incoming events
     pub fn handle_event(&mut self, event: Event) {
         match event {
             Event::Hook(hook_event) => {
-                // Only process hook events if not frozen
-                if !self.frozen {
-                    let changed = self.state.process_event(*hook_event);
-                    self.needs_render = self.needs_render || changed;
-                }
+                let changed = self.state.process_event(*hook_event);
+                self.needs_render = self.needs_render || changed;
             }
             Event::Key(key) => {
                 self.handle_key(key);
                 self.needs_render = true;
             }
             Event::RemoteHook { sprite_id, event } => {
-                // Process remote hook events from sprites
-                if !self.frozen {
-                    let mut hook_event = *event;
-                    hook_event.source = EventSource::Sprite {
-                        sprite_id: sprite_id.clone(),
-                    };
-                    let changed = self.state.process_event(hook_event);
-                    self.needs_render = self.needs_render || changed;
-                }
+                let mut hook_event = *event;
+                hook_event.source = EventSource::Sprite {
+                    sprite_id: sprite_id.clone(),
+                };
+                let changed = self.state.process_event(hook_event);
+                self.needs_render = self.needs_render || changed;
             }
             Event::SpriteStatus { sprite_id, status } => {
                 match status {
@@ -191,22 +199,6 @@ impl App {
                         self.state.sprite_disconnected(&sprite_id);
                     }
                 }
-                self.needs_render = true;
-            }
-            Event::CheckpointData {
-                sprite_id,
-                checkpoints,
-            } => {
-                tracing::debug!(
-                    sprite_id = %sprite_id,
-                    count = checkpoints.len(),
-                    "Received checkpoint data"
-                );
-                self.checkpoint_timeline = checkpoints
-                    .into_iter()
-                    .map(CheckpointRecord::from)
-                    .collect();
-                self.selected_checkpoint = 0;
                 self.needs_render = true;
             }
         }
@@ -227,11 +219,18 @@ impl App {
         // Throttled internally alongside team metadata refresh
         self.state.refresh_task_data();
 
-        // Run tmux reconciliation (throttled to every 5s internally)
-        // Detects stuck agents by checking pane output for permission prompts
-        if self.reconciler.should_run() {
-            let modified = self.reconciler.run(&mut self.state);
-            self.needs_render = self.needs_render || modified;
+        // Stats always refreshes (small file, 60s throttle)
+        self.state.refresh_stats_data();
+
+        // History and debug only refresh when their view is open
+        if self.show_history_viewer {
+            self.state.refresh_history_data();
+        }
+        if self.show_debug_viewer {
+            self.state.refresh_debug_data();
+        }
+        if self.show_insights_viewer {
+            self.state.refresh_insights_data();
         }
 
         // Run hooks.log health check (throttled to every 60s by default)

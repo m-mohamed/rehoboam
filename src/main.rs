@@ -38,15 +38,13 @@
 mod app;
 mod cli;
 mod config;
-mod diff;
 mod errors;
 mod event;
-mod git;
 mod health;
 mod init;
 mod notify;
 mod picker;
-mod reconcile;
+mod plans;
 mod sprite;
 mod state;
 mod tmux;
@@ -695,9 +693,8 @@ async fn main() -> Result<()> {
 
     // Log configuration
     tracing::info!(
-        "Loaded config: sprites.enabled = {}, reconciliation.enabled = {}",
+        "Loaded config: sprites.enabled = {}",
         app_config.sprites.enabled,
-        app_config.reconciliation.enabled
     );
 
     // Create SpritesClient if token is provided
@@ -771,15 +768,8 @@ async fn run_tui(
     // RAII guard ensures terminal is restored on panic or early return
     let _guard = tui::TerminalGuard;
 
-    // Create app state with sprites client, event channel, and reconciliation config
-    let mut app = App::new(
-        debug_mode,
-        sprites_client,
-        Some(event_tx.clone()),
-        &config.reconciliation,
-        &config.health,
-        &config.timeouts,
-    );
+    // Create app state with sprites client, event channel, and config
+    let mut app = App::new(debug_mode, sprites_client, &config.health, &config.timeouts);
 
     // Create cancellation token for graceful shutdown
     let cancel = CancellationToken::new();
@@ -799,7 +789,7 @@ async fn run_tui(
         // Frame rate limiting with dirty flag check
         let now = Instant::now();
         if app.needs_render && now.duration_since(last_frame) >= frame_duration {
-            terminal.draw(|f| ui::render(f, &app))?;
+            terminal.draw(|f| ui::render(f, &mut app))?;
             app.rendered();
             last_frame = now;
         }

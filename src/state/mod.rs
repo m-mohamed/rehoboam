@@ -6,11 +6,21 @@
 //! - Status count caching for efficient UI rendering
 
 mod agent;
+mod debug_discovery;
 mod event_processing;
+mod facet_discovery;
+mod history_discovery;
+mod insights_discovery;
+mod stats_discovery;
 mod task_discovery;
 mod team_discovery;
 
 pub use agent::{Agent, AgentRole, AttentionType, Status, Subagent, TaskInfo, TaskStatus};
+pub use debug_discovery::DebugLogEntry;
+pub use facet_discovery::SessionQuality;
+pub use history_discovery::HistoryEntry;
+pub use insights_discovery::{InsightsBar, InsightsReport};
+pub use stats_discovery::StatsCache;
 pub use task_discovery::{FsTaskList, TaskDiscovery};
 pub use team_discovery::TeamDiscovery;
 
@@ -67,6 +77,24 @@ pub struct AppState {
     pub fs_task_lists: HashMap<String, FsTaskList>,
     /// Last filesystem task scan timestamp (throttled to every 10s)
     pub last_task_scan: i64,
+    /// Claude Code stats cache (daily activity, model usage, etc.)
+    pub stats_cache: Option<StatsCache>,
+    /// Aggregated session quality from facets
+    pub session_quality: Option<SessionQuality>,
+    /// History entries from history.jsonl (newest first, capped at 500)
+    pub history_entries: Vec<HistoryEntry>,
+    /// Debug log entries (metadata only, sorted by mtime desc)
+    pub debug_log_entries: Vec<DebugLogEntry>,
+    /// Parsed insights report
+    pub insights_report: Option<InsightsReport>,
+    /// Last stats/facets scan timestamp (throttled to 60s)
+    pub last_stats_scan: i64,
+    /// Last history scan timestamp (throttled to 30s)
+    pub last_history_scan: i64,
+    /// Last debug scan timestamp (throttled to 60s)
+    pub last_debug_scan: i64,
+    /// Last insights scan timestamp (throttled to 120s)
+    pub last_insights_scan: i64,
 }
 
 impl Default for AppState {
@@ -86,6 +114,15 @@ impl Default for AppState {
             last_team_scan: 0,
             fs_task_lists: HashMap::new(),
             last_task_scan: 0,
+            stats_cache: None,
+            session_quality: None,
+            history_entries: Vec::new(),
+            debug_log_entries: Vec::new(),
+            insights_report: None,
+            last_stats_scan: 0,
+            last_history_scan: 0,
+            last_debug_scan: 0,
+            last_insights_scan: 0,
         }
     }
 }
@@ -326,43 +363,6 @@ impl AppState {
             .and_then(|id| self.agents.get(id))
     }
 
-    /// Toggle selection of the currently focused agent
-    pub fn toggle_selection(&mut self) {
-        if let Some(agent) = self.selected_agent() {
-            let pane_id = agent.pane_id.clone();
-            if self.selected_agents.contains(&pane_id) {
-                self.selected_agents.remove(&pane_id);
-            } else {
-                self.selected_agents.insert(pane_id);
-            }
-        }
-    }
-
-    /// Clear all selections
-    pub fn clear_selection(&mut self) {
-        self.selected_agents.clear();
-    }
-
-    /// Get list of selected agent pane_ids (tmux only)
-    pub fn selected_tmux_panes(&self) -> Vec<String> {
-        self.selected_agents
-            .iter()
-            .filter(|id| id.starts_with('%'))
-            .cloned()
-            .collect()
-    }
-
-    // v0.10.0 Sprite Methods
-
-    /// Get list of selected sprite agent IDs
-    pub fn selected_sprite_agents(&self) -> Vec<String> {
-        self.selected_agents
-            .iter()
-            .filter(|id| self.sprite_agent_ids.contains(*id))
-            .cloned()
-            .collect()
-    }
-
     /// Get count of sprite agents
     pub fn sprite_agent_count(&self) -> usize {
         self.sprite_agent_ids.len()
@@ -485,6 +485,95 @@ impl AppState {
             }
             Err(e) => {
                 tracing::warn!(error = %e, "Failed to scan ~/.claude/tasks/");
+            }
+        }
+    }
+
+    /// Periodically refresh stats cache and facet data
+    ///
+    /// Throttled to every 60s. Stats is a small file, always refreshed.
+    pub fn refresh_stats_data(&mut self) {
+        let now = current_timestamp();
+        if self.last_stats_scan != 0 && now - self.last_stats_scan < 60 {
+            return;
+        }
+        self.last_stats_scan = now;
+
+        match stats_discovery::StatsDiscovery::scan_stats() {
+            Ok(cache) => {
+                self.stats_cache = Some(cache);
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Failed to scan stats-cache.json");
+            }
+        }
+
+        match facet_discovery::FacetDiscovery::scan_facets() {
+            Ok(quality) => {
+                self.session_quality = Some(quality);
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Failed to scan facets");
+            }
+        }
+    }
+
+    /// Periodically refresh history data (on-demand when view is open)
+    ///
+    /// Throttled to every 30s.
+    pub fn refresh_history_data(&mut self) {
+        let now = current_timestamp();
+        if self.last_history_scan != 0 && now - self.last_history_scan < 30 {
+            return;
+        }
+        self.last_history_scan = now;
+
+        match history_discovery::HistoryDiscovery::scan_history() {
+            Ok(entries) => {
+                self.history_entries = entries;
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Failed to scan history.jsonl");
+            }
+        }
+    }
+
+    /// Periodically refresh debug log index (on-demand when view is open)
+    ///
+    /// Throttled to every 60s.
+    pub fn refresh_debug_data(&mut self) {
+        let now = current_timestamp();
+        if self.last_debug_scan != 0 && now - self.last_debug_scan < 60 {
+            return;
+        }
+        self.last_debug_scan = now;
+
+        match debug_discovery::DebugDiscovery::scan_debug_logs() {
+            Ok(entries) => {
+                self.debug_log_entries = entries;
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Failed to scan debug logs");
+            }
+        }
+    }
+
+    /// Periodically refresh insights report (on-demand when view is open)
+    ///
+    /// Throttled to every 120s (file rarely changes).
+    pub fn refresh_insights_data(&mut self) {
+        let now = current_timestamp();
+        if self.last_insights_scan != 0 && now - self.last_insights_scan < 120 {
+            return;
+        }
+        self.last_insights_scan = now;
+
+        match insights_discovery::InsightsDiscovery::scan_report() {
+            Ok(report) => {
+                self.insights_report = Some(report);
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "Failed to scan insights report");
             }
         }
     }
@@ -642,25 +731,6 @@ impl AppState {
         });
 
         result
-    }
-
-    /// Set the working directory for an agent (for git operations)
-    pub fn set_agent_working_dir(&mut self, pane_id: &str, working_dir: std::path::PathBuf) {
-        if let Some(agent) = self.agents.get_mut(pane_id) {
-            agent.working_dir = Some(working_dir);
-        }
-    }
-
-    /// Set the task list ID for an agent (Claude Code Tasks API)
-    pub fn set_agent_task_list_id(&mut self, pane_id: &str, task_list_id: String) {
-        if let Some(agent) = self.agents.get_mut(pane_id) {
-            agent.task_list_id = Some(task_list_id);
-            tracing::info!(
-                pane_id = %pane_id,
-                task_list_id = ?agent.task_list_id,
-                "Set agent task list ID"
-            );
-        }
     }
 }
 

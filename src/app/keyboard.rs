@@ -2,7 +2,9 @@
 //!
 //! Routes keyboard events to mode-specific handlers based on [`InputMode`].
 //!
-//! # Keyboard Shortcuts (Normal Mode)
+//! # Keyboard Layout
+//!
+//! **Uppercase = Views** (open overlays), **lowercase = actions** (do things).
 //!
 //! ## Navigation
 //! - `j`/`↓` - Move to next agent
@@ -10,30 +12,24 @@
 //! - `Enter` - Jump to selected agent's tmux pane
 //! - `/` - Enter search mode
 //!
-//! ## View Controls
-//! - `?`/`H` - Toggle help overlay
-//! - `d` - Toggle progress dashboard
-//! - `D` - Toggle diff view for selected agent
+//! ## Views (uppercase)
 //! - `T` - Toggle task board overlay
-//! - `f` - Freeze/unfreeze display updates
+//! - `P` - Toggle plan viewer
+//! - `S` - Toggle stats dashboard
+//! - `L` - Toggle history log
+//! - `D` - Toggle debug viewer
+//! - `I` - Toggle insights report
+//! - `?`/`H` - Toggle help
 //!
-//! ## Agent Actions
-//! - `y` - Approve permission request
-//! - `n` - Reject permission request
-//! - `c` - Enter custom input mode
-//! - `Space` - Toggle agent selection (for bulk ops)
+//! ## Actions (lowercase)
 //! - `s` - Open spawn dialog
-//!
-//! ## Git Operations
-//! - `g` - Git commit checkpoint
-//! - `G` - Git push to remote
 //!
 //! ## Application
 //! - `q` - Quit application
-//! - `Esc` - Close overlays or quit
+//! - `Esc` - Close current overlay or quit
 //! - `Ctrl+C` - Force quit
 
-use super::{agent_control, navigation, operations, spawn, App, InputMode};
+use super::{navigation, spawn, App, InputMode};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 impl App {
@@ -45,39 +41,33 @@ impl App {
             return;
         }
 
-        // Handle modal overlays first
-        if self.show_checkpoint_timeline {
-            self.handle_key_checkpoint_timeline(key);
-            return;
-        }
-
         // Route to mode-specific handlers
         match self.input_mode {
             InputMode::Normal => self.handle_key_normal(key),
-            InputMode::Input => self.handle_key_input(key),
             InputMode::Spawn => self.handle_key_spawn(key),
             InputMode::Search => self.handle_key_search(key),
+            InputMode::PlanViewer => self.handle_key_plan_viewer(key),
+            InputMode::StatsViewer => self.handle_key_stats_viewer(key),
+            InputMode::HistoryViewer => self.handle_key_history_viewer(key),
+            InputMode::DebugViewer => self.handle_key_debug_viewer(key),
+            InputMode::InsightsViewer => self.handle_key_insights_viewer(key),
         }
     }
 
     /// Handle keyboard input in Normal mode
     fn handle_key_normal(&mut self, key: crossterm::event::KeyEvent) {
-        // If diff modal is open, route to diff handler
-        if self.show_diff {
-            self.handle_key_diff(key);
-            return;
-        }
-
         match key.code {
-            // Quit (but Esc first closes overlays like help)
+            // Quit (but Esc first closes overlays)
             KeyCode::Char('q') => {
                 self.should_quit = true;
             }
+            // Esc cascade: close overlays in priority order
+            // Note: Stats/History/Debug/Insights/Plan viewers use dedicated InputModes
+            // and handle their own Esc — they never reach this Normal mode handler.
+            // Only help and task_board stay in Normal mode, so only they need handling here.
             KeyCode::Esc => {
                 if self.show_help {
                     self.show_help = false;
-                } else if self.show_dashboard {
-                    self.show_dashboard = false;
                 } else if self.show_task_board {
                     self.show_task_board = false;
                 } else {
@@ -99,31 +89,10 @@ impl App {
             KeyCode::Char('?' | 'H') => {
                 self.show_help = !self.show_help;
             }
-            // Toggle progress dashboard
-            KeyCode::Char('d') => {
-                self.show_dashboard = !self.show_dashboard;
-                tracing::debug!(show_dashboard = self.show_dashboard, "Toggled dashboard");
-            }
-            // Toggle freeze mode (stops UI updates for stable selection)
-            KeyCode::Char('f') => {
-                self.frozen = !self.frozen;
-            }
-
-            // === Permission shortcuts ===
-            KeyCode::Char('y') => {
-                agent_control::approve_selected(&self.state, self.sprites_client.as_ref());
-            }
-            KeyCode::Char('n') => {
-                agent_control::reject_selected(&self.state, self.sprites_client.as_ref());
-            }
-
-            // === Custom input injection ===
-            KeyCode::Char('c') => {
-                if self.state.selected_agent().is_some() {
-                    self.input_mode = InputMode::Input;
-                    self.input_buffer.clear();
-                    tracing::debug!("Entering input mode");
-                }
+            // Toggle task board
+            KeyCode::Char('T') => {
+                self.show_task_board = !self.show_task_board;
+                tracing::debug!(show_task_board = self.show_task_board, "Toggled task board");
             }
 
             // === Agent spawning ===
@@ -136,58 +105,80 @@ impl App {
                 tracing::debug!("Entering spawn mode");
             }
 
-            // === Bulk operations ===
-            KeyCode::Char(' ') => {
-                self.state.toggle_selection();
-                tracing::debug!(
-                    selected_count = self.state.selected_agents.len(),
-                    "Toggled agent selection"
-                );
-            }
-            KeyCode::Char('Y') => {
-                if let Some(msg) =
-                    agent_control::bulk_approve(&mut self.state, self.sprites_client.as_ref())
-                {
-                    self.show_status(&msg);
+            // Plan viewer
+            KeyCode::Char('P') => {
+                if self.show_plan_viewer {
+                    self.show_plan_viewer = false;
+                    self.input_mode = InputMode::Normal;
+                } else {
+                    self.plan_viewer.plans = crate::plans::discover_plans();
+                    self.plan_viewer.selected_index = 0;
+                    self.plan_viewer.viewing = false;
+                    self.show_plan_viewer = true;
+                    self.input_mode = InputMode::PlanViewer;
+                    tracing::debug!(
+                        count = self.plan_viewer.plans.len(),
+                        "Opened plan viewer"
+                    );
                 }
-            }
-            KeyCode::Char('N') => {
-                if let Some(msg) =
-                    agent_control::bulk_reject(&mut self.state, self.sprites_client.as_ref())
-                {
-                    self.show_status(&msg);
-                }
-            }
-            KeyCode::Char('K') => {
-                if let Some(msg) =
-                    agent_control::bulk_kill(&mut self.state, self.sprites_client.as_ref())
-                {
-                    self.show_status(&msg);
-                }
-            }
-            KeyCode::Char('x') => {
-                self.state.clear_selection();
-                tracing::debug!("Cleared all selections");
             }
 
-            // === Git Operations ===
-            KeyCode::Char('g') => {
-                if let Some(msg) = operations::git_commit_selected(&self.state) {
-                    self.show_status(&msg);
+            // Stats dashboard
+            KeyCode::Char('S') => {
+                if self.show_stats_viewer {
+                    self.show_stats_viewer = false;
+                    self.input_mode = InputMode::Normal;
+                } else {
+                    self.show_stats_viewer = true;
+                    self.stats_viewer = super::StatsViewerState::default();
+                    self.input_mode = InputMode::StatsViewer;
+                    tracing::debug!("Opened stats dashboard");
                 }
             }
-            KeyCode::Char('p') => {
-                operations::git_push_selected(&self.state);
+
+            // History timeline
+            KeyCode::Char('L') => {
+                if self.show_history_viewer {
+                    self.show_history_viewer = false;
+                    self.input_mode = InputMode::Normal;
+                } else {
+                    // Force initial data load
+                    self.state.refresh_history_data();
+                    self.show_history_viewer = true;
+                    self.history_viewer = super::HistoryViewerState::default();
+                    self.input_mode = InputMode::HistoryViewer;
+                    tracing::debug!("Opened history viewer");
+                }
             }
+
+            // Debug log viewer
             KeyCode::Char('D') => {
-                self.toggle_diff_view();
+                if self.show_debug_viewer {
+                    self.show_debug_viewer = false;
+                    self.input_mode = InputMode::Normal;
+                } else {
+                    // Force initial data load
+                    self.state.refresh_debug_data();
+                    self.show_debug_viewer = true;
+                    self.debug_viewer = super::DebugViewerState::default();
+                    self.input_mode = InputMode::DebugViewer;
+                    tracing::debug!("Opened debug viewer");
+                }
             }
-            KeyCode::Char('T') => {
-                self.show_task_board = !self.show_task_board;
-                tracing::debug!(show_task_board = self.show_task_board, "Toggled task board");
-            }
-            KeyCode::Char('t') => {
-                self.toggle_checkpoint_timeline();
+
+            // Insights report
+            KeyCode::Char('I') => {
+                if self.show_insights_viewer {
+                    self.show_insights_viewer = false;
+                    self.input_mode = InputMode::Normal;
+                } else {
+                    // Force initial data load
+                    self.state.refresh_insights_data();
+                    self.show_insights_viewer = true;
+                    self.insights_viewer = super::InsightsViewerState::default();
+                    self.input_mode = InputMode::InsightsViewer;
+                    tracing::debug!("Opened insights viewer");
+                }
             }
 
             // Agent search
@@ -197,33 +188,6 @@ impl App {
                 tracing::debug!("Entering search mode");
             }
 
-            _ => {}
-        }
-    }
-
-    /// Handle keyboard input in Input mode
-    fn handle_key_input(&mut self, key: crossterm::event::KeyEvent) {
-        match key.code {
-            KeyCode::Esc => {
-                self.input_mode = InputMode::Normal;
-                self.input_buffer.clear();
-                tracing::debug!("Cancelled input mode");
-            }
-            KeyCode::Enter => {
-                agent_control::send_custom_input(
-                    &self.state,
-                    self.sprites_client.as_ref(),
-                    &self.input_buffer,
-                );
-                self.input_mode = InputMode::Normal;
-                self.input_buffer.clear();
-            }
-            KeyCode::Backspace => {
-                self.input_buffer.pop();
-            }
-            KeyCode::Char(c) => {
-                self.input_buffer.push(c);
-            }
             _ => {}
         }
     }
@@ -246,24 +210,20 @@ impl App {
                         % spawn::SPAWN_FIELD_COUNT;
             }
             KeyCode::Enter => {
-                // Toggle fields (3 = worktree, 4 = claude_tasks, 6 = sprite)
+                // Toggle fields (2 = sprite toggle)
                 match self.spawn_state.active_field {
-                    3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
-                    4 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
-                    6 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                    2 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                     _ => match spawn::validate_spawn(
                         &self.spawn_state,
                         self.sprites_client.is_some(),
                     ) {
                         Ok(()) => {
                             self.spawn_state.validation_error = None;
-                            if let Some(err) = spawn::spawn_agent(
+                            spawn::spawn_agent(
                                 &self.spawn_state,
                                 self.sprites_client.as_ref(),
                                 &mut self.state,
-                            ) {
-                                self.show_status(&err);
-                            }
+                            );
                             self.input_mode = InputMode::Normal;
                             self.spawn_state = spawn::SpawnState::default();
                         }
@@ -274,9 +234,7 @@ impl App {
                 }
             }
             KeyCode::Char(' ') => match self.spawn_state.active_field {
-                3 => self.spawn_state.use_worktree = !self.spawn_state.use_worktree,
-                4 => self.spawn_state.use_claude_tasks = !self.spawn_state.use_claude_tasks,
-                6 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
+                2 => self.spawn_state.use_sprite = !self.spawn_state.use_sprite,
                 0 => {
                     if self.spawn_state.use_sprite {
                         self.spawn_state.github_repo.push(' ');
@@ -285,17 +243,15 @@ impl App {
                     }
                 }
                 1 => self.spawn_state.prompt.push(' '),
-                2 => self.spawn_state.branch_name.push(' '),
-                5 => self.spawn_state.task_list_id.push(' '),
                 _ => {}
             },
             KeyCode::Left => {
-                if self.spawn_state.active_field == 7 {
+                if self.spawn_state.active_field == 3 {
                     self.spawn_state.network_preset = self.spawn_state.network_preset.prev();
                 }
             }
             KeyCode::Right => {
-                if self.spawn_state.active_field == 7 {
+                if self.spawn_state.active_field == 3 {
                     self.spawn_state.network_preset = self.spawn_state.network_preset.next();
                 }
             }
@@ -310,21 +266,6 @@ impl App {
                 1 => {
                     self.spawn_state.prompt.pop();
                 }
-                2 => {
-                    self.spawn_state.branch_name.pop();
-                }
-                5 => {
-                    self.spawn_state.task_list_id.pop();
-                }
-                8 => {
-                    self.spawn_state.ram_mb.pop();
-                }
-                9 => {
-                    self.spawn_state.cpus.pop();
-                }
-                10 => {
-                    self.spawn_state.clone_destination.pop();
-                }
                 _ => {}
             },
             KeyCode::Char(c) => match self.spawn_state.active_field {
@@ -336,48 +277,13 @@ impl App {
                     }
                 }
                 1 => self.spawn_state.prompt.push(c),
-                2 => self.spawn_state.branch_name.push(c),
-                3 => {
-                    if c == 'y' || c == 'Y' {
-                        self.spawn_state.use_worktree = true;
-                    } else if c == 'n' || c == 'N' {
-                        self.spawn_state.use_worktree = false;
-                    }
-                }
-                4 => {
-                    // Claude Tasks toggle - y/n to toggle
-                    if c == 'y' || c == 'Y' {
-                        self.spawn_state.use_claude_tasks = true;
-                    } else if c == 'n' || c == 'N' {
-                        self.spawn_state.use_claude_tasks = false;
-                    }
-                }
-                5 => {
-                    // Task list ID - alphanumeric + dash/underscore
-                    if c.is_alphanumeric() || c == '-' || c == '_' {
-                        self.spawn_state.task_list_id.push(c);
-                    }
-                }
-                6 => {
+                2 => {
                     // Sprite toggle - y/n to toggle
                     if c == 'y' || c == 'Y' {
                         self.spawn_state.use_sprite = true;
                     } else if c == 'n' || c == 'N' {
                         self.spawn_state.use_sprite = false;
                     }
-                }
-                8 => {
-                    if c.is_ascii_digit() {
-                        self.spawn_state.ram_mb.push(c);
-                    }
-                }
-                9 => {
-                    if c.is_ascii_digit() {
-                        self.spawn_state.cpus.push(c);
-                    }
-                }
-                10 => {
-                    self.spawn_state.clone_destination.push(c);
                 }
                 _ => {}
             },
@@ -409,214 +315,280 @@ impl App {
         }
     }
 
-    /// Handle keyboard input in checkpoint timeline modal
-    pub fn handle_key_checkpoint_timeline(&mut self, key: crossterm::event::KeyEvent) {
+    /// Handle keyboard input in PlanViewer mode
+    fn handle_key_plan_viewer(&mut self, key: crossterm::event::KeyEvent) {
+        if self.plan_viewer.viewing {
+            // Reader mode: scrolling through a plan
+            match key.code {
+                KeyCode::Esc | KeyCode::Char('q') => {
+                    // Back to list
+                    self.plan_viewer.viewing = false;
+                    self.plan_viewer.content.clear();
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if self.plan_viewer.scroll_offset
+                        < self.plan_viewer.rendered_height.saturating_sub(1)
+                    {
+                        self.plan_viewer.scroll_offset += 1;
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.plan_viewer.scroll_offset =
+                        self.plan_viewer.scroll_offset.saturating_sub(1);
+                }
+                KeyCode::Char('d') | KeyCode::PageDown => {
+                    let jump = 20;
+                    self.plan_viewer.scroll_offset = self
+                        .plan_viewer
+                        .scroll_offset
+                        .saturating_add(jump)
+                        .min(self.plan_viewer.rendered_height.saturating_sub(1));
+                }
+                KeyCode::Char('u') | KeyCode::PageUp => {
+                    self.plan_viewer.scroll_offset =
+                        self.plan_viewer.scroll_offset.saturating_sub(20);
+                }
+                KeyCode::Char('g') => {
+                    self.plan_viewer.scroll_offset = 0;
+                }
+                KeyCode::Char('G') => {
+                    self.plan_viewer.scroll_offset =
+                        self.plan_viewer.rendered_height.saturating_sub(1);
+                }
+                KeyCode::Char('n') => {
+                    self.plan_viewer.next_plan();
+                }
+                KeyCode::Char('p') => {
+                    self.plan_viewer.prev_plan();
+                }
+                _ => {}
+            }
+        } else {
+            // List mode: browsing plans
+            match key.code {
+                KeyCode::Esc => {
+                    self.show_plan_viewer = false;
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if !self.plan_viewer.plans.is_empty() {
+                        self.plan_viewer.selected_index =
+                            (self.plan_viewer.selected_index + 1) % self.plan_viewer.plans.len();
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if !self.plan_viewer.plans.is_empty() {
+                        self.plan_viewer.selected_index =
+                            if self.plan_viewer.selected_index == 0 {
+                                self.plan_viewer.plans.len() - 1
+                            } else {
+                                self.plan_viewer.selected_index - 1
+                            };
+                    }
+                }
+                KeyCode::Enter => {
+                    self.plan_viewer.load_selected();
+                }
+                _ => {}
+            }
+        }
+    }
+
+    /// Handle keyboard input in StatsViewer mode
+    fn handle_key_stats_viewer(&mut self, key: crossterm::event::KeyEvent) {
         match key.code {
-            KeyCode::Esc | KeyCode::Char('t') => {
-                self.show_checkpoint_timeline = false;
+            KeyCode::Esc => {
+                self.show_stats_viewer = false;
+                self.input_mode = InputMode::Normal;
             }
-            KeyCode::Up | KeyCode::Char('k') => {
-                if self.selected_checkpoint > 0 {
-                    self.selected_checkpoint -= 1;
-                }
+            KeyCode::Tab => {
+                self.stats_viewer.active_tab = (self.stats_viewer.active_tab + 1) % 4;
+                self.stats_viewer.scroll_offset = 0;
             }
-            KeyCode::Down | KeyCode::Char('j') => {
-                if self.selected_checkpoint < self.checkpoint_timeline.len().saturating_sub(1) {
-                    self.selected_checkpoint += 1;
-                }
+            KeyCode::BackTab => {
+                self.stats_viewer.active_tab =
+                    (self.stats_viewer.active_tab + 3) % 4;
+                self.stats_viewer.scroll_offset = 0;
             }
-            KeyCode::Enter => {
-                self.restore_selected_checkpoint();
+            KeyCode::Char('1') => {
+                self.stats_viewer.active_tab = 0;
+                self.stats_viewer.scroll_offset = 0;
+            }
+            KeyCode::Char('2') => {
+                self.stats_viewer.active_tab = 1;
+                self.stats_viewer.scroll_offset = 0;
+            }
+            KeyCode::Char('3') => {
+                self.stats_viewer.active_tab = 2;
+                self.stats_viewer.scroll_offset = 0;
+            }
+            KeyCode::Char('4') => {
+                self.stats_viewer.active_tab = 3;
+                self.stats_viewer.scroll_offset = 0;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.stats_viewer.scroll_offset =
+                    self.stats_viewer.scroll_offset.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.stats_viewer.scroll_offset =
+                    self.stats_viewer.scroll_offset.saturating_sub(1);
             }
             _ => {}
         }
     }
 
-    /// Toggle diff view for selected agent
-    fn toggle_diff_view(&mut self) {
-        if self.show_diff {
-            self.show_diff = false;
-            return;
-        }
-
-        match operations::get_diff_content(&self.state) {
-            Ok((raw, parsed)) => {
-                self.diff_content = raw;
-                self.parsed_diff = Some(parsed);
-                self.diff_scroll = 0;
-                self.diff_selected_file = 0;
-                self.diff_collapsed_hunks.clear();
-                self.show_diff = true;
+    /// Handle keyboard input in HistoryViewer mode
+    fn handle_key_history_viewer(&mut self, key: crossterm::event::KeyEvent) {
+        match key.code {
+            KeyCode::Esc => {
+                self.show_history_viewer = false;
+                self.input_mode = InputMode::Normal;
             }
-            Err(msg) => {
-                self.show_status(&format!("Cannot show diff: {}", msg));
+            KeyCode::Char('j') | KeyCode::Down => {
+                let count = self.state.history_entries.len();
+                if count > 0 {
+                    self.history_viewer.selected_index =
+                        (self.history_viewer.selected_index + 1).min(count - 1);
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.history_viewer.selected_index =
+                    self.history_viewer.selected_index.saturating_sub(1);
+            }
+            _ => {}
+        }
+    }
+
+    /// Handle keyboard input in DebugViewer mode
+    fn handle_key_debug_viewer(&mut self, key: crossterm::event::KeyEvent) {
+        if self.debug_viewer.viewing {
+            // Reader mode: scrolling through log content
+            match key.code {
+                KeyCode::Esc => {
+                    self.debug_viewer.viewing = false;
+                    self.debug_viewer.content.clear();
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if self.debug_viewer.scroll_offset
+                        < self.debug_viewer.rendered_height.saturating_sub(1)
+                    {
+                        self.debug_viewer.scroll_offset += 1;
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.debug_viewer.scroll_offset =
+                        self.debug_viewer.scroll_offset.saturating_sub(1);
+                }
+                KeyCode::Char('d') | KeyCode::PageDown => {
+                    self.debug_viewer.scroll_offset = self
+                        .debug_viewer
+                        .scroll_offset
+                        .saturating_add(20)
+                        .min(self.debug_viewer.rendered_height.saturating_sub(1));
+                }
+                KeyCode::Char('u') | KeyCode::PageUp => {
+                    self.debug_viewer.scroll_offset =
+                        self.debug_viewer.scroll_offset.saturating_sub(20);
+                }
+                KeyCode::Char('g') => {
+                    self.debug_viewer.scroll_offset = 0;
+                }
+                KeyCode::Char('G') => {
+                    self.debug_viewer.scroll_offset =
+                        self.debug_viewer.rendered_height.saturating_sub(1);
+                }
+                _ => {}
+            }
+        } else {
+            // List mode: browsing debug logs
+            match key.code {
+                KeyCode::Esc => {
+                    self.show_debug_viewer = false;
+                    self.input_mode = InputMode::Normal;
+                }
+                KeyCode::Char('j') | KeyCode::Down => {
+                    let count = self.state.debug_log_entries.len();
+                    if count > 0 {
+                        self.debug_viewer.selected_index =
+                            (self.debug_viewer.selected_index + 1).min(count - 1);
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    self.debug_viewer.selected_index =
+                        self.debug_viewer.selected_index.saturating_sub(1);
+                }
+                KeyCode::Enter => {
+                    // Load selected debug log content
+                    if let Some(entry) = self
+                        .state
+                        .debug_log_entries
+                        .get(self.debug_viewer.selected_index)
+                    {
+                        self.debug_viewer.content =
+                            std::fs::read_to_string(&entry.path).unwrap_or_default();
+                        self.debug_viewer.scroll_offset = 0;
+                        self.debug_viewer.rendered_height = 0;
+                        self.debug_viewer.viewing = true;
+                    }
+                }
+                _ => {}
             }
         }
     }
 
-    /// Handle keyboard input in diff modal
-    fn handle_key_diff(&mut self, key: crossterm::event::KeyEvent) {
-        let file_count = self
-            .parsed_diff
+    /// Handle keyboard input in InsightsViewer mode
+    fn handle_key_insights_viewer(&mut self, key: crossterm::event::KeyEvent) {
+        let section_count = self
+            .state
+            .insights_report
             .as_ref()
-            .map(|d| d.files.len())
+            .map(|r| r.sections.len())
             .unwrap_or(0);
 
         match key.code {
-            // Close diff
-            KeyCode::Esc | KeyCode::Char('D' | 'q') => {
-                self.show_diff = false;
+            KeyCode::Esc => {
+                self.show_insights_viewer = false;
+                self.input_mode = InputMode::Normal;
             }
-
-            // Scroll up/down
+            KeyCode::Tab => {
+                if section_count > 0 {
+                    self.insights_viewer.active_section =
+                        (self.insights_viewer.active_section + 1) % section_count;
+                    self.insights_viewer.scroll_offset = 0;
+                }
+            }
+            KeyCode::BackTab => {
+                if section_count > 0 {
+                    self.insights_viewer.active_section =
+                        (self.insights_viewer.active_section + section_count - 1) % section_count;
+                    self.insights_viewer.scroll_offset = 0;
+                }
+            }
+            KeyCode::Char(c @ '1'..='9') => {
+                let idx = (c as usize) - ('1' as usize);
+                if idx < section_count {
+                    self.insights_viewer.active_section = idx;
+                    self.insights_viewer.scroll_offset = 0;
+                }
+            }
             KeyCode::Char('j') | KeyCode::Down => {
-                self.diff_scroll = self.diff_scroll.saturating_add(1);
+                self.insights_viewer.scroll_offset =
+                    self.insights_viewer.scroll_offset.saturating_add(1);
             }
             KeyCode::Char('k') | KeyCode::Up => {
-                self.diff_scroll = self.diff_scroll.saturating_sub(1);
+                self.insights_viewer.scroll_offset =
+                    self.insights_viewer.scroll_offset.saturating_sub(1);
             }
-
-            // Page up/down
-            KeyCode::PageDown | KeyCode::Char('d')
-                if key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
-            {
-                self.diff_scroll = self.diff_scroll.saturating_add(20);
-            }
-            KeyCode::PageUp | KeyCode::Char('u')
-                if key
-                    .modifiers
-                    .contains(crossterm::event::KeyModifiers::CONTROL) =>
-            {
-                self.diff_scroll = self.diff_scroll.saturating_sub(20);
-            }
-
-            // Next/previous file
-            KeyCode::Char('n') | KeyCode::Tab => {
-                if file_count > 0 {
-                    self.diff_selected_file = (self.diff_selected_file + 1) % file_count;
-                    self.diff_selected_hunk = 0; // Reset hunk selection
-                }
-            }
-            KeyCode::Char('p') | KeyCode::BackTab => {
-                if file_count > 0 {
-                    self.diff_selected_file =
-                        (self.diff_selected_file + file_count - 1) % file_count;
-                    self.diff_selected_hunk = 0; // Reset hunk selection
-                }
-            }
-
-            // Next/previous hunk within current file
-            KeyCode::Char(']') => {
-                if let Some(diff) = &self.parsed_diff {
-                    if let Some(file) = diff.files.get(self.diff_selected_file) {
-                        let hunk_count = file.hunks.len();
-                        if hunk_count > 0 {
-                            self.diff_selected_hunk = (self.diff_selected_hunk + 1) % hunk_count;
-                        }
-                    }
-                }
-            }
-            KeyCode::Char('[') => {
-                if let Some(diff) = &self.parsed_diff {
-                    if let Some(file) = diff.files.get(self.diff_selected_file) {
-                        let hunk_count = file.hunks.len();
-                        if hunk_count > 0 {
-                            self.diff_selected_hunk =
-                                (self.diff_selected_hunk + hunk_count - 1) % hunk_count;
-                        }
-                    }
-                }
-            }
-
-            // Toggle hunk collapse
-            KeyCode::Char('o') => {
-                // Toggle collapse for current hunk at scroll position
-                // For simplicity, we toggle based on file + first hunk
-                let key = (self.diff_selected_file, 0);
-                if self.diff_collapsed_hunks.contains(&key) {
-                    self.diff_collapsed_hunks.remove(&key);
-                } else {
-                    self.diff_collapsed_hunks.insert(key);
-                }
-            }
-
-            // Collapse/expand all hunks in current file
-            KeyCode::Char('O') => {
-                if let Some(diff) = &self.parsed_diff {
-                    if let Some(file) = diff.files.get(self.diff_selected_file) {
-                        let all_collapsed = (0..file.hunks.len()).all(|i| {
-                            self.diff_collapsed_hunks
-                                .contains(&(self.diff_selected_file, i))
-                        });
-
-                        for i in 0..file.hunks.len() {
-                            let key = (self.diff_selected_file, i);
-                            if all_collapsed {
-                                self.diff_collapsed_hunks.remove(&key);
-                            } else {
-                                self.diff_collapsed_hunks.insert(key);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Git commit from diff view
-            KeyCode::Char('g') => {
-                let msg = operations::git_commit_selected(&self.state)
-                    .unwrap_or_else(|| "Committed changes".to_string());
-                self.show_status(&msg);
-            }
-
-            // Git push from diff view
-            KeyCode::Char('G') => {
-                operations::git_push_selected(&self.state);
-                self.show_status("Pushed changes");
-            }
-
             _ => {}
         }
-    }
-
-    /// Toggle checkpoint timeline modal
-    fn toggle_checkpoint_timeline(&mut self) {
-        if self.show_checkpoint_timeline {
-            self.show_checkpoint_timeline = false;
-            return;
-        }
-
-        if let Some(_sprite_id) = operations::fetch_checkpoints(
-            &self.state,
-            self.sprites_client.as_ref(),
-            self.event_tx.as_ref(),
-        ) {
-            self.checkpoint_timeline = Vec::new();
-            self.selected_checkpoint = 0;
-            self.show_checkpoint_timeline = true;
-        }
-    }
-
-    /// Restore sprite to selected checkpoint
-    fn restore_selected_checkpoint(&mut self) {
-        if self.checkpoint_timeline.is_empty() {
-            tracing::warn!("No checkpoints to restore");
-            return;
-        }
-
-        if let Some(checkpoint) = self.checkpoint_timeline.get(self.selected_checkpoint) {
-            operations::restore_checkpoint(&self.state, checkpoint);
-        }
-
-        self.show_checkpoint_timeline = false;
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{HealthConfig, ReconciliationConfig, TimeoutConfig};
+    use crate::config::{HealthConfig, TimeoutConfig};
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
     /// Create a test App instance
@@ -624,8 +596,6 @@ mod tests {
         App::new(
             false,
             None,
-            None,
-            &ReconciliationConfig::default(),
             &HealthConfig::default(),
             &TimeoutConfig::default(),
         )
@@ -718,30 +688,6 @@ mod tests {
     }
 
     #[test]
-    fn test_freeze_toggle() {
-        let mut app = test_app();
-        assert!(!app.frozen);
-
-        app.handle_key(key('f'));
-        assert!(app.frozen, "'f' should freeze display");
-
-        app.handle_key(key('f'));
-        assert!(!app.frozen, "'f' should unfreeze display");
-    }
-
-    #[test]
-    fn test_dashboard_toggle() {
-        let mut app = test_app();
-        assert!(!app.show_dashboard);
-
-        app.handle_key(key('d'));
-        assert!(app.show_dashboard, "'d' should toggle dashboard on");
-
-        app.handle_key(key('d'));
-        assert!(!app.show_dashboard, "'d' should toggle dashboard off");
-    }
-
-    #[test]
     fn test_search_mode_entry() {
         let mut app = test_app();
         assert_eq!(app.input_mode, InputMode::Normal);
@@ -799,41 +745,6 @@ mod tests {
     }
 
     #[test]
-    fn test_esc_closes_dashboard_first() {
-        let mut app = test_app();
-        app.show_dashboard = true;
-
-        app.handle_key(key_code(KeyCode::Esc));
-        assert!(!app.show_dashboard, "Esc should close dashboard");
-        assert!(
-            !app.should_quit,
-            "Esc should not quit when dashboard is open"
-        );
-    }
-
-    #[test]
-    fn test_diff_view_key_close() {
-        let mut app = test_app();
-        app.show_diff = true;
-
-        app.handle_key(key_code(KeyCode::Esc));
-        assert!(!app.show_diff, "Esc should close diff view");
-    }
-
-    #[test]
-    fn test_diff_view_scroll() {
-        let mut app = test_app();
-        app.show_diff = true;
-        app.diff_scroll = 5;
-
-        app.handle_key(key('j'));
-        assert_eq!(app.diff_scroll, 6, "'j' should scroll down in diff view");
-
-        app.handle_key(key('k'));
-        assert_eq!(app.diff_scroll, 5, "'k' should scroll up in diff view");
-    }
-
-    #[test]
     fn test_spawn_field_navigation() {
         let mut app = test_app();
         app.input_mode = InputMode::Spawn;
@@ -849,89 +760,6 @@ mod tests {
         assert_eq!(
             app.spawn_state.active_field, 0,
             "Shift+Tab should move to previous field"
-        );
-    }
-
-    #[test]
-    fn test_input_mode_typing() {
-        let mut app = test_app();
-        app.input_mode = InputMode::Input;
-
-        app.handle_key(key('h'));
-        app.handle_key(key('i'));
-
-        assert_eq!(
-            app.input_buffer, "hi",
-            "characters should be appended to input buffer"
-        );
-    }
-
-    #[test]
-    fn test_input_mode_backspace() {
-        let mut app = test_app();
-        app.input_mode = InputMode::Input;
-        app.input_buffer = "hello".to_string();
-
-        app.handle_key(key_code(KeyCode::Backspace));
-        assert_eq!(
-            app.input_buffer, "hell",
-            "backspace should remove last char"
-        );
-    }
-
-    #[test]
-    fn test_input_mode_escape() {
-        let mut app = test_app();
-        app.input_mode = InputMode::Input;
-        app.input_buffer = "test".to_string();
-
-        app.handle_key(key_code(KeyCode::Esc));
-        assert_eq!(
-            app.input_mode,
-            InputMode::Normal,
-            "Esc should exit input mode"
-        );
-        assert!(app.input_buffer.is_empty(), "Esc should clear input buffer");
-    }
-
-    /// Create a test checkpoint record
-    fn test_checkpoint() -> crate::sprite::CheckpointRecord {
-        crate::sprite::CheckpointRecord {
-            id: "test".to_string(),
-            comment: "test checkpoint".to_string(),
-            created_at: 0,
-        }
-    }
-
-    #[test]
-    fn test_checkpoint_timeline_navigation() {
-        let mut app = test_app();
-        app.show_checkpoint_timeline = true;
-        app.checkpoint_timeline = vec![test_checkpoint(), test_checkpoint(), test_checkpoint()];
-        app.selected_checkpoint = 1;
-
-        app.handle_key(key('k'));
-        assert_eq!(
-            app.selected_checkpoint, 0,
-            "'k' should select previous checkpoint"
-        );
-
-        app.handle_key(key('j'));
-        assert_eq!(
-            app.selected_checkpoint, 1,
-            "'j' should select next checkpoint"
-        );
-    }
-
-    #[test]
-    fn test_checkpoint_timeline_close() {
-        let mut app = test_app();
-        app.show_checkpoint_timeline = true;
-
-        app.handle_key(key_code(KeyCode::Esc));
-        assert!(
-            !app.show_checkpoint_timeline,
-            "Esc should close checkpoint timeline"
         );
     }
 
@@ -958,5 +786,95 @@ mod tests {
             !app.should_quit,
             "Esc should not quit when task board is open"
         );
+    }
+
+    #[test]
+    fn test_stats_viewer_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_stats_viewer);
+
+        app.handle_key(key('S'));
+        assert!(app.show_stats_viewer, "'S' should open stats viewer");
+        assert_eq!(app.input_mode, InputMode::StatsViewer);
+    }
+
+    #[test]
+    fn test_history_viewer_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_history_viewer);
+
+        app.handle_key(key('L'));
+        assert!(app.show_history_viewer, "'L' should open history viewer");
+        assert_eq!(app.input_mode, InputMode::HistoryViewer);
+    }
+
+    #[test]
+    fn test_debug_viewer_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_debug_viewer);
+
+        app.handle_key(key('D'));
+        assert!(app.show_debug_viewer, "'D' should open debug viewer");
+        assert_eq!(app.input_mode, InputMode::DebugViewer);
+    }
+
+    #[test]
+    fn test_insights_viewer_toggle() {
+        let mut app = test_app();
+        assert!(!app.show_insights_viewer);
+
+        app.handle_key(key('I'));
+        assert!(app.show_insights_viewer, "'I' should open insights viewer");
+        assert_eq!(app.input_mode, InputMode::InsightsViewer);
+    }
+
+    #[test]
+    fn test_esc_cascade_stats() {
+        let mut app = test_app();
+        app.show_stats_viewer = true;
+        app.input_mode = InputMode::StatsViewer;
+
+        // Esc in StatsViewer mode should close it
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(!app.show_stats_viewer);
+        assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn test_esc_cascade_order() {
+        let mut app = test_app();
+        // In Normal mode, only help and task_board are handled.
+        // Viewers (Stats/History/Debug/Insights) use dedicated InputModes.
+        app.show_help = true;
+        app.show_task_board = true;
+
+        // First Esc closes help (highest priority)
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(!app.show_help, "Esc should close help first");
+        assert!(app.show_task_board, "Task board should still be open");
+        assert!(!app.should_quit);
+
+        // Second Esc closes task board
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(!app.show_task_board, "Esc should close task board");
+        assert!(!app.should_quit);
+
+        // Third Esc quits
+        app.handle_key(key_code(KeyCode::Esc));
+        assert!(app.should_quit, "Final Esc should quit");
+    }
+
+    #[test]
+    fn test_stats_tab_switching() {
+        let mut app = test_app();
+        app.input_mode = InputMode::StatsViewer;
+        app.show_stats_viewer = true;
+        assert_eq!(app.stats_viewer.active_tab, 0);
+
+        app.handle_key(key_code(KeyCode::Tab));
+        assert_eq!(app.stats_viewer.active_tab, 1, "Tab should advance tab");
+
+        app.handle_key(key('3'));
+        assert_eq!(app.stats_viewer.active_tab, 2, "'3' should jump to tab 3");
     }
 }
