@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.25] - 2026-02-14
+
+### Added
+
+- Claude Code observatory — stats, history, debug, insights views
+[0.9.25]: https://github.com/m-mohamed/rehoboam/compare/v0.9.24...v0.9.25
+
+
 ## [0.9.24] - 2026-02-13
 
 ### Added
